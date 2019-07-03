@@ -123,8 +123,6 @@ decode1(variant, <<TypeId:6, DimFlag:1/bits, ArrayFlag:1/bits, Bin/binary>>) ->
 	decode_variant(TypeId, DimFlag, ArrayFlag, Bin);
 decode1(data_value, Bin) ->
 	decode_data_value(Bin);
-decode1(decimal, Bin) ->
-	decode_decimal(Bin);
 decode1(Type, T) ->
 	{error, {no_match, Type, T}, T}.
 
@@ -243,23 +241,6 @@ decode_data_value(<<0:2, Mask:6/bits, Bin/binary>>) ->
 		 {server_timestamp, date_time, 0},
 		 {server_pico_seconds, uint16, 0}],
 	decode_masked(Mask, Types, Bin).
-
-decode_decimal(Bin) ->
-	case decode_multi([node_id, byte, int32, int16], Bin) of
-		{ok, [NodeId, _, Length, Scale], T} when Length=<0 ->
-			Decimal = #{type_id => NodeId,
-				    scale => Scale,
-				    value => 0},
-			{ok, Decimal, T};
-		{ok, [NodeId, _, Length, Scale], T} ->
-			<<Value:Length/little-signed-integer-unit:8, T1/binary>> = T,
-			Decimal = #{type_id => NodeId,
-				    scale => Scale,
-				    value => Value},
-			{ok, Decimal, T1};
-		Error ->
-			Error
-	end.
 
 decode_masked(Mask, Types, Bin) ->
 	BooleanMask = boolean_mask(Mask),
