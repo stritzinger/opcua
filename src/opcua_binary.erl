@@ -4,6 +4,8 @@
 
 decode(Type, Bin) when is_atom(Type) ->
 	decode1(Type, Bin);
+decode({[{_,_}|_] = TypeProplist, optional}, Bin) ->
+	decode_multi_as_map_with_options(TypeProplist, Bin);
 decode([{_,_}|_] = TypeProplist, Bin) ->
 	decode_multi_as_map(TypeProplist, Bin);
 decode(TypeList, Bin) when is_list(TypeList) ->
@@ -24,16 +26,17 @@ decode_multi([Type|TypeList], Bin, Acc) ->
 			{error, {Reason, lists:reverse(Acc)}, T}
 	end.
 
+decode_multi_as_map_with_options(TypeProplist, <<Mask:4/binary, Bin/binary>>) ->
+	Length = 32 - length(TypeProplist),
+	<<_:Length/bits, Mask1/bits>> = binary:encode_unsigned(decode(uint32, Mask)),
+	Types = lists:map(fun({Name, Type}) -> {Name, Type, undefined} end, TypeProplist),
+	decode_masked(Mask1, Types, Bin).
+
 decode_multi_as_map(TypeProplist, Bin) ->
-	Names = lists:map(fun({Name, _}) -> Name end, TypeProplist),
-	Types = lists:map(fun({_, Type}) -> Type end, TypeProplist),
-	case decode_multi(Types, Bin) of
-		{ok, Objects, T} ->
-			ObjectMap = maps:from_list(lists:zip(Names, Objects)),
-			{ok, ObjectMap, T};
-		Error ->
-			Error
-	end.
+	Length = length(TypeProplist),
+	<<Mask:Length/bits, _/bits>> = <<255,255,255,255>>,
+	Types = lists:map(fun({Name, Type}) -> {Name, Type, undefined} end, TypeProplist),
+	decode_masked(Mask, Types, Bin).
 
 decode_multi_array(Type, Bin) ->
 	case decode_array(Type, Bin) of
@@ -114,7 +117,7 @@ decode1(variant, <<TypeId:6, DimFlag:1/bits, ArrayFlag:1/bits, Bin/binary>>) ->
 	decode_variant(TypeId, DimFlag, ArrayFlag, Bin);
 decode1(data_value, Bin) ->
 	decode_data_value(Bin);
-decode1(data_decimal, Bin) ->
+decode1(decimal, Bin) ->
 	decode_decimal(Bin);
 decode1(Type, T) ->
 	{error, {no_match, Type, T}, T}.
@@ -254,20 +257,20 @@ decode_decimal(Bin) ->
 
 decode_masked(Mask, Types, Bin) ->
 	BooleanMask = boolean_mask(Mask),
-	{Apply, Defaults} = lists:split_with(fun({_, Cond}) -> Cond end, lists:zip(Types, BooleanMask)),
-	FinalDefaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults),
-	case decode_multi(lists:map(fun({_,Type,_}) -> Type end, Apply), Bin) of
+	{Apply, Defaults} = lists:splitwith(fun({_, Cond}) -> Cond end, lists:zip(Types, BooleanMask)),
+	Apply1 = element(1, lists:unzip(Apply)),
+	Defaults1 = element(1, lists:unzip(Defaults)),
+	FinalDefaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults1),
+	case decode_multi(lists:map(fun({_,Type,_}) -> Type end, Apply1), Bin) of
 		{ok, List, T} ->
-			FinalApply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply), List),
+			FinalApply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
 			{ok, maps:from_list(FinalApply ++ FinalDefaults), T};
 		Error ->
 			Error
 	end.
 
 boolean_mask(Mask) ->
-	lists:flatten(
-	  [[X==<<1:1>> || X <-  [X1,X2,X3,X4,X5,X6,X7,X8]]
-	   || <<X1:1,X2:1,X3:1,X4:1,X5:1,X6:1,X7:1,X8:1>> <= Mask]).
+	[X==1 || <<X:1>> <= Mask].
 
 honor_dimensions(ObjectArray, DimArray) ->
 	lists:reverse(
@@ -311,4 +314,3 @@ get_built_in_type(Id) ->
 		29 => byte_string,
 		30 => byte_string,
 		31 => byte_string}).
-
