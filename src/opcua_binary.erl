@@ -8,6 +8,8 @@ decode({[{_,_}|_] = TypeProplist, optional}, Bin) ->
 	decode_multi_as_map_with_options(TypeProplist, Bin);
 decode({[{_,_}|_] = TypeProplist, union}, Bin) ->
 	decode_multi_as_map_with_switch(TypeProplist, Bin);
+decode({[{_,_}|_] = TypeProplist, array}, Bin) ->
+	decode_array(TypeProplist, Bin);
 decode([{_,_}|_] = TypeProplist, Bin) ->
 	decode_multi_as_map(TypeProplist, Bin);
 decode({Enum, enum}, Bin) when is_list(Enum) ->
