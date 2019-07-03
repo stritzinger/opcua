@@ -10,6 +10,8 @@ decode({[{_,_}|_] = TypeProplist, union}, Bin) ->
 	decode_multi_as_map_with_switch(TypeProplist, Bin);
 decode([{_,_}|_] = TypeProplist, Bin) ->
 	decode_multi_as_map(TypeProplist, Bin);
+decode({Enum, enum}, Bin) when is_list(Enum) ->
+	decode_enum(Enum, Bin);
 decode(TypeList, Bin) when is_list(TypeList) ->
 	decode_multi(TypeList, Bin).
 
@@ -74,6 +76,14 @@ decode_array(Type, Array, N, Acc) ->
 			{error, {Reason, lists:reverse(Acc)}, T}
 	end.
 
+decode_enum(Enum, Bin) ->
+	case decode1(uint32, Bin) of
+		{ok, Value, T} ->
+			{ok, #{value => lists:nth(Value, Enum)}, T};
+		Error ->
+			Error
+	end.
+
 decode1(boolean, <<0, T/binary>>) -> {ok, false, T};
 decode1(boolean, <<_Bin:1/binary, T/binary>>) -> {ok, true, T};
 decode1(byte, <<Byte:8, T/binary>>) -> {ok, Byte, T};
@@ -104,7 +114,6 @@ decode1(xml, Bin) ->
 	end;
 decode1(status_code, Bin) -> decode1(uint32, Bin);
 decode1(byte_string, Bin) -> decode1(string, Bin);
-decode1(enumeration, Bin) -> decode1(int32, Bin);
 decode1(node_id, <<Mask:8, Bin/binary>>) ->
 	decode_node_id(Mask, Bin);
 decode1(expanded_node_id, Bin) ->
