@@ -6,6 +6,8 @@ decode(Type, Bin) when is_atom(Type) ->
 	decode1(Type, Bin);
 decode({[{_,_}|_] = TypeProplist, optional}, Bin) ->
 	decode_multi_as_map_with_options(TypeProplist, Bin);
+decode({[{_,_}|_] = TypeProplist, union}, Bin) ->
+	decode_multi_as_map_with_switch(TypeProplist, Bin);
 decode([{_,_}|_] = TypeProplist, Bin) ->
 	decode_multi_as_map(TypeProplist, Bin);
 decode(TypeList, Bin) when is_list(TypeList) ->
@@ -28,9 +30,13 @@ decode_multi([Type|TypeList], Bin, Acc) ->
 
 decode_multi_as_map_with_options(TypeProplist, <<Mask:4/binary, Bin/binary>>) ->
 	Length = 32 - length(TypeProplist),
-	<<_:Length/bits, Mask1/bits>> = binary:encode_unsigned(decode(uint32, Mask)),
+	<<_:Length/bits, Mask1/bits>> = binary:encode_unsigned(decode1(uint32, Mask)),
 	Types = lists:map(fun({Name, Type}) -> {Name, Type, undefined} end, TypeProplist),
 	decode_masked(Mask1, Types, Bin).
+
+decode_multi_as_map_with_switch(TypeProplist, <<Switch:4/binary, Bin/binary>>) ->
+	El = lists:nth(decode1(uint32, Switch), TypeProplist),
+	decode_multi_as_map([El], Bin).
 
 decode_multi_as_map(TypeProplist, Bin) ->
 	Length = length(TypeProplist),
