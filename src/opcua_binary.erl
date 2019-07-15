@@ -51,7 +51,8 @@ encode(date_time, Bin) -> encode(int64, Bin);
 encode(guid, Bin) -> encode_guid(Bin);
 encode(xml, Bin) -> encode(string, Bin);
 encode(status_code, Bin) -> encode(uint32, Bin);
-encode(byte_string, Bin) -> encode(string, Bin).
+encode(byte_string, Bin) -> encode(string, Bin);
+encode(node_id, Node_Id) -> encode_node_id(Node_Id).
 
 
 %% internal
@@ -249,6 +250,23 @@ encode_guid(<<D1:4/big-integer-unit:8, D2:2/big-integer-unit:8,
 	      D3:2/big-integer-unit:8, D4:8/binary>>) ->
 	<<D1:4/little-integer-unit:8, D2:2/little-integer-unit:8,
 	  D3:2/little-integer-unit:8, D4:8/binary>>.
+
+encode_node_id(#{namespace := default, identifier_type := numeric, value := Id}) ->
+	<<16#00:8, Id:1/little-unsigned-integer-unit:8>>;
+encode_node_id(#{namespace := Ns, identifier_type := numeric, value := Id}) when Id < 65536 ->
+  	<<16#01:8, Ns:1/little-unsigned-integer-unit:8, Id:2/little-unsigned-integer-unit:8>>;
+encode_node_id(#{namespace := Ns, identifier_type := numeric, value := Id}) ->
+	Bin_Id = encode(uint32, Id),
+	<<16#02:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>;
+encode_node_id(#{namespace := Ns, identifier_type := string, value := Id}) ->
+	Bin_Id = encode(string, Id),
+  	<<16#03:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>;
+encode_node_id(#{namespace := Ns, identifier_type := guid, value := Id}) ->
+	Bin_Id = encode(guid, Id),
+  	<<16#04:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>;
+encode_node_id(#{namespace := Ns, identifier_type := opaque, value := Id}) ->
+	Bin_Id = encode(string, Id),
+	<<16#05:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>.
 
 get_built_in_type(Id) ->
 	maps:get(Id, #{
