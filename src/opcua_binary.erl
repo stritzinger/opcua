@@ -48,12 +48,14 @@ encode(double, Double) -> <<Double:8/little-signed-float-unit:8>>;
 encode(string, String) when String == undefined -> <<-1:4/little-signed-integer-unit:8>>;
 encode(string, String) -> <<(byte_size(String)):4/little-signed-integer-unit:8, String/binary>>;
 encode(date_time, Bin) -> encode(int64, Bin);
-encode(guid, Bin) -> encode_guid(Bin);
+encode(guid, Guid) -> encode_guid(Guid);
 encode(xml, Bin) -> encode(string, Bin);
-encode(status_code, Bin) -> encode(uint32, Bin);
+encode(status_code, UInt32) -> encode(uint32, UInt32);
 encode(byte_string, Bin) -> encode(string, Bin);
 encode(node_id, Node_Id) -> encode_node_id(Node_Id);
-encode(expanded_node_id, Expanded_Node_Id) -> encode_expanded_node_id(Expanded_Node_Id).
+encode(expanded_node_id, Expanded_Node_Id) -> encode_expanded_node_id(Expanded_Node_Id);
+encode(diagnostic_info, Diagnostic_Info) -> encode_diagnostic_info(Diagnostic_Info);
+encode(qualified_name, Qualified_Name) -> encode_qualified_name(Qualified_Name).
 
 
 %% internal
@@ -229,6 +231,39 @@ encode_expanded_node_id(#{node_id := Node_Id, namespace_uri := Namespace_Uri,
 		  end,
 	<<(Mask + Namespace_Uri_Flag + Server_Index_Flag):8, Rest/binary,
 	  Bin_Namespace_Uri/binary, Bin_Server_Index/binary>>.
+
+encode_diagnostic_info(Diagnostic_Info) ->
+	Types = [{int32, maps:get(symbolic_id, Diagnostic_Info, undefined)},
+		 {int32, maps:get(namespace_uri, Diagnostic_Info, undefined)},
+		 {int32, maps:get(locale, Diagnostic_Info, undefined)},
+		 {int32, maps:get(localized_text, Diagnostic_Info, undefined)},
+		 {string, maps:get(additional_info, Diagnostic_Info, undefined)},
+		 {status_code, maps:get(inner_status_code, Diagnostic_Info, undefined)},
+		 {diagnostic_info, maps:get(inner_diagnostic_info, Diagnostic_Info, undefined)}],
+	encode_masked(Types).
+
+encode_qualified_name(#{namespace_index := Namespace_Index, name := Name}) ->
+	encode_multi([{uint16, Namespace_Index}, {string, Name}]).
+
+encode_multi(Type_List) ->
+	encode_multi(Type_List, <<>>).
+
+encode_multi([], Bin) ->
+	Bin;
+encode_multi([{Type, Value}|Type_List], Bin) ->
+	NewBin = encode(Type, Value),
+	encode_multi(Type_List, <<Bin/binary, NewBin/binary>>).
+
+encode_masked(Type_List) ->
+	encode_masked(Type_List, <<>>, <<>>).
+
+encode_masked([], Mask, Bin) ->
+	<<0:(8-bit_size(Mask)), Mask, Bin/binary>>;
+encode_masked([{_Type, undefined}|Type_List], Mask, Bin) ->
+	encode_masked(Type_List, <<0:1, Mask>>, Bin);
+encode_masked([{Type, Value}|Type_List], Mask, Bin) ->
+	NewBin = encode(Type, Value),
+	encode_masked(Type_List, <<1:1, Mask>>, <<Bin/binary, NewBin/binary>>).
 
 get_built_in_type(Id) ->
 	maps:get(Id, #{
