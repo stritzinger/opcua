@@ -22,7 +22,7 @@ decode(xml, Bin) -> decode_xml(Bin);
 decode(status_code, Bin) -> decode(uint32, Bin);
 decode(byte_string, Bin) -> decode(string, Bin);
 decode(node_id, <<Mask:8, Bin/binary>>) -> decode_node_id(Mask, Bin);
-decode(expanded_node_id, Bin) -> decode_expanded_node_id(Bin);
+decode(expanded_node_id, <<Mask:8, Bin/binary>>) -> decode_expanded_node_id(Mask, Bin);
 decode(diagnostic_info, <<Mask:1/binary, Bin/binary>>) -> decode_diagnostic_info(Mask, Bin);
 decode(qualified_name, Bin) -> decode_qualified_name(Bin);
 decode(localized_text, <<Mask:1/binary, Bin/binary>>) -> decode_localized_text(Mask, Bin);
@@ -45,63 +45,55 @@ decode_guid(<<D1:4/little-integer-unit:8, D2:2/little-integer-unit:8,
 
 decode_xml(Bin) ->
 	case decode(string, Bin) of
-		{ok, String, T} -> {ok, element(1, xmerl_scan:string(String)), T};
-		Error 		-> Error
+		{ok, String, T} ->
+			{ok, element(1, xmerl_scan:string(String)), T};
+		Error ->
+			Error
 	end.
 
 decode_node_id(16#00, <<Id:1/little-unsigned-integer-unit:8, T/binary>>) ->
-	NodeId = #{namespace => default, identifier_type => numeric, value => Id},
-	{ok, NodeId, T};
+	{ok, #{namespace => default, identifier_type => numeric, value => Id}, T};
 decode_node_id(16#01, <<Ns:1/little-unsigned-integer-unit:8, Id:2/little-unsigned-integer-unit:8, T/binary>>) ->
-	 NodeId = #{namespace => Ns, identifier_type => numeric, value => Id},
-	{ok, NodeId, T};
+	{ok, #{namespace => Ns, identifier_type => numeric, value => Id}, T};
 decode_node_id(16#02, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
 	{ok, Id, T} = decode(uint32, Bin),
-	NodeId = #{namespace => Ns, identifier_type => numeric, value => Id},
-	{ok, NodeId, T};
+	{ok, #{namespace => Ns, identifier_type => numeric, value => Id}, T};
 decode_node_id(16#03, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
 	case decode(string, Bin) of
 		{ok, Id, T} ->
-	 		NodeId = #{namespace => Ns, identifier_type => string, value => Id},
-			{ok, NodeId, T};
+			{ok, #{namespace => Ns, identifier_type => string, value => Id}, T};
 		Error ->
 			Error
 	end;
 decode_node_id(16#04, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
 	case decode(guid, Bin) of
 		{ok, Id, T} ->
-	 		NodeId = #{namespace => Ns, identifier_type => guid, value => Id},
-			{ok, NodeId, T};
+			{ok, #{namespace => Ns, identifier_type => guid, value => Id}, T};
 		Error ->
 			Error
 	end;
 decode_node_id(16#05, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
 	case decode(string, Bin) of
 		{ok, Id, T} ->
-	 		NodeId = #{namespace => Ns, identifier_type => opaque, value => Id},
-			{ok, NodeId, T};
+			{ok, #{namespace => Ns, identifier_type => opaque, value => Id}, T};
 		Error ->
 			Error
 	end.
 
-decode_expanded_node_id(Bin) ->
-	%% this needs rework, see part 6, 5.2.2.10
-	case decode_multi([node_id, string, uint32], Bin) of
-		{ok, [NodeId, NamespaceUri, ServerIndex], T} ->
-			NamespaceUri1 = case NamespaceUri of
-						<<>> 	-> undefined;
-						_ 	-> NamespaceUri
-					end,
-			ServerIndex1 = case ServerIndex of
-						0 	-> undefined;
-					       _Else 	-> ServerIndex
-				       end,
-			ExpandedNodeId = #{node_id => NodeId,
-					   namespace_uri => NamespaceUri1,
-					   server_index => ServerIndex1},
-			{ok, ExpandedNodeId, T};
-		Error ->
-			Error
+decode_expanded_node_id(Mask, Bin) ->
+	case decode_node_id(Mask rem 16#40, Bin) of
+		{ok, NodeId, T} ->
+			NamespaceUriFlag = (Mask div 16#80 == 1),
+			ServerIndexFlag = (Mask div 16#40 == 1),
+			Types = [{namespace_uri, string, undefined},
+				 {server_index, uint32, undefined}],
+			BooleanMask = [NamespaceUriFlag, ServerIndexFlag],
+			case decode_masked(BooleanMask, Types, T) of
+				{ok, Map, T1} ->
+					{ok, maps:put(node_id, NodeId, Map), T1};
+				Error ->
+					Error
+			end
 	end.
 
 decode_diagnostic_info(<<0:1, Mask:7/bits>>, Bin) ->
@@ -139,13 +131,17 @@ decode_extension_object1(16#00, TypeId, T) ->
 	{ok, #{type_id => TypeId, body => undefined}, T};
 decode_extension_object1(16#01, TypeId, T) ->
 	case decode(byte_string, T) of
-		{ok, Body, T1} 	-> {ok, #{type_id => TypeId, body => Body}, T1};
-		Error 		-> Error
+		{ok, Body, T1} 	->
+			{ok, #{type_id => TypeId, body => Body}, T1};
+		Error ->
+			Error
 	end;
 decode_extension_object1(16#02, TypeId, T) ->
 	case decode(xml, T) of
-		{ok, Body, T1} 	-> {ok, #{type_id => TypeId, body => Body}, T1};
-		Error 		-> Error
+		{ok, Body, T1} ->
+			{ok, #{type_id => TypeId, body => Body}, T1};
+		Error ->
+			Error
 	end.
 
 decode_variant(_TypeId, _DimFlag, <<0:1>>, Bin) ->
@@ -178,8 +174,10 @@ decode_masked(Mask, Types, Bin) ->
 			Error
 	end.
 
+boolean_mask(Mask) when is_binary(Mask) ->
+	[X==1 || <<X:1>> <= Mask];
 boolean_mask(Mask) ->
-	[X==1 || <<X:1>> <= Mask].
+	Mask.
 
 decode_multi(TypeList, Bin) ->
 	decode_multi(TypeList, Bin, []).
@@ -220,8 +218,10 @@ decode_array(_Type, T, 0, Acc) ->
 	{ok, lists:reverse(Acc), T};
 decode_array(Type, Array, N, Acc) ->
 	case decode(Type, Array) of
-		{ok, Elem, T} -> decode_array(Type, T, N-1, [Elem|Acc]);
-		{error, Reason, T} -> {error, {Reason, lists:reverse(Acc)}, T}
+		{ok, Elem, T} ->
+			decode_array(Type, T, N-1, [Elem|Acc]);
+		{error, Reason, T} ->
+			{error, {Reason, lists:reverse(Acc)}, T}
 	end.
 
 honor_dimensions(ObjectArray, DimArray) ->
