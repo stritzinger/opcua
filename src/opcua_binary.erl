@@ -28,8 +28,8 @@ decode(qualified_name, Bin) -> decode_qualified_name(Bin);
 decode(localized_text, <<Mask:1/binary, Bin/binary>>) -> decode_localized_text(Mask, Bin);
 decode(extension_object, Bin) -> decode_extension_object(Bin);
 decode(variant, <<0:6, Bin/binary>>) -> {ok, undefined, Bin};
-decode(variant, <<TypeId:6, DimFlag:1/bits, ArrayFlag:1/bits, Bin/binary>>) ->
-	decode_variant(TypeId, DimFlag, ArrayFlag, Bin);
+decode(variant, <<Type_Id:6, Dim_Flag:1/bits, Array_Flag:1/bits, Bin/binary>>) ->
+	decode_variant(Type_Id, Dim_Flag, Array_Flag, Bin);
 decode(data_value, <<0:2, Mask:6/bits, Bin/binary>>) -> decode_data_value(Mask, Bin);
 decode(Type, T) -> {error, {no_match, Type, T}, T}.
 
@@ -82,18 +82,20 @@ decode_node_id(16#05, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
 
 decode_expanded_node_id(Mask, Bin) ->
 	case decode_node_id(Mask rem 16#40, Bin) of
-		{ok, NodeId, T} ->
-			NamespaceUriFlag = (Mask div 16#80 == 1),
-			ServerIndexFlag = (Mask div 16#40 == 1),
+		{ok, Node_Id, T} ->
+			Namespace_Uri_Flag = (Mask div 16#80 == 1),
+			Server_Index_Flag = (Mask div 16#40 == 1),
 			Types = [{namespace_uri, string, undefined},
 				 {server_index, uint32, undefined}],
-			BooleanMask = [NamespaceUriFlag, ServerIndexFlag],
-			case decode_masked(BooleanMask, Types, T) of
+			Boolean_Mask = [Namespace_Uri_Flag, Server_Index_Flag],
+			case decode_masked(Boolean_Mask, Types, T) of
 				{ok, Map, T1} ->
-					{ok, maps:put(node_id, NodeId, Map), T1};
+					{ok, maps:put(node_id, Node_Id, Map), T1};
 				Error ->
 					Error
-			end
+			end;
+		Error ->
+			Error
 	end.
 
 decode_diagnostic_info(<<0:1, Mask:7/bits>>, Bin) ->
@@ -108,8 +110,8 @@ decode_diagnostic_info(<<0:1, Mask:7/bits>>, Bin) ->
 
 decode_qualified_name(Bin) ->
 	case decode_multi([uint16, string], Bin) of
-		{ok, [NsIndex, Name], T} ->
-			{ok, #{namespace_index => NsIndex, name => Name}, T};
+		{ok, [Namespace_Index, Name], T} ->
+			{ok, #{namespace_index => Namespace_Index, name => Name}, T};
 		Error ->
 			Error
 	end.
@@ -121,35 +123,35 @@ decode_localized_text(<<0:6, Mask:2/bits>>, Bin) ->
 
 decode_extension_object(Bin) ->
 	case decode(node_id, Bin) of
-		{ok, TypeId, <<Mask:8, T/binary>>} ->
-			decode_extension_object1(Mask, TypeId, T);
+		{ok, Type_Id, <<Mask:8, T/binary>>} ->
+			decode_extension_object1(Mask, Type_Id, T);
 		Error ->
 			Error
 	end.
 
-decode_extension_object1(16#00, TypeId, T) ->
-	{ok, #{type_id => TypeId, body => undefined}, T};
-decode_extension_object1(16#01, TypeId, T) ->
+decode_extension_object1(16#00, Type_Id, T) ->
+	{ok, #{type_id => Type_Id, body => undefined}, T};
+decode_extension_object1(16#01, Type_Id, T) ->
 	case decode(byte_string, T) of
 		{ok, Body, T1} 	->
-			{ok, #{type_id => TypeId, body => Body}, T1};
+			{ok, #{type_id => Type_Id, body => Body}, T1};
 		Error ->
 			Error
 	end;
-decode_extension_object1(16#02, TypeId, T) ->
+decode_extension_object1(16#02, Type_Id, T) ->
 	case decode(xml, T) of
 		{ok, Body, T1} ->
-			{ok, #{type_id => TypeId, body => Body}, T1};
+			{ok, #{type_id => Type_Id, body => Body}, T1};
 		Error ->
 			Error
 	end.
 
-decode_variant(_TypeId, _DimFlag, <<0:1>>, Bin) ->
+decode_variant(_Type_Id, _Dim_Flag, <<0:1>>, Bin) ->
 	{ok, [], Bin};
-decode_variant(TypeId, <<0:1>>, <<1:1>>, Bin) ->
-	decode_array(get_built_in_type(TypeId), Bin);
-decode_variant(TypeId, <<1:1>>, <<1:1>>, Bin) ->
-	decode_multi_array(get_built_in_type(TypeId), Bin).
+decode_variant(Type_Id, <<0:1>>, <<1:1>>, Bin) ->
+	decode_array(get_built_in_type(Type_Id), Bin);
+decode_variant(Type_Id, <<1:1>>, <<1:1>>, Bin) ->
+	decode_multi_array(get_built_in_type(Type_Id), Bin).
 
 decode_data_value(Mask, Bin) ->
 	Types = [{value, variant, undefined},
@@ -161,15 +163,15 @@ decode_data_value(Mask, Bin) ->
 	decode_masked(Mask, Types, Bin).
 
 decode_masked(Mask, Types, Bin) ->
-	BooleanMask = boolean_mask(Mask),
-	{Apply, Defaults} = lists:splitwith(fun({_, Cond}) -> Cond end, lists:zip(Types, BooleanMask)),
+	Boolean_Mask = boolean_mask(Mask),
+	{Apply, Defaults} = lists:splitwith(fun({_, Cond}) -> Cond end, lists:zip(Types, Boolean_Mask)),
 	Apply1 = element(1, lists:unzip(Apply)),
 	Defaults1 = element(1, lists:unzip(Defaults)),
-	FinalDefaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults1),
+	Final_Defaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults1),
 	case decode_multi(lists:map(fun({_,Type,_}) -> Type end, Apply1), Bin) of
 		{ok, List, T} ->
-			FinalApply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
-			{ok, maps:from_list(FinalApply ++ FinalDefaults), T};
+			Final_Apply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
+			{ok, maps:from_list(Final_Apply ++ Final_Defaults), T};
 		Error ->
 			Error
 	end.
@@ -179,25 +181,25 @@ boolean_mask(Mask) when is_binary(Mask) ->
 boolean_mask(Mask) ->
 	Mask.
 
-decode_multi(TypeList, Bin) ->
-	decode_multi(TypeList, Bin, []).
+decode_multi(Type_List, Bin) ->
+	decode_multi(Type_List, Bin, []).
 
 decode_multi([], T, Acc) ->
 	{ok, lists:reverse(Acc), T};
-decode_multi([Type|TypeList], Bin, Acc) ->
+decode_multi([Type|Type_List], Bin, Acc) ->
 	case decode(Type, Bin) of
 		{ok, Elem, T} ->
-			decode_multi(TypeList, T, [Elem|Acc]);
+			decode_multi(Type_List, T, [Elem|Acc]);
 		{error, Reason, T} ->
 			{error, {Reason, lists:reverse(Acc)}, T}
 	end.
 
 decode_multi_array(Type, Bin) ->
 	case decode_array(Type, Bin) of
-		{ok, ObjectArray, T} ->
+		{ok, Object_Array, T} ->
 			case decode_array(int32, T) of
-				{ok, DimArray, T1} ->
-					{ok, honor_dimensions(ObjectArray, DimArray), T1};
+				{ok, Dim_Array, T1} ->
+					{ok, honor_dimensions(Object_Array, Dim_Array), T1};
 				Error ->
 					Error
 			end;
@@ -224,14 +226,14 @@ decode_array(Type, Array, N, Acc) ->
 			{error, {Reason, lists:reverse(Acc)}, T}
 	end.
 
-honor_dimensions(ObjectArray, DimArray) ->
+honor_dimensions(Object_Array, Dim_Array) ->
 	lists:reverse(
 	  lists:foldl(fun(X, Acc) -> honor_dimensions1(X, Acc) end,
-		      {[], ObjectArray}, DimArray)).
+		      {[], Object_Array}, Dim_Array)).
 
-honor_dimensions1(Dim, {Array, ArrayList}) ->
-	{El, NewArray} = lists:split(Dim, Array),
-	{NewArray, [El|ArrayList]}.
+honor_dimensions1(Dim, {Array, Array_List}) ->
+	{El, New_Array} = lists:split(Dim, Array),
+	{New_Array, [El|Array_List]}.
 
 get_built_in_type(Id) ->
 	maps:get(Id, #{
