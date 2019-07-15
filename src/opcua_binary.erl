@@ -6,19 +6,19 @@ decode(boolean, <<0, T/binary>>) -> {ok, false, T};
 decode(boolean, <<_Bin:1/binary, T/binary>>) -> {ok, true, T};
 decode(byte, <<Byte:8, T/binary>>) -> {ok, Byte, T};
 decode(sbyte, <<SByte:8/signed-integer, T/binary>>) -> {ok, SByte, T};
-decode(uint16, <<UInt16:2/little-signed-integer-unit:8, T/binary>>) -> {ok, UInt16, T};
-decode(uint32, <<UInt32:4/little-signed-integer-unit:8, T/binary>>) -> {ok, UInt32, T};
-decode(uint64, <<UInt64:8/little-signed-integer-unit:8, T/binary>>) -> {ok, UInt64, T};
-decode(int16, <<Int16:2/little-unsigned-integer-unit:8, T/binary>>) -> {ok, Int16, T};
-decode(int32, <<Int32:4/little-unsigned-integer-unit:8, T/binary>>) -> {ok, Int32, T};
-decode(int64, <<Int64:8/little-unsigned-integer-unit:8, T/binary>>) -> {ok, Int64, T};
+decode(uint16, <<UInt16:2/little-unsigned-integer-unit:8, T/binary>>) -> {ok, UInt16, T};
+decode(uint32, <<UInt32:4/little-unsigned-integer-unit:8, T/binary>>) -> {ok, UInt32, T};
+decode(uint64, <<UInt64:8/little-unsigned-integer-unit:8, T/binary>>) -> {ok, UInt64, T};
+decode(int16, <<Int16:2/little-signed-integer-unit:8, T/binary>>) -> {ok, Int16, T};
+decode(int32, <<Int32:4/little-signed-integer-unit:8, T/binary>>) -> {ok, Int32, T};
+decode(int64, <<Int64:8/little-signed-integer-unit:8, T/binary>>) -> {ok, Int64, T};
 decode(float, <<Float:4/little-signed-float-unit:8, T/binary>>) -> {ok, Float, T};
 decode(double, <<Double:8/little-unsigned-float-unit:8, T/binary>>) -> {ok, Double, T};
 decode(string, <<Int32:4/little-signed-integer-unit:8, T/binary>>) when Int32 == -1 -> {ok, undefined, T};
 decode(string, <<Int32:4/little-signed-integer-unit:8, String:Int32/binary, T/binary>>) -> {ok, String, T};
 decode(date_time, Bin) -> decode(int64, Bin);
 decode(guid, Bin) -> decode_guid(Bin);
-decode(xml, Bin) -> decode_xml(Bin);
+decode(xml, Bin) -> decode(string, Bin);
 decode(status_code, Bin) -> decode(uint32, Bin);
 decode(byte_string, Bin) -> decode(string, Bin);
 decode(node_id, <<Mask:8, Bin/binary>>) -> decode_node_id(Mask, Bin);
@@ -33,7 +33,25 @@ decode(variant, <<Type_Id:6, Dim_Flag:1/bits, Array_Flag:1/bits, Bin/binary>>) -
 decode(data_value, <<0:2, Mask:6/bits, Bin/binary>>) -> decode_data_value(Mask, Bin);
 decode(Type, T) -> {error, {no_match, Type, T}, T}.
 
-encode(_Type, _Data) -> ok.
+encode(boolean, false) -> <<0:8>>;
+encode(boolean, true) -> <<1:8>>;
+encode(byte, Byte) -> <<Byte:8>>;
+encode(sbyte, SByte) -> <<SByte:8/signed-integer>>;
+encode(uint16, UInt16) -> <<UInt16:2/little-unsigned-integer-unit:8>>;
+encode(uint32, UInt32) -> <<UInt32:4/little-unsigned-integer-unit:8>>;
+encode(uint64, UInt64) -> <<UInt64:8/little-unsigned-integer-unit:8>>;
+encode(int16, Int16) -> <<Int16:2/little-signed-integer-unit:8>>;
+encode(int32, Int32) -> <<Int32:4/little-signed-integer-unit:8>>;
+encode(int64, Int64) -> <<Int64:8/little-signed-integer-unit:8>>;
+encode(float, Float) -> <<Float:4/little-signed-float-unit:8>>;
+encode(double, Double) -> <<Double:8/little-signed-float-unit:8>>;
+encode(string, String) when String == undefined -> <<-1:4/little-signed-integer-unit:8>>;
+encode(string, String) -> <<(byte_size(String)):4/little-signed-integer-unit:8, String/binary>>;
+encode(date_time, Bin) -> encode(int64, Bin);
+encode(guid, Bin) -> encode_guid(Bin);
+encode(xml, Bin) -> encode(string, Bin);
+encode(status_code, Bin) -> encode(uint32, Bin);
+encode(byte_string, Bin) -> encode(string, Bin).
 
 
 %% internal
@@ -42,14 +60,6 @@ decode_guid(<<D1:4/little-integer-unit:8, D2:2/little-integer-unit:8,
 	      D3:2/little-integer-unit:8, D4:8/binary, T/binary>>) ->
 	{ok, <<D1:4/big-integer-unit:8, D2:2/big-integer-unit:8,
 	       D3:2/big-integer-unit:8, D4:8/binary>>, T}.
-
-decode_xml(Bin) ->
-	case decode(string, Bin) of
-		{ok, String, T} ->
-			{ok, element(1, xmerl_scan:string(String)), T};
-		Error ->
-			Error
-	end.
 
 decode_node_id(16#00, <<Id:1/little-unsigned-integer-unit:8, T/binary>>) ->
 	{ok, #{namespace => default, identifier_type => numeric, value => Id}, T};
@@ -234,6 +244,11 @@ honor_dimensions(Object_Array, Dim_Array) ->
 honor_dimensions1(Dim, {Array, Array_List}) ->
 	{El, New_Array} = lists:split(Dim, Array),
 	{New_Array, [El|Array_List]}.
+
+encode_guid(<<D1:4/big-integer-unit:8, D2:2/big-integer-unit:8,
+	      D3:2/big-integer-unit:8, D4:8/binary>>) ->
+	<<D1:4/little-integer-unit:8, D2:2/little-integer-unit:8,
+	  D3:2/little-integer-unit:8, D4:8/binary>>.
 
 get_built_in_type(Id) ->
 	maps:get(Id, #{
