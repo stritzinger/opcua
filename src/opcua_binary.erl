@@ -52,7 +52,8 @@ encode(guid, Bin) -> encode_guid(Bin);
 encode(xml, Bin) -> encode(string, Bin);
 encode(status_code, Bin) -> encode(uint32, Bin);
 encode(byte_string, Bin) -> encode(string, Bin);
-encode(node_id, Node_Id) -> encode_node_id(Node_Id).
+encode(node_id, Node_Id) -> encode_node_id(Node_Id);
+encode(expanded_node_id, Expanded_Node_Id) -> encode_expanded_node_id(Expanded_Node_Id).
 
 
 %% internal
@@ -64,7 +65,8 @@ decode_guid(<<D1:4/little-integer-unit:8, D2:2/little-integer-unit:8,
 
 decode_node_id(16#00, <<Id:1/little-unsigned-integer-unit:8, T/binary>>) ->
 	{#{namespace => default, identifier_type => numeric, value => Id}, T};
-decode_node_id(16#01, <<Ns:1/little-unsigned-integer-unit:8, Id:2/little-unsigned-integer-unit:8, T/binary>>) ->
+decode_node_id(16#01, <<Ns:1/little-unsigned-integer-unit:8,
+			Id:2/little-unsigned-integer-unit:8, T/binary>>) ->
 	{#{namespace => Ns, identifier_type => numeric, value => Id}, T};
 decode_node_id(16#02, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
 	{Id, T} = decode(uint32, Bin),
@@ -82,7 +84,7 @@ decode_node_id(16#05, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
 decode_expanded_node_id(Mask, Bin) ->
 	{Node_Id, T} = decode_node_id(Mask rem 16#40, Bin),
 	Namespace_Uri_Flag = (Mask div 16#80 == 1),
-	Server_Index_Flag = (Mask div 16#40 == 1),
+	Server_Index_Flag = ((Mask rem 16#80) div 16#40 == 1),
 	Types = [{namespace_uri, string, undefined},
 		 {server_index, uint32, undefined}],
 	Boolean_Mask = [Namespace_Uri_Flag, Server_Index_Flag],
@@ -211,6 +213,22 @@ encode_node_id(#{namespace := Ns, identifier_type := guid, value := Id}) ->
 encode_node_id(#{namespace := Ns, identifier_type := opaque, value := Id}) ->
 	Bin_Id = encode(string, Id),
 	<<16#05:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>.
+
+encode_expanded_node_id(#{node_id := Node_Id, namespace_uri := Namespace_Uri,
+			  server_index := Server_Index}) ->
+	<<Mask:8, Rest/binary>> = encode_node_id(Node_Id),
+	{Namespace_Uri_Flag, Bin_Namespace_Uri}
+		= case Namespace_Uri of
+			  undefined -> {0, <<>>};
+			  _ -> {16#80, encode(string, Namespace_Uri)}
+		  end,
+	{Server_Index_Flag, Bin_Server_Index}
+		= case Server_Index of
+			  undefined -> {0, <<>>};
+			  _ -> {16#40, encode(uint32, Server_Index)}
+		  end,
+	<<(Mask + Namespace_Uri_Flag + Server_Index_Flag):8, Rest/binary,
+	  Bin_Namespace_Uri/binary, Bin_Server_Index/binary>>.
 
 get_built_in_type(Id) ->
 	maps:get(Id, #{
