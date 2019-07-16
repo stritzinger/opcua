@@ -55,7 +55,12 @@ encode(byte_string, Bin) -> encode(string, Bin);
 encode(node_id, Node_Id) -> encode_node_id(Node_Id);
 encode(expanded_node_id, Expanded_Node_Id) -> encode_expanded_node_id(Expanded_Node_Id);
 encode(diagnostic_info, Diagnostic_Info) -> encode_diagnostic_info(Diagnostic_Info);
-encode(qualified_name, Qualified_Name) -> encode_qualified_name(Qualified_Name).
+encode(qualified_name, Qualified_Name) -> encode_qualified_name(Qualified_Name);
+encode(localized_text, Localized_Text) -> encode_localized_text(Localized_Text);
+encode(extension_object, Extension_Object) -> encode_extension_object(Extension_Object);
+encode(variant, Variant) -> encode_variant(Variant);
+encode(data_value, Data_Value) -> encode_data_value(Data_Value);
+encode(_Type, _Value) -> error(badarg).
 
 
 %% internal
@@ -117,20 +122,22 @@ decode_extension_object(Bin) ->
 	decode_extension_object1(Mask, Type_Id, T).
 
 decode_extension_object1(16#00, Type_Id, T) ->
-	{#{type_id => Type_Id, body => undefined}, T};
+	{#{type_id => Type_Id, encoding => undefined, body => undefined}, T};
 decode_extension_object1(16#01, Type_Id, T) ->
 	{Body, T1} = decode(byte_string, T),
-	{#{type_id => Type_Id, body => Body}, T1};
+	{#{type_id => Type_Id, encoding => byte_string, body => Body}, T1};
 decode_extension_object1(16#02, Type_Id, T) ->
 	{Body, T1} = decode(xml, T),
-	{#{type_id => Type_Id, body => Body}, T1}.
+	{#{type_id => Type_Id, encoding => xml, body => Body}, T1}.
 
-decode_variant(_Type_Id, _Dim_Flag, <<0:1>>, Bin) ->
-	{[], Bin};
+decode_variant(Type_Id, _Dim_Flag, <<0:1>>, Bin) ->
+	{#{type => get_built_in_type(Type_Id), value => []}, Bin};
 decode_variant(Type_Id, <<0:1>>, <<1:1>>, Bin) ->
-	decode_array(get_built_in_type(Type_Id), Bin);
+	{Array, Bin1} = decode_array(get_built_in_type(Type_Id), Bin),
+	{#{type => get_built_in_type(Type_Id), value => Array}, Bin1};
 decode_variant(Type_Id, <<1:1>>, <<1:1>>, Bin) ->
-	decode_multi_array(get_built_in_type(Type_Id), Bin).
+	{Multi_Array, Bin1} = decode_multi_array(get_built_in_type(Type_Id), Bin),
+	{#{type => get_built_in_type(Type_Id), value => Multi_Array}, Bin1}.
 
 decode_data_value(Mask, Bin) ->
 	Types = [{value, variant, undefined},
@@ -143,7 +150,8 @@ decode_data_value(Mask, Bin) ->
 
 decode_masked(Mask, Types, Bin) ->
 	Boolean_Mask = boolean_mask(Mask),
-	{Apply, Defaults} = lists:splitwith(fun({_, Cond}) -> Cond end, lists:zip(Types, Boolean_Mask)),
+	{Apply, Defaults} = lists:splitwith(fun({_, Cond}) -> Cond end,
+					    lists:zip(Types, Boolean_Mask)),
 	Apply1 = element(1, lists:unzip(Apply)),
 	Defaults1 = element(1, lists:unzip(Defaults)),
 	Final_Defaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults1),
@@ -151,7 +159,7 @@ decode_masked(Mask, Types, Bin) ->
 	Final_Apply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
 	{maps:from_list(Final_Apply ++ Final_Defaults), T}.
 
-boolean_mask(Mask) when is_binary(Mask) ->
+boolean_mask(Mask) when is_bitstring(Mask) ->
 	[X==1 || <<X:1>> <= Mask];
 boolean_mask(Mask) ->
 	Mask.
@@ -245,6 +253,73 @@ encode_diagnostic_info(Diagnostic_Info) ->
 encode_qualified_name(#{namespace_index := Namespace_Index, name := Name}) ->
 	encode_multi([{uint16, Namespace_Index}, {string, Name}]).
 
+encode_localized_text(Localized_Text) ->
+	Types = [{string, maps:get(locale, Localized_Text, undefined)},
+		 {string, maps:get(text, Localized_Text, undefined)}],
+	encode_masked(Types).
+
+encode_extension_object(#{type_id := Type_Id, encoding := undefined, body := undefined}) ->
+	Node_Id = encode(node_id, Type_Id),
+	<<Node_Id/binary, 16#00:8>>;
+encode_extension_object(#{type_id := Type_Id, encoding := Encoding, body := Body}) ->
+	Node_Id = encode(node_id, Type_Id),
+	%% NOTE: encoding byte strings and xml also
+	%% encodes the 'Length' of those as prefix
+	Bin_Body = encode(Encoding, Body),
+	Encoding_Flag = case Encoding of
+				byte_string -> 16#01;
+				xml -> 16#02
+			end,
+	<<Node_Id/binary, Encoding_Flag:8, Bin_Body/binary>>.
+
+encode_variant(#{type := Type, value := Multi_Array}) ->
+	Type_Id = get_built_in_id(Type),
+	{Length, Value, Dims} = build_variant_value(Multi_Array),
+	case Length of
+		0 ->
+			<<0:2, Type_Id:6>>;
+		Length when Length > 0 ->
+			Bin_Length = encode(int32, Length),
+			Bin_Dim_Length = encode(int32, length(Dims)),
+			Bin_Dims = list_to_binary([encode(int32, Dim) || Dim <- Dims]),
+			<<3:2, Type_Id:6, Bin_Length/binary, Value/binary,
+			  Bin_Dim_Length/binary, Bin_Dims/binary>>
+	end.
+
+build_variant_value(Multi_Array) ->
+	build_variant_value(Multi_Array, 0, <<>>, []).
+
+build_variant_value([], Length, Value, Dims) ->
+	{Length, Value, Dims};
+build_variant_value([Elem|T], Length, Value, Dims) ->
+	{Array_Length, Array_Bin} =
+		case Elem of
+			Elem when is_list(Elem) ->
+				{length(Elem), list_to_binary(Elem)};
+			_ ->
+				{1, Elem}
+		end,
+	build_variant_value(T, Length + Array_Length,
+			    <<Value/binary, Array_Bin/binary>>,
+			    [Array_Length|Dims]).
+
+encode_data_value(Data_Value) ->
+	Types = [{variant, maps:get(value, Data_Value, undefined)},
+		 {status_code, maybe_undefined(status, Data_Value, good)},
+		 {date_time, maybe_undefined(source_timestamp, Data_Value, 0)},
+		 {uint16, maybe_undefined(source_pico_seconds, Data_Value, 0)},
+		 {date_time, maybe_undefined(server_timestamp, Data_Value, 0)},
+		 {uint16, maybe_undefined(server_pico_seconds, Data_Value, 0)}],
+	encode_masked(Types).
+
+maybe_undefined(Key, Map, Cond) ->
+	case maps:get(Key, Map, undefined) of
+		Cond ->
+			undefined;
+		Value ->
+			Value
+	end.
+
 encode_multi(Type_List) ->
 	encode_multi(Type_List, <<>>).
 
@@ -298,3 +373,31 @@ get_built_in_type(Id) ->
 		29 => byte_string,
 		30 => byte_string,
 		31 => byte_string}).
+
+get_built_in_id(Type) ->
+	maps:get(Type, #{
+		boolean => 1,
+		sbyte => 2,
+		byte => 3,
+		int16 => 4,
+		uint16 => 5,
+		int32 => 6,
+		uint32 => 7,
+		int64 => 8,
+		uint64 => 9,
+		float => 10,
+		double => 11,
+		string => 12,
+		date_time => 13,
+		guid => 14,
+		byte_string => 15,
+		xml => 16,
+		node_id => 17,
+		expanded_node_id => 18,
+		status_code => 19,
+		qualified_name => 20,
+		localized_text => 21,
+		extension_object => 22,
+		data_value => 23,
+		variant => 24,
+		diagnostic_info => 25}).
