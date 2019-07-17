@@ -6,16 +6,16 @@ decode(boolean, <<0, T/binary>>) -> {false, T};
 decode(boolean, <<_Bin:1/binary, T/binary>>) -> {true, T};
 decode(byte, <<Byte:8, T/binary>>) -> {Byte, T};
 decode(sbyte, <<SByte:8/signed-integer, T/binary>>) -> {SByte, T};
-decode(uint16, <<UInt16:2/little-unsigned-integer-unit:8, T/binary>>) -> {UInt16, T};
-decode(uint32, <<UInt32:4/little-unsigned-integer-unit:8, T/binary>>) -> {UInt32, T};
-decode(uint64, <<UInt64:8/little-unsigned-integer-unit:8, T/binary>>) -> {UInt64, T};
-decode(int16, <<Int16:2/little-signed-integer-unit:8, T/binary>>) -> {Int16, T};
-decode(int32, <<Int32:4/little-signed-integer-unit:8, T/binary>>) -> {Int32, T};
-decode(int64, <<Int64:8/little-signed-integer-unit:8, T/binary>>) -> {Int64, T};
-decode(float, <<Float:4/little-signed-float-unit:8, T/binary>>) -> {Float, T};
-decode(double, <<Double:8/little-unsigned-float-unit:8, T/binary>>) -> {Double, T};
-decode(string, <<Int32:4/little-signed-integer-unit:8, T/binary>>) when Int32 == -1 -> {undefined, T};
-decode(string, <<Int32:4/little-signed-integer-unit:8, String:Int32/binary, T/binary>>) -> {String, T};
+decode(uint16, <<UInt16:16/little-unsigned-integer, T/binary>>) -> {UInt16, T};
+decode(uint32, <<UInt32:32/little-unsigned-integer, T/binary>>) -> {UInt32, T};
+decode(uint64, <<UInt64:64/little-unsigned-integer, T/binary>>) -> {UInt64, T};
+decode(int16, <<Int16:16/little-signed-integer, T/binary>>) -> {Int16, T};
+decode(int32, <<Int32:32/little-signed-integer, T/binary>>) -> {Int32, T};
+decode(int64, <<Int64:64/little-signed-integer, T/binary>>) -> {Int64, T};
+decode(float, <<Float:32/little-signed-float, T/binary>>) -> {Float, T};
+decode(double, <<Double:64/little-unsigned-float, T/binary>>) -> {Double, T};
+decode(string, <<Int32:32/little-signed-integer, T/binary>>) when Int32 == -1 -> {undefined, T};
+decode(string, <<Int32:32/little-signed-integer, String:Int32/binary, T/binary>>) -> {String, T};
 decode(date_time, Bin) -> decode(int64, Bin);
 decode(guid, Bin) -> decode_guid(Bin);
 decode(xml, Bin) -> decode(string, Bin);
@@ -37,16 +37,16 @@ encode(boolean, false) -> <<0:8>>;
 encode(boolean, true) -> <<1:8>>;
 encode(byte, Byte) -> <<Byte:8>>;
 encode(sbyte, SByte) -> <<SByte:8/signed-integer>>;
-encode(uint16, UInt16) -> <<UInt16:2/little-unsigned-integer-unit:8>>;
-encode(uint32, UInt32) -> <<UInt32:4/little-unsigned-integer-unit:8>>;
-encode(uint64, UInt64) -> <<UInt64:8/little-unsigned-integer-unit:8>>;
-encode(int16, Int16) -> <<Int16:2/little-signed-integer-unit:8>>;
-encode(int32, Int32) -> <<Int32:4/little-signed-integer-unit:8>>;
-encode(int64, Int64) -> <<Int64:8/little-signed-integer-unit:8>>;
-encode(float, Float) -> <<Float:4/little-signed-float-unit:8>>;
-encode(double, Double) -> <<Double:8/little-signed-float-unit:8>>;
-encode(string, String) when String == undefined -> <<-1:4/little-signed-integer-unit:8>>;
-encode(string, String) -> <<(byte_size(String)):4/little-signed-integer-unit:8, String/binary>>;
+encode(uint16, UInt16) -> <<UInt16:16/little-unsigned-integer>>;
+encode(uint32, UInt32) -> <<UInt32:32/little-unsigned-integer>>;
+encode(uint64, UInt64) -> <<UInt64:64/little-unsigned-integer>>;
+encode(int16, Int16) -> <<Int16:16/little-signed-integer>>;
+encode(int32, Int32) -> <<Int32:32/little-signed-integer>>;
+encode(int64, Int64) -> <<Int64:64/little-signed-integer>>;
+encode(float, Float) -> <<Float:32/little-signed-float>>;
+encode(double, Double) -> <<Double:64/little-signed-float>>;
+encode(string, String) when String == undefined -> <<-1:32/little-signed-integer>>;
+encode(string, String) -> <<(byte_size(String)):32/little-signed-integer, String/binary>>;
 encode(date_time, Bin) -> encode(int64, Bin);
 encode(guid, Guid) -> encode_guid(Guid);
 encode(xml, Bin) -> encode(string, Bin);
@@ -65,26 +65,24 @@ encode(_Type, _Value) -> error(badarg).
 
 %% internal
 
-decode_guid(<<D1:4/little-integer-unit:8, D2:2/little-integer-unit:8,
-	      D3:2/little-integer-unit:8, D4:8/binary, T/binary>>) ->
-	{<<D1:4/big-integer-unit:8, D2:2/big-integer-unit:8,
-	   D3:2/big-integer-unit:8, D4:8/binary>>, T}.
+decode_guid(<<D1:32/little-integer, D2:16/little-integer, D3:16/little-integer, D4:8/binary, T/binary>>) ->
+	{<<D1:32/big-integer, D2:16/big-integer, D3:16/big-integer, D4:8/binary>>, T}.
 
-decode_node_id(16#00, <<Id:1/little-unsigned-integer-unit:8, T/binary>>) ->
+decode_node_id(16#00, <<Id:8/little-unsigned-integer, T/binary>>) ->
 	{#{namespace => default, identifier_type => numeric, value => Id}, T};
-decode_node_id(16#01, <<Ns:1/little-unsigned-integer-unit:8,
-			Id:2/little-unsigned-integer-unit:8, T/binary>>) ->
+decode_node_id(16#01, <<Ns:8/little-unsigned-integer,
+			Id:16/little-unsigned-integer, T/binary>>) ->
 	{#{namespace => Ns, identifier_type => numeric, value => Id}, T};
-decode_node_id(16#02, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
+decode_node_id(16#02, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
 	{Id, T} = decode(uint32, Bin),
 	{#{namespace => Ns, identifier_type => numeric, value => Id}, T};
-decode_node_id(16#03, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
+decode_node_id(16#03, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
 	{Id, T} = decode(string, Bin),
 	{#{namespace => Ns, identifier_type => string, value => Id}, T};
-decode_node_id(16#04, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
+decode_node_id(16#04, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
 	{Id, T} = decode(guid, Bin),
 	{#{namespace => Ns, identifier_type => guid, value => Id}, T};
-decode_node_id(16#05, <<Ns:2/little-unsigned-integer-unit:8, Bin/binary>>) ->
+decode_node_id(16#05, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
 	{Id, T} = decode(string, Bin),
 	{#{namespace => Ns, identifier_type => opaque, value => Id}, T}.
 
@@ -202,27 +200,25 @@ honor_dimensions1(Dim, {Array, Array_List}) ->
 	{El, New_Array} = lists:split(Dim, Array),
 	{New_Array, [El|Array_List]}.
 
-encode_guid(<<D1:4/big-integer-unit:8, D2:2/big-integer-unit:8,
-	      D3:2/big-integer-unit:8, D4:8/binary>>) ->
-	<<D1:4/little-integer-unit:8, D2:2/little-integer-unit:8,
-	  D3:2/little-integer-unit:8, D4:8/binary>>.
+encode_guid(<<D1:32/big-integer, D2:16/big-integer, D3:16/big-integer, D4:8/binary>>) ->
+	<<D1:32/little-integer, D2:16/little-integer, D3:16/little-integer, D4:8/binary>>.
 
 encode_node_id(#{namespace := default, identifier_type := numeric, value := Id}) ->
-	<<16#00:8, Id:1/little-unsigned-integer-unit:8>>;
+	<<16#00:8, Id:8/little-unsigned-integer>>;
 encode_node_id(#{namespace := Ns, identifier_type := numeric, value := Id}) when Id < 65536 ->
-  	<<16#01:8, Ns:1/little-unsigned-integer-unit:8, Id:2/little-unsigned-integer-unit:8>>;
+  	<<16#01:8, Ns:8/little-unsigned-integer, Id:16/little-unsigned-integer>>;
 encode_node_id(#{namespace := Ns, identifier_type := numeric, value := Id}) ->
 	Bin_Id = encode(uint32, Id),
-	<<16#02:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>;
+	<<16#02:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
 encode_node_id(#{namespace := Ns, identifier_type := string, value := Id}) ->
 	Bin_Id = encode(string, Id),
-  	<<16#03:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>;
+  	<<16#03:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
 encode_node_id(#{namespace := Ns, identifier_type := guid, value := Id}) ->
 	Bin_Id = encode(guid, Id),
-  	<<16#04:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>;
+  	<<16#04:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
 encode_node_id(#{namespace := Ns, identifier_type := opaque, value := Id}) ->
 	Bin_Id = encode(string, Id),
-	<<16#05:8, Ns:2/little-unsigned-integer-unit:8, Bin_Id/binary>>.
+	<<16#05:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>.
 
 encode_expanded_node_id(#{node_id := Node_Id, namespace_uri := Namespace_Uri,
 			  server_index := Server_Index}) ->
