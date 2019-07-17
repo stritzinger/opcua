@@ -1,4 +1,4 @@
--module(opcua_binary).
+-module(opcua_codec_binary_builtin).
 
 -export([encode/2, decode/2]).
 
@@ -31,7 +31,7 @@ decode(variant, <<0:6, Bin/binary>>) -> {undefined, Bin};
 decode(variant, <<Type_Id:6, Dim_Flag:1/bits, Array_Flag:1/bits, Bin/binary>>) ->
 	decode_variant(Type_Id, Dim_Flag, Array_Flag, Bin);
 decode(data_value, <<0:2, Mask:6/bits, Bin/binary>>) -> decode_data_value(Mask, Bin);
-decode(_Type, _Bin) -> error(badarg).
+decode(_Type, _Bin) -> error(decoding_error).
 
 encode(boolean, false) -> <<0:8>>;
 encode(boolean, true) -> <<1:8>>;
@@ -60,7 +60,7 @@ encode(localized_text, Localized_Text) -> encode_localized_text(Localized_Text);
 encode(extension_object, Extension_Object) -> encode_extension_object(Extension_Object);
 encode(variant, Variant) -> encode_variant(Variant);
 encode(data_value, Data_Value) -> encode_data_value(Data_Value);
-encode(_Type, _Value) -> error(badarg).
+encode(_Type, _Value) -> error(encoding_error).
 
 
 %% internal
@@ -129,13 +129,13 @@ decode_extension_object1(16#02, Type_Id, T) ->
 	{#{type_id => Type_Id, encoding => xml, body => Body}, T1}.
 
 decode_variant(Type_Id, _Dim_Flag, <<0:1>>, Bin) ->
-	{#{type => get_built_in_type(Type_Id), value => []}, Bin};
+	{#{type => opcua_codec:builtin_type_name(Type_Id), value => []}, Bin};
 decode_variant(Type_Id, <<0:1>>, <<1:1>>, Bin) ->
-	{Array, Bin1} = decode_array(get_built_in_type(Type_Id), Bin),
-	{#{type => get_built_in_type(Type_Id), value => Array}, Bin1};
+	{Array, Bin1} = decode_array(opcua_codec:builtin_type_name(Type_Id), Bin),
+	{#{type => opcua_codec:builtin_type_name(Type_Id), value => Array}, Bin1};
 decode_variant(Type_Id, <<1:1>>, <<1:1>>, Bin) ->
-	{Multi_Array, Bin1} = decode_multi_array(get_built_in_type(Type_Id), Bin),
-	{#{type => get_built_in_type(Type_Id), value => Multi_Array}, Bin1}.
+	{Multi_Array, Bin1} = decode_multi_array(opcua_codec:builtin_type_name(Type_Id), Bin),
+	{#{type => opcua_codec:builtin_type_name(Type_Id), value => Multi_Array}, Bin1}.
 
 decode_data_value(Mask, Bin) ->
 	Types = [{value, variant, undefined},
@@ -269,7 +269,7 @@ encode_extension_object(#{type_id := Type_Id, encoding := Encoding, body := Body
 	<<Node_Id/binary, Encoding_Flag:8, Bin_Body/binary>>.
 
 encode_variant(#{type := Type, value := Multi_Array}) ->
-	Type_Id = get_built_in_id(Type),
+	Type_Id = opcua_codec:builtin_type_id(Type),
 	{Length, Value, Dims} = build_variant_value(Multi_Array),
 	case Length of
 		0 ->
@@ -335,65 +335,3 @@ encode_masked([{_Type, undefined}|Type_List], Mask, Bin) ->
 encode_masked([{Type, Value}|Type_List], Mask, Bin) ->
 	NewBin = encode(Type, Value),
 	encode_masked(Type_List, <<1:1, Mask>>, <<Bin/binary, NewBin/binary>>).
-
-get_built_in_type(Id) ->
-	maps:get(Id, #{
-		1 => boolean,
-		2 => sbyte,
-		3 => byte,
-		4 => int16,
-		5 => uint16,
-		6 => int32,
-		7 => uint32,
-		8 => int64,
-		9 => uint64,
-		10 => float,
-		11 => double,
-		12 => string,
-		13 => date_time,
-		14 => guid,
-		15 => byte_string,
-		16 => xml,
-		17 => node_id,
-		18 => expanded_node_id,
-		19 => status_code,
-		20 => qualified_name,
-		21 => localized_text,
-		22 => extension_object,
-		23 => data_value,
-		24 => variant,
-		25 => diagnostic_info,
-		26 => byte_string,
-		27 => byte_string,
-		28 => byte_string,
-		29 => byte_string,
-		30 => byte_string,
-		31 => byte_string}).
-
-get_built_in_id(Type) ->
-	maps:get(Type, #{
-		boolean => 1,
-		sbyte => 2,
-		byte => 3,
-		int16 => 4,
-		uint16 => 5,
-		int32 => 6,
-		uint32 => 7,
-		int64 => 8,
-		uint64 => 9,
-		float => 10,
-		double => 11,
-		string => 12,
-		date_time => 13,
-		guid => 14,
-		byte_string => 15,
-		xml => 16,
-		node_id => 17,
-		expanded_node_id => 18,
-		status_code => 19,
-		qualified_name => 20,
-		localized_text => 21,
-		extension_object => 22,
-		data_value => 23,
-		variant => 24,
-		diagnostic_info => 25}).
