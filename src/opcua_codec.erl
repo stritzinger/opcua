@@ -10,12 +10,7 @@
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--type builtin_type() :: boolean | byte | sbyte | uint16 | uint32 | uint64
-                      | int16 | int32 | int64 | float | double | string
-                      | date_time | guid | xml | status_code | byte_string
-                      | node_id | expanded_node_id | diagnostic_info
-                      | qualified_name | localized_text | extension_object
-                      | variant | data_value.
+-include("opcua_codec.hrl").
 
 -type schema() :: term().
 
