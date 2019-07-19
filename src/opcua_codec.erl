@@ -8,15 +8,6 @@
 -export([builtin_type_id/1]).
 
 
-%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--include("opcua_codec.hrl").
-
--type schema() :: term().
-
--type spec() :: builtin_type() | [builtin_type()].
-
-
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 builtin_type_name( 1) -> boolean;

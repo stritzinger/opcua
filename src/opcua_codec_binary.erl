@@ -51,15 +51,15 @@ decode_builtin(#node_id{value = Value}, Data) ->
 decode_builtin(Type, Data) ->
     opcua_codec_binary_builtin:decode(Type, Data).
 
-decode_schema(#data_type{type = structure, with_options = false, fields = Fields}, Data) ->
+decode_schema(#structure{with_options = false, fields = Fields}, Data) ->
     decode_fields(Fields, Data);
-decode_schema(#data_type{type = structure, with_options = true, fields = Fields}, Data) ->
+decode_schema(#structure{with_options = true, fields = Fields}, Data) ->
     {Mask, Data1} = decode_builtin(uint32, Data),
     decode_masked_fields(Mask, Fields, Data1);
-decode_schema(#data_type{type = union, fields = Fields}, Data) ->
+decode_schema(#union{fields = Fields}, Data) ->
     {SwitchValue, Data1} = decode_builtin(uint32, Data),
     resolve_union_value(SwitchValue, Fields, Data1);
-decode_schema(#data_type{type = enum, fields = Fields}, Data) ->
+decode_schema(#enum{fields = Fields}, Data) ->
     {Value, Data1} = decode_builtin(int32, Data),
     {resolve_enum_value(Value, Fields), Data1}.
 
