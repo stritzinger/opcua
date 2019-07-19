@@ -20,9 +20,7 @@ decode(NodeId = #node_id{}, Data) when ?IS_BUILTIN_TYPE(NodeId#node_id.value) ->
 decode(NodeIds, Data) when is_list(NodeIds) ->
     decode_list(NodeIds, Data);
 decode(NodeId = #node_id{}, Data) ->
-    decode_schema(opcua_schema:resolve(NodeId), Data);
-decode(_NodeId, _Data) ->
-    {error, decoding_error}.
+    decode_schema(opcua_schema:resolve(NodeId), Data).
 
 -spec encode(opcua_spec(), term()) -> {iolist(), term()}.
 encode(NodeId = #node_id{}, Data) when ?IS_BUILTIN_TYPE(NodeId#node_id.value) ->
@@ -30,9 +28,7 @@ encode(NodeId = #node_id{}, Data) when ?IS_BUILTIN_TYPE(NodeId#node_id.value) ->
 encode(NodeIds, Data) when is_list(NodeIds) ->
     encode_list(NodeIds, Data);
 encode(NodeId = #node_id{}, Data) ->
-    encode_schema(opcua_schema:resolve(NodeId), Data);
-encode(_NodeId, _Data) ->
-    {error, encoding_error}.
+    encode_schema(opcua_schema:resolve(NodeId), Data).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -41,14 +37,19 @@ encode(_NodeId, _Data) ->
 
 decode_builtin(#node_id{type = numeric, value = Value}, Data) ->
     decode_builtin(opcua_codec:builtin_type_name(Value), Data);
+decode_builtin(#node_id{value = node_id}, Data) ->
+    {NodeIdMap, Data1} = decode_builtin(node_id, Data),
+    {node_id_map_to_record(NodeIdMap), Data1};
+decode_builtin(#node_id{value = extension_object}, Data) ->
+    {ExtensionObjectMap, Data1} = decode_builtin(extension_object, Data),
+    NodeId = node_id_map_to_record(maps:get(type_id, ExtensionObjectMap)),
+    Body = maps:get(type_id, ExtensionObjectMap),
+    {DecodedBody, _} = decode(NodeId, Body),
+    {ExtensionObjectMap#{type_id => NodeId, body => DecodedBody}, Data1};
 decode_builtin(#node_id{value = Value}, Data) ->
     decode_builtin(Value, Data);
 decode_builtin(Type, Data) ->
-    try opcua_codec_binary_builtin:decode(Type, Data) of
-        {Result, Rest} -> {ok, Result, Rest}
-    catch
-        _:decoding_error -> {error, decoding_error}
-    end.
+    opcua_codec_binary_builtin:decode(Type, Data).
 
 decode_schema(#data_type{type = structure, with_options = false, fields = Fields}, Data) ->
     decode_fields(Fields, Data);
@@ -60,7 +61,7 @@ decode_schema(#data_type{type = union, fields = Fields}, Data) ->
     resolve_union_value(SwitchValue, Fields, Data1);
 decode_schema(#data_type{type = enum, fields = Fields}, Data) ->
     {Value, Data1} = decode_builtin(int32, Data),
-    resolve_enum_value(Value, Fields, Data1).
+    {resolve_enum_value(Value, Fields), Data1}.
 
 decode_fields(Fields, Data) ->
     decode_fields(Fields, Data, #{}).
@@ -80,13 +81,35 @@ decode_field(#field{node_id = NodeId, value_rank = N}, Data) when N >= 1 ->
                                    end, Data, lists:seq(1, N)),
     decode_array(NodeId, Dims, Data1, []).
 
-decode_array(_NodeId, _Dims, _Data, _Acc) -> ok.
+%% TODO: check the order, specs are somewhat unclear
+decode_array(NodeId, [Dim], Data, _Acc) ->
+    decode_list([NodeId || _ <- lists:seq(1, Dim)], Data);
+decode_array(NodeId, [1|Dims], Data, Acc) ->
+    {Row, Data1} = decode_array(NodeId, Dims, Data, []),
+    {[Row|Acc], Data1};
+decode_array(NodeId, [Dim|Dims], Data, Acc) ->
+    {Row, Data1} = decode_array(NodeId, Dims, Data, []),
+    decode_array(NodeId, [Dim-1|Dims], Data1, [Row|Acc]).
 
-decode_masked_fields(_Mask, _Fields, _Data) -> ok.
+decode_masked_fields(Mask, Fields, Data) ->
+    BooleanMask = [X==1 || <<X:1>> <= <<Mask:32/unsigned-integer>>],
+    {BooleanMask1, _} = lists:split(length(Fields), lists:reverse(BooleanMask)),
+    BooleanMask2 = lists:filtermap(fun({_Idx, Boolean}) -> Boolean end,
+                                   lists:zip(
+                                     lists:seq(1, length(BooleanMask1)), BooleanMask1)),
+    {IntMask, _} = lists:unzip(BooleanMask2),
+    MaskedFields = [Field || Field = #field{value=Value, is_optional=Optional} <- Fields,
+                             not Optional or lists:member(Value, IntMask)],
+    decode_fields(MaskedFields, Data).
 
-resolve_union_value(_SwitchValue, _Fields, _Data) -> ok.
+resolve_union_value(SwitchValue, Fields, Data) ->
+    [Field] = [F || F = #field{value=Value, is_optional=Optional} <- Fields,
+                    Optional and Value == SwitchValue],
+    decode_field(Field, Data).
 
-resolve_enum_value(_Value, _Fields, _Data) -> ok.
+resolve_enum_value(EnumValue, Fields) ->
+    [Field] = [F || F = #field{value=Value} <- Fields, Value == EnumValue],
+    #{value => Field#field.name}.
 
 decode_list(Types, Data) ->
     decode_list(Types, Data, []).
@@ -104,11 +127,7 @@ encode_builtin(#node_id{type = numeric, value = Value}, Data) ->
 encode_builtin(#node_id{value = Value}, Data) ->
     encode_builtin(Value, Data);
 encode_builtin(Type, Data) ->
-    try opcua_codec_binary_builtin:encode(Type, Data) of
-        Result -> {ok, Result}
-    catch
-        _:encoding_error -> {error, encoding_error}
-    end.
+    opcua_codec_binary_builtin:encode(Type, Data).
 
 encode_schema(_Type, _Data) -> ok.
 
@@ -120,3 +139,9 @@ encode_list([], Data, Acc) ->
 encode_list([Type | Types], [Value | Data], Acc) ->
     Result = encode(Type, Value),
     encode_list(Types, Data, [Result | Acc]).
+
+node_id_map_to_record(#{namespace := Ns, identifier_type := Type, value := Value}) ->
+    #node_id{ns = Ns, type = Type, value = Value}.
+
+%node_id_record_to_map(#node_id{ns = Ns, type = Type, value = Value}) ->
+%    #{namespace => Ns, identifier_type => Type, value => Value}.
