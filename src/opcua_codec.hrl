@@ -4,10 +4,19 @@
     value :: non_neg_integer() | binary()
 }).
 
--record(data_type, {
+-record(structure, {
     node_id = #node_id{} :: node_id(),
-    type = structure :: type(),
     with_options = false :: boolean(),
+    fields = [] :: fields()
+}).
+
+-record(union, {
+    node_id = #node_id{} :: node_id(),
+    fields = [] :: fields()
+}).
+
+-record(enum, {
+    node_id = #node_id{} :: node_id(),
     fields = [] :: fields()
 }).
 
@@ -21,10 +30,8 @@
 
 -type node_id() :: non_neg_integer() | atom() | binary() | #node_id{}.
 -type opcua_spec() :: node_id() | [node_id()].
--type type() :: {builtin, builtin_type()} | structure | union | enum.
 -type field() :: #field{}.
 -type fields() :: [field()].
--type data_type() :: #data_type{}.
 -type value_rank() :: -1 | pos_integer().
 -type builtin_type() :: boolean | byte | sbyte | uint16 | uint32 | uint64
                       | int16 | int32 | int64 | float | double | string

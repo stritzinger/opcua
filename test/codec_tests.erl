@@ -5,9 +5,8 @@
 
 basic_test() ->
     %% schema for a structure which only contains one int32 field
-    Structure = #data_type{
+    Structure = #structure{
                    node_id = #node_id{type = numeric, value = 0},
-                   type = structure,
                    with_options = false,
                    fields = [#field{
                                name = some_integer,
@@ -16,18 +15,9 @@ basic_test() ->
                                is_optional = false,
                                value = undefined}]},
 
-    %% the schema for the int32 type, note the {builtin, int32} tuple
-    Int32 = #data_type{
-               node_id = #node_id{type = numeric, value = 6},
-               type = {builtin, int32},
-               with_options = false,
-               fields = []},
-
     %% some setup for things we don't have yet 
     meck:new(opcua_schema, [non_strict]),
-    meck:expect(opcua_schema, resolve, fun(#node_id{value = 0}) -> Structure;
-                                          (#node_id{value = 6}) -> Int32
-                                       end),
+    meck:expect(opcua_schema, resolve, fun(#node_id{value = 0}) -> Structure end),
 
     %% this is supposed to be the encoded structure with one int32 element
     Bin = <<1:32/little-signed-integer>>,
