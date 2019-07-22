@@ -43,7 +43,7 @@ decode_builtin(#node_id{value = node_id}, Data) ->
 decode_builtin(#node_id{value = extension_object}, Data) ->
     {ExtensionObjectMap, Data1} = decode_builtin(extension_object, Data),
     NodeId = node_id_map_to_record(maps:get(type_id, ExtensionObjectMap)),
-    Body = maps:get(type_id, ExtensionObjectMap),
+    Body = maps:get(body, ExtensionObjectMap),
     {DecodedBody, _} = decode(NodeId, Body),
     {ExtensionObjectMap#{type_id => NodeId, body => DecodedBody}, Data1};
 decode_builtin(#node_id{value = Value}, Data) ->
@@ -124,18 +124,83 @@ decode_list([Type | Types], Data, Acc) ->
 
 encode_builtin(#node_id{type = numeric, value = Value}, Data) ->
     encode_builtin(opcua_codec:builtin_type_name(Value), Data);
+encode_builtin(#node_id{value = node_id}, NodeId = #node_id{}) ->
+    encode_builtin(node_id, node_id_record_to_map(NodeId));
+encode_builtin(#node_id{value = extension_object}, ExtensionObject) ->
+    NodeId = maps:get(type_id, ExtensionObject),
+    Body = maps:get(body, ExtensionObject),
+    ExtensionObject1 = ExtensionObject#{type_id => node_id_record_to_map(NodeId),
+                                        body => encode(NodeId, Body)},
+    encode_builtin(extension_object, ExtensionObject1);
 encode_builtin(#node_id{value = Value}, Data) ->
     encode_builtin(Value, Data);
 encode_builtin(Type, Data) ->
     opcua_codec_binary_builtin:encode(Type, Data).
 
-encode_schema(_Type, _Data) -> ok.
+encode_schema(#structure{with_options = false, fields = Fields}, Data) ->
+    encode_fields(Fields, Data);
+encode_schema(#structure{with_options = true, fields = Fields}, Data) ->
+    encode_masked_fields(Fields, Data);
+encode_schema(#union{fields = Fields}, #{name := Name, value := Data}) ->
+    [Field] = [Field || Field = #field{name=FieldName} <- Fields, FieldName==Name],
+    SwitchValue = encode_builtin(uint32, Field#field.value),
+    EncodedValue = encode_field(Field, Data),
+    <<SwitchValue/binary, EncodedValue>>;
+encode_schema(#enum{fields = Fields}, #{name := Name}) ->
+    [Field] = [Field || Field = #field{name=FieldName} <- Fields, FieldName==Name],
+    encode_builtin(int32, Field#field.value).
+
+encode_masked_fields(Fields, Data) ->
+    Keys = maps:keys(Data),
+    MaskedFields = [{Field, lists:member(Name, Keys)} || Field = #field{name=Name} <- Fields],
+    encode_masked_fields(MaskedFields, Data, [], []).
+
+encode_masked_fields([], _Data, Mask, Acc) ->
+    BinFields = list_to_binary(lists:reverse(Acc)),
+    <<0:(32-bit_size(Mask)), Mask, BinFields/binary>>;
+encode_masked_fields([{_Field, false} | Fields], Data, Mask, Acc) ->
+    encode_masked_fields(Fields, Data, [<<0:1>>|Mask], Acc);
+encode_masked_fields([{Field, true} | Fields], Data, Mask, Acc) ->
+    EncodedField = encode_field(Field, maps:get(Field#field.name, Data)),
+    encode_masked_fields(Fields, Data, [<<1:1>>|Mask], [EncodedField|Acc]).
+
+encode_fields(Fields, Data) ->
+    encode_fields(Fields, Data, []).
+
+encode_fields([], _Data, Acc) ->
+    list_to_binary(lists:reverse(Acc));
+encode_fields([Field | Fields], Data, Acc) ->
+    FieldValue = encode_field(Field, maps:get(Field#field.name, Data)),
+    encode_fields(Fields, Data, [FieldValue|Acc]).
+
+encode_field(#field{node_id = NodeId, value_rank = -1}, Data) ->
+    encode(NodeId, Data);
+encode_field(#field{node_id = NodeId, value_rank = N}, Array)
+  when N >= 1 and is_list(Array) ->
+    Dims = list_to_binary(resolve_dims(Array, [])),
+    Array = iolist_to_binary(encode_array(NodeId, Array, [])),
+    <<Dims/binary, Array/binary>>.
+
+resolve_dims(List = [El|_], Acc) when is_list(List) ->
+    resolve_dims(El, [encode(int32, length(List))|Acc]);
+resolve_dims(_El, Acc) ->
+    lists:reverse(Acc).
+
+%% TODO: check order here as with decoding
+encode_array(_NodeId, [], Acc) ->
+    lists:reverse(Acc);
+encode_array(NodeId, [Array|Arrays], Acc) when is_list(Array) ->
+    BinArray = encode_array(NodeId, Array, []),
+    encode_array(NodeId, Arrays, [BinArray|Acc]);
+encode_array(NodeId, Array, Acc) ->
+    BinArray = encode_list([NodeId || _ <- lists:seq(1, length(Array))], Array),
+    [BinArray|Acc].
 
 encode_list(Types, Data) ->
     encode_list(Types, Data, []).
 
-encode_list([], Data, Acc) ->
-    {lists:reverse(Acc), Data};
+encode_list([], _Data, Acc) ->
+    lists:reverse(Acc);
 encode_list([Type | Types], [Value | Data], Acc) ->
     Result = encode(Type, Value),
     encode_list(Types, Data, [Result | Acc]).
@@ -143,5 +208,5 @@ encode_list([Type | Types], [Value | Data], Acc) ->
 node_id_map_to_record(#{namespace := Ns, identifier_type := Type, value := Value}) ->
     #node_id{ns = Ns, type = Type, value = Value}.
 
-%node_id_record_to_map(#node_id{ns = Ns, type = Type, value = Value}) ->
-%    #{namespace => Ns, identifier_type => Type, value => Value}.
+node_id_record_to_map(#node_id{ns = Ns, type = Type, value = Value}) ->
+    #{namespace => Ns, identifier_type => Type, value => Value}.
