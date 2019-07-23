@@ -92,7 +92,7 @@ decode_array(NodeId, [Dim|Dims], Data, Acc) ->
     decode_array(NodeId, [Dim-1|Dims], Data1, [Row|Acc]).
 
 decode_masked_fields(Mask, Fields, Data) ->
-    BooleanMask = [X==1 || <<X:1>> <= <<Mask:32/unsigned-integer>>],
+    BooleanMask = [X==1 || <<X:1>> <= <<Mask:32>>],
     {BooleanMask1, _} = lists:split(length(Fields), lists:reverse(BooleanMask)),
     BooleanMask2 = lists:filtermap(fun({_Idx, Boolean}) -> Boolean end,
                                    lists:zip(
@@ -104,12 +104,12 @@ decode_masked_fields(Mask, Fields, Data) ->
 
 resolve_union_value(SwitchValue, Fields, Data) ->
     [Field] = [F || F = #field{value=Value, is_optional=Optional} <- Fields,
-                    Optional and Value == SwitchValue],
-    decode_field(Field, Data).
+                    Optional and (Value == SwitchValue)],
+    decode_fields([Field], Data).
 
 resolve_enum_value(EnumValue, Fields) ->
     [Field] = [F || F = #field{value=Value} <- Fields, Value == EnumValue],
-    #{value => Field#field.name}.
+    #{name => Field#field.name}.
 
 decode_list(Types, Data) ->
     decode_list(Types, Data, []).
@@ -141,28 +141,34 @@ encode_schema(#structure{with_options = false, fields = Fields}, Data) ->
     encode_fields(Fields, Data);
 encode_schema(#structure{with_options = true, fields = Fields}, Data) ->
     encode_masked_fields(Fields, Data);
-encode_schema(#union{fields = Fields}, #{name := Name, value := Data}) ->
+encode_schema(#union{fields = Fields}, UnionMap) ->
+    [Name] = maps:keys(UnionMap),
     [Field] = [Field || Field = #field{name=FieldName} <- Fields, FieldName==Name],
     SwitchValue = encode_builtin(uint32, Field#field.value),
-    EncodedValue = encode_field(Field, Data),
-    <<SwitchValue/binary, EncodedValue>>;
+    EncodedValue = encode_field(Field, maps:get(Name, UnionMap)),
+    <<SwitchValue/binary, EncodedValue/binary>>;
 encode_schema(#enum{fields = Fields}, #{name := Name}) ->
     [Field] = [Field || Field = #field{name=FieldName} <- Fields, FieldName==Name],
     encode_builtin(int32, Field#field.value).
 
 encode_masked_fields(Fields, Data) ->
-    Keys = maps:keys(Data),
-    MaskedFields = [{Field, lists:member(Name, Keys)} || Field = #field{name=Name} <- Fields],
-    encode_masked_fields(MaskedFields, Data, [], []).
+    encode_masked_fields(Fields, Data, [], []).
 
 encode_masked_fields([], _Data, Mask, Acc) ->
-    BinFields = list_to_binary(lists:reverse(Acc)),
-    <<0:(32-bit_size(Mask)), Mask, BinFields/binary>>;
-encode_masked_fields([{_Field, false} | Fields], Data, Mask, Acc) ->
-    encode_masked_fields(Fields, Data, [<<0:1>>|Mask], Acc);
-encode_masked_fields([{Field, true} | Fields], Data, Mask, Acc) ->
-    EncodedField = encode_field(Field, maps:get(Field#field.name, Data)),
-    encode_masked_fields(Fields, Data, [<<1:1>>|Mask], [EncodedField|Acc]).
+    BinFields1 = list_to_binary(lists:reverse(Acc)),
+    Mask1 = lists:foldl(fun(Bit, M) -> M bxor Bit end, 0, [1 bsl (N-1) || N <- Mask]),
+    <<(encode_builtin(uint32, Mask1))/binary, BinFields1/binary>>;
+encode_masked_fields([Field = #field{is_optional = false, name = Name} | Fields], Data, Mask, Acc) ->
+    EncodedField = encode_field(Field, maps:get(Name, Data)),
+    encode_masked_fields(Fields, Data, Mask, [EncodedField|Acc]);
+encode_masked_fields([Field = #field{is_optional = true, name = Name} | Fields], Data, Mask, Acc) ->
+    case maps:is_key(Name, Data) of
+        true ->
+            EncodedField = encode_field(Field, maps:get(Name, Data)),
+            encode_masked_fields(Fields, Data, [Field#field.value|Mask], [EncodedField|Acc]);
+        false ->
+            encode_masked_fields(Fields, Data, Mask, Acc)
+    end.
 
 encode_fields(Fields, Data) ->
     encode_fields(Fields, Data, []).
