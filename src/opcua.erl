@@ -1,11 +1,16 @@
 -module(opcua).
 
 
-%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
 -export([start_listener/0]).
 -export([stop_listener/0]).
+
+
+%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-include("opcua.hrl").
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -17,7 +22,7 @@
 
 start_listener() ->
 	TOpts = [{port, 4840}],
-	case ranch:start_listener(?REF, ranch_tcp, TOpts, opcua_protocol, []) of
+	case ranch:start_listener(?REF, ranch_tcp, TOpts, opcua_protocol, #{}) of
 	    {error, _Reason} = Error -> Error;
 		{ok, _} -> ok
 	end.

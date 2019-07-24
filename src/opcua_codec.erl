@@ -1,14 +1,27 @@
 -module(opcua_codec).
 
+%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-include("opcua_codec.hrl").
+
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
+-export([node_id/1]).
 -export([builtin_type_name/1]).
 -export([builtin_type_id/1]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec node_id(node_spec()) -> node_id().
+node_id(#node_id{} = NodeId) -> NodeId;
+node_id(Num) when is_integer(Num), Num > 0 -> #node_id{value = Num};
+node_id(Name) when is_atom(Name) -> #node_id{type = string, value = Name};
+node_id(Name) when is_binary(Name) -> #node_id{type = string, value = Name};
+node_id({NS, Num}) when is_integer(NS), is_integer(Num), NS >= 0, Num > 0 ->
+    #node_id{ns = NS, value = Num}.
 
 builtin_type_name( 1) -> boolean;
 builtin_type_name( 2) -> sbyte;
