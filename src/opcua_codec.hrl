@@ -1,7 +1,7 @@
 -record(node_id, {
-    ns = default :: default | non_neg_integer(),
+    ns = 0 :: non_neg_integer(),
     type = numeric :: numeric | string | guid | opaque,
-    value :: non_neg_integer() | binary()
+    value :: non_neg_integer() | atom() | binary()
 }).
 
 -record(structure, {
@@ -28,8 +28,11 @@
     value :: integer()
 }).
 
--type node_id() :: non_neg_integer() | atom() | binary() | #node_id{}.
--type opcua_spec() :: node_id() | [node_id()].
+-type node_id() :: #node_id{}.
+-type node_spec() :: non_neg_integer() | atom() | binary() | node_id() | #node_id{}.
+-type opcua_spec() :: node_spec() | [node_spec()] | [{atom(), node_spec()}].
+-type opcua_encoding() :: binary.
+-type opcua_schema() :: term().
 -type field() :: #field{}.
 -type fields() :: [field()].
 -type value_rank() :: -1 | pos_integer().
@@ -42,30 +45,32 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(IS_BUILTIN_TYPE(T),
-    (T =:= 1 );(T =:= boolean);
-    (T =:= 2 );(T =:= byte);
-    (T =:= 3 );(T =:= byte);
-    (T =:= 4 );(T =:= uint16);
-    (T =:= 5 );(T =:= uint32);
-    (T =:= 6 );(T =:= uint64);
-    (T =:= 7 );(T =:= int16);
-    (T =:= 8 );(T =:= int32);
-    (T =:= 9 );(T =:= int64);
-    (T =:= 10);(T =:= float);
-    (T =:= 11);(T =:= double);
-    (T =:= 12);(T =:= string);
-    (T =:= 13);(T =:= date_time);
-    (T =:= 14);(T =:= guid);
-    (T =:= 15);(T =:= xml);
-    (T =:= 16);(T =:= status_code);
-    (T =:= 17);(T =:= byte_string);
-    (T =:= 18);(T =:= node_id);
-    (T =:= 19);(T =:= expanded_node_id);
-    (T =:= 20);(T =:= diagnostic_info);
-    (T =:= 21);(T =:= qualified_name);
-    (T =:= 22);(T =:= localized_text);
-    (T =:= 23);(T =:= extension_object);
-    (T =:= 24);(T =:= variant);
-    (T =:= 25);(T =:= data_value)
+-define(IS_BUILTIN_TYPE_NAME(T),
+    T =:= boolean;
+    T =:= sbyte;
+    T =:= byte;
+    T =:= uint16;
+    T =:= uint32;
+    T =:= uint64;
+    T =:= int16;
+    T =:= int32;
+    T =:= int64;
+    T =:= float;
+    T =:= double;
+    T =:= string;
+    T =:= date_time;
+    T =:= guid;
+    T =:= xml;
+    T =:= status_code;
+    T =:= byte_string;
+    T =:= node_id;
+    T =:= expanded_node_id;
+    T =:= diagnostic_info;
+    T =:= qualified_name;
+    T =:= localized_text;
+    T =:= extension_object;
+    T =:= variant;
+    T =:= data_value
 ).
+
+-define(IS_BUILTIN_TYPE_ID(T), is_integer(T), T > 0, T =< 25).

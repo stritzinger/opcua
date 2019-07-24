@@ -1,20 +1,17 @@
--module(opcua_protocol_uasc).
+-module(opcua_handler).
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -include_lib("kernel/include/logger.hrl").
 
--include("opcua_conn.hrl").
-
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
 -export([init/1]).
--export([open/4]).
--export([chunk/5]).
--export([close/4]).
+-export([handle_request/2]).
+-export([handle_info/2]).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -25,20 +22,18 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(Conn) ->
-    {ok, Conn, #state{}}.
+init(_Opts) ->
+    {ok, #state{}}.
 
 
-open(_ChannelId, _Data, Conn, State) ->
-    {ok, Conn, State}.
+handle_request(Req, State) ->
+    ?LOG_DEBUG("Unexpected OPCUA request: ~p", [Req]),
+    {ok, State}.
 
 
-chunk(_ChannelId, _ChunkType, _Data, Conn, State) ->
-    {ok, Conn, State}.
-
-
-close(_ChannelId, _Data, Conn, State) ->
-    {ok, Conn, State}.
+handle_info(Msg, State) ->
+    ?LOG_WARNING("Unexpected message: ~p", [Msg]),
+    {ok, State}.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
