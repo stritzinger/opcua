@@ -20,6 +20,11 @@
     fields = [] :: fields()
 }).
 
+-record(builtin, {
+    node_id = #node_id{} :: node_id(),
+    builtin_node_id = #node_id{} :: node_id()
+}).
+
 -record(field, {
     name :: atom(),
     node_id = #node_id{} :: node_id(),
@@ -29,7 +34,7 @@
 }).
 
 -type node_id() :: #node_id{}.
--type node_spec() :: non_neg_integer() | atom() | binary() | node_id() | #node_id{}.
+-type node_spec() :: non_neg_integer() | atom() | binary() | node_id().
 -type opcua_spec() :: node_spec() | [node_spec()] | [{atom(), node_spec()}].
 -type opcua_encoding() :: binary.
 -type opcua_schema() :: term().

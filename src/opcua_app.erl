@@ -13,6 +13,7 @@ start(_StartType, _StartArgs) ->
     case opcua_sup:start_link() of
         {ok, Pid} ->
             opcua:start_listener(),
+            opcua:load_information_models(),
             {ok, Pid};
         Other ->
             Other
