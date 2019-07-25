@@ -75,7 +75,9 @@ decode_schema(#union{fields = Fields}, Data) ->
     resolve_union_value(SwitchValue, Fields, Data1);
 decode_schema(#enum{fields = Fields}, Data) ->
     {Value, Data1} = decode_builtin(int32, Data),
-    {resolve_enum_value(Value, Fields), Data1}.
+    {resolve_enum_value(Value, Fields), Data1};
+decode_schema(#builtin{builtin_node_id = BuiltinNodeId}, Data) ->
+    decode(BuiltinNodeId, Data).
 
 decode_fields(Fields, Data) ->
     decode_fields(Fields, Data, #{}).
@@ -180,7 +182,9 @@ encode_schema(#union{fields = Fields}, UnionMap) ->
     {[SwitchValue, EncodedValue], #{}};
 encode_schema(#enum{fields = Fields}, #{name := Name}) ->
     [Field] = [Field || Field = #field{name=FieldName} <- Fields, FieldName==Name],
-    encode_builtin(int32, Field#field.value).
+    encode_builtin(int32, Field#field.value);
+encode_schema(#builtin{builtin_node_id = BuiltinNodeId}, Data) ->
+    encode(BuiltinNodeId, Data).
 
 encode_masked_fields(Fields, Data) ->
     encode_masked_fields(Fields, Data, [], []).

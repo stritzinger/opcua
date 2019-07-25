@@ -10,7 +10,8 @@ t_test_() ->
      [fun structure/0,
       fun structure_with_options/0,
       fun enum/0,
-      fun union/0]}.
+      fun union/0,
+      fun builtin/0]}.
 
 setup() ->
     meck:new(opcua_database, [non_strict]).
@@ -119,4 +120,14 @@ union() ->
         fun(#node_id{value = 101}) -> Union end),
     NodeId = #node_id{type = numeric, value = 101},
     ToBeEncoded = #{some_string => <<"Hello!">>},
+    assert_codec(NodeId, ToBeEncoded).
+
+builtin() ->
+    Builtin = #builtin{
+                node_id = #node_id{type = numeric, value = 101},
+                builtin_node_id = #node_id{type = numeric, value = 6}},
+    meck:expect(opcua_database, lookup_schema,
+        fun(#node_id{value = 101}) -> Builtin end),
+    NodeId = #node_id{type = numeric, value = 101},
+    ToBeEncoded = 123,
     assert_codec(NodeId, ToBeEncoded).
