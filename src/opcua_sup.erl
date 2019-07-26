@@ -14,10 +14,10 @@
 -define(SERVER, ?MODULE).
 
 start_link() ->
-	supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 init([]) ->
-	SupFlags = #{strategy => one_for_all, intensity => 0, period => 1},
+    SupFlags = #{strategy => one_for_all, intensity => 0, period => 1},
     DatabaseSpec = #{
         id => opcua_database,
         start => {opcua_database, start_link, [#{}]}
@@ -26,6 +26,4 @@ init([]) ->
         id => opcua_registry,
         start => {opcua_registry, start_link, [#{}]}
     },
-	{ok, {SupFlags, [DatabaseSpec, RegistrySpec]}}.
-
-%% internal functions
+    {ok, {SupFlags, [DatabaseSpec, RegistrySpec]}}.

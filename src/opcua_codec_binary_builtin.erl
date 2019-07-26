@@ -31,7 +31,7 @@ decode(localized_text, <<Mask:1/binary, Bin/binary>>) -> decode_localized_text(M
 decode(extension_object, Bin) -> decode_extension_object(Bin);
 decode(variant, <<0:6, Bin/binary>>) -> {undefined, Bin};
 decode(variant, <<Type_Id:6, Dim_Flag:1/bits, Array_Flag:1/bits, Bin/binary>>) ->
-	decode_variant(Type_Id, Dim_Flag, Array_Flag, Bin);
+    decode_variant(Type_Id, Dim_Flag, Array_Flag, Bin);
 decode(data_value, <<0:2, Mask:6/bits, Bin/binary>>) -> decode_data_value(Mask, Bin);
 decode(_Type, _Bin) -> error('Bad_DecodingError').
 
@@ -68,274 +68,274 @@ encode(_Type, _Value) -> error('Bad_EncodingError').
 %% internal
 
 decode_guid(<<D1:32/little-integer, D2:16/little-integer, D3:16/little-integer, D4:8/binary, T/binary>>) ->
-	{<<D1:32/big-integer, D2:16/big-integer, D3:16/big-integer, D4:8/binary>>, T}.
+    {<<D1:32/big-integer, D2:16/big-integer, D3:16/big-integer, D4:8/binary>>, T}.
 
 decode_node_id(16#00, <<Id:8/little-unsigned-integer, T/binary>>) ->
-	{#node_id{ns = 0, type = numeric, value = Id}, T};
+    {#node_id{ns = 0, type = numeric, value = Id}, T};
 decode_node_id(16#01, <<Ns:8/little-unsigned-integer,
-			Id:16/little-unsigned-integer, T/binary>>) ->
-	{#node_id{ns = Ns, type = numeric, value = Id}, T};
+            Id:16/little-unsigned-integer, T/binary>>) ->
+    {#node_id{ns = Ns, type = numeric, value = Id}, T};
 decode_node_id(16#02, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
-	{Id, T} = decode(uint32, Bin),
-	{#node_id{ns = Ns, type = numeric, value = Id}, T};
+    {Id, T} = decode(uint32, Bin),
+    {#node_id{ns = Ns, type = numeric, value = Id}, T};
 decode_node_id(16#03, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
-	{Id, T} = decode(string, Bin),
-	{#node_id{ns = Ns, type = string, value = Id}, T};
+    {Id, T} = decode(string, Bin),
+    {#node_id{ns = Ns, type = string, value = Id}, T};
 decode_node_id(16#04, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
-	{Id, T} = decode(guid, Bin),
-	{#node_id{ns = Ns, type = guid, value = Id}, T};
+    {Id, T} = decode(guid, Bin),
+    {#node_id{ns = Ns, type = guid, value = Id}, T};
 decode_node_id(16#05, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
-	{Id, T} = decode(string, Bin),
-	{#node_id{ns = Ns, type = opaque, value = Id}, T}.
+    {Id, T} = decode(string, Bin),
+    {#node_id{ns = Ns, type = opaque, value = Id}, T}.
 
 decode_expanded_node_id(Mask, Bin) ->
-	{Node_Id, T} = decode_node_id(Mask rem 16#40, Bin),
-	Namespace_Uri_Flag = (Mask div 16#80 == 1),
-	Server_Index_Flag = ((Mask rem 16#80) div 16#40 == 1),
-	Types = [{namespace_uri, string, undefined},
-		 {server_index, uint32, undefined}],
-	Boolean_Mask = [Namespace_Uri_Flag, Server_Index_Flag],
-	{Map, T1} = decode_masked(Boolean_Mask, Types, T),
-	{maps:put(node_id, Node_Id, Map), T1}.
+    {Node_Id, T} = decode_node_id(Mask rem 16#40, Bin),
+    Namespace_Uri_Flag = (Mask div 16#80 == 1),
+    Server_Index_Flag = ((Mask rem 16#80) div 16#40 == 1),
+    Types = [{namespace_uri, string, undefined},
+             {server_index, uint32, undefined}],
+    Boolean_Mask = [Namespace_Uri_Flag, Server_Index_Flag],
+    {Map, T1} = decode_masked(Boolean_Mask, Types, T),
+    {maps:put(node_id, Node_Id, Map), T1}.
 
 decode_diagnostic_info(<<0:1, Mask:7/bits>>, Bin) ->
-	Types = [{symbolic_id, int32, undefined},
-		 {namespace_uri, int32, undefined},
-		 {locale, int32, undefined},
-		 {localized_text, int32, undefined},
-		 {additional_info, string, undefined},
-		 {inner_status_code, status_code, undefined},
-		 {inner_diagnostic_info, diagnostic_info, undefined}],
-	decode_masked(Mask, Types, Bin).
+    Types = [{symbolic_id, int32, undefined},
+             {namespace_uri, int32, undefined},
+             {locale, int32, undefined},
+             {localized_text, int32, undefined},
+             {additional_info, string, undefined},
+             {inner_status_code, status_code, undefined},
+             {inner_diagnostic_info, diagnostic_info, undefined}],
+    decode_masked(Mask, Types, Bin).
 
 decode_qualified_name(Bin) ->
-	{[Namespace_Index, Name], T}  = decode_multi([uint16, string], Bin),
-	{#{namespace_index => Namespace_Index, name => Name}, T}.
+    {[Namespace_Index, Name], T}  = decode_multi([uint16, string], Bin),
+    {#{namespace_index => Namespace_Index, name => Name}, T}.
 
 decode_localized_text(<<0:6, Mask:2/bits>>, Bin) ->
-	Types = [{locale, string, undefined},
-		 {text, string, undefined}],
-	decode_masked(Mask, Types, Bin).
+    Types = [{locale, string, undefined},
+             {text, string, undefined}],
+    decode_masked(Mask, Types, Bin).
 
 decode_extension_object(Bin) ->
-	{Type_Id, <<Mask:8, T/binary>>} = decode(node_id, Bin),
-	decode_extension_object1(Mask, Type_Id, T).
+    {Type_Id, <<Mask:8, T/binary>>} = decode(node_id, Bin),
+    decode_extension_object1(Mask, Type_Id, T).
 
 decode_extension_object1(16#00, Type_Id, T) ->
-	{#{type_id => Type_Id, encoding => undefined, body => undefined}, T};
+    {#{type_id => Type_Id, encoding => undefined, body => undefined}, T};
 decode_extension_object1(16#01, Type_Id, T) ->
-	{Body, T1} = decode(byte_string, T),
-	{#{type_id => Type_Id, encoding => byte_string, body => Body}, T1};
+    {Body, T1} = decode(byte_string, T),
+    {#{type_id => Type_Id, encoding => byte_string, body => Body}, T1};
 decode_extension_object1(16#02, Type_Id, T) ->
-	{Body, T1} = decode(xml, T),
-	{#{type_id => Type_Id, encoding => xml, body => Body}, T1}.
+    {Body, T1} = decode(xml, T),
+    {#{type_id => Type_Id, encoding => xml, body => Body}, T1}.
 
 decode_variant(Type_Id, _Dim_Flag, <<0:1>>, Bin) ->
-	{#{type => opcua_codec:builtin_type_name(Type_Id), value => []}, Bin};
+    {#{type => opcua_codec:builtin_type_name(Type_Id), value => []}, Bin};
 decode_variant(Type_Id, <<0:1>>, <<1:1>>, Bin) ->
-	{Array, Bin1} = decode_array(opcua_codec:builtin_type_name(Type_Id), Bin),
-	{#{type => opcua_codec:builtin_type_name(Type_Id), value => Array}, Bin1};
+    {Array, Bin1} = decode_array(opcua_codec:builtin_type_name(Type_Id), Bin),
+    {#{type => opcua_codec:builtin_type_name(Type_Id), value => Array}, Bin1};
 decode_variant(Type_Id, <<1:1>>, <<1:1>>, Bin) ->
-	{Multi_Array, Bin1} = decode_multi_array(opcua_codec:builtin_type_name(Type_Id), Bin),
-	{#{type => opcua_codec:builtin_type_name(Type_Id), value => Multi_Array}, Bin1}.
+    {Multi_Array, Bin1} = decode_multi_array(opcua_codec:builtin_type_name(Type_Id), Bin),
+    {#{type => opcua_codec:builtin_type_name(Type_Id), value => Multi_Array}, Bin1}.
 
 decode_data_value(Mask, Bin) ->
-	Types = [{value, variant, undefined},
-		 {status, status_code, good},
-		 {source_timestamp, date_time, 0},
-		 {source_pico_seconds, uint16, 0},
-		 {server_timestamp, date_time, 0},
-		 {server_pico_seconds, uint16, 0}],
-	decode_masked(Mask, Types, Bin).
+    Types = [{value, variant, undefined},
+             {status, status_code, good},
+             {source_timestamp, date_time, 0},
+             {source_pico_seconds, uint16, 0},
+             {server_timestamp, date_time, 0},
+             {server_pico_seconds, uint16, 0}],
+    decode_masked(Mask, Types, Bin).
 
 decode_masked(Mask, Types, Bin) ->
-	Boolean_Mask = boolean_mask(Mask),
-	{Apply, Defaults} = lists:splitwith(fun({_, Cond}) -> Cond end,
-					    lists:zip(Types, Boolean_Mask)),
-	Apply1 = element(1, lists:unzip(Apply)),
-	Defaults1 = element(1, lists:unzip(Defaults)),
-	Final_Defaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults1),
-	{List, T} = decode_multi(lists:map(fun({_,Type,_}) -> Type end, Apply1), Bin),
-	Final_Apply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
-	{maps:from_list(Final_Apply ++ Final_Defaults), T}.
+    Boolean_Mask = boolean_mask(Mask),
+    {Apply, Defaults} = lists:splitwith(fun({_, Cond}) -> Cond end,
+                        lists:zip(Types, Boolean_Mask)),
+    Apply1 = element(1, lists:unzip(Apply)),
+    Defaults1 = element(1, lists:unzip(Defaults)),
+    Final_Defaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults1),
+    {List, T} = decode_multi(lists:map(fun({_,Type,_}) -> Type end, Apply1), Bin),
+    Final_Apply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
+    {maps:from_list(Final_Apply ++ Final_Defaults), T}.
 
 boolean_mask(Mask) when is_bitstring(Mask) ->
-	[X==1 || <<X:1>> <= Mask];
+    [X==1 || <<X:1>> <= Mask];
 boolean_mask(Mask) ->
-	Mask.
+    Mask.
 
 decode_multi(Type_List, Bin) ->
-	decode_multi(Type_List, Bin, []).
+    decode_multi(Type_List, Bin, []).
 
 decode_multi([], T, Acc) ->
-	{lists:reverse(Acc), T};
+    {lists:reverse(Acc), T};
 decode_multi([Type|Type_List], Bin, Acc) ->
-	{Elem, T} = decode(Type, Bin),
-	decode_multi(Type_List, T, [Elem|Acc]).
+    {Elem, T} = decode(Type, Bin),
+    decode_multi(Type_List, T, [Elem|Acc]).
 
 decode_multi_array(Type, Bin) ->
-	{Object_Array, T} = decode_array(Type, Bin),
-	{Dim_Array, T1} = decode_array(int32, T),
-	{honor_dimensions(Object_Array, Dim_Array), T1}.
+    {Object_Array, T} = decode_array(Type, Bin),
+    {Dim_Array, T1} = decode_array(int32, T),
+    {honor_dimensions(Object_Array, Dim_Array), T1}.
 
 decode_array(Type, Bin) ->
-	{Length, T} = decode(int32, Bin),
-	decode_array(Type, T, Length).
+    {Length, T} = decode(int32, Bin),
+    decode_array(Type, T, Length).
 
 decode_array(_Type, _Array, -1) ->
-	undefined;
+    undefined;
 decode_array(Type, Array, N) ->
-	decode_array(Type, Array, N, []).
+    decode_array(Type, Array, N, []).
 
 decode_array(_Type, T, 0, Acc) ->
-	{lists:reverse(Acc), T};
+    {lists:reverse(Acc), T};
 decode_array(Type, Array, N, Acc) ->
-	{Elem, T} = decode(Type, Array),
-	decode_array(Type, T, N-1, [Elem|Acc]).
+    {Elem, T} = decode(Type, Array),
+    decode_array(Type, T, N-1, [Elem|Acc]).
 
 honor_dimensions(Object_Array, Dim_Array) ->
-	lists:reverse(
-	  lists:foldl(fun(X, Acc) -> honor_dimensions1(X, Acc) end,
-		      {[], Object_Array}, Dim_Array)).
+    lists:reverse(
+      lists:foldl(fun(X, Acc) -> honor_dimensions1(X, Acc) end,
+                  {[], Object_Array}, Dim_Array)).
 
 honor_dimensions1(Dim, {Array, Array_List}) ->
-	{El, New_Array} = lists:split(Dim, Array),
-	{New_Array, [El|Array_List]}.
+    {El, New_Array} = lists:split(Dim, Array),
+    {New_Array, [El|Array_List]}.
 
 encode_guid(<<D1:32/big-integer, D2:16/big-integer, D3:16/big-integer, D4:8/binary>>) ->
-	<<D1:32/little-integer, D2:16/little-integer, D3:16/little-integer, D4:8/binary>>.
+    <<D1:32/little-integer, D2:16/little-integer, D3:16/little-integer, D4:8/binary>>.
 
 encode_node_id(#node_id{ns = 0, type = numeric, value = Id}) when Id < 256 ->
-	<<16#00:8, Id:8/little-unsigned-integer>>;
+    <<16#00:8, Id:8/little-unsigned-integer>>;
 encode_node_id(#node_id{ns = Ns, type = numeric, value = Id}) when Id < 65536 ->
-  	<<16#01:8, Ns:8/little-unsigned-integer, Id:16/little-unsigned-integer>>;
+    <<16#01:8, Ns:8/little-unsigned-integer, Id:16/little-unsigned-integer>>;
 encode_node_id(#node_id{ns = Ns, type = numeric, value = Id}) when Id < 4294967296 ->
-	Bin_Id = encode(uint32, Id),
-	<<16#02:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
+    Bin_Id = encode(uint32, Id),
+    <<16#02:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
 encode_node_id(#node_id{ns = Ns, type = string, value = Id}) ->
-	Bin_Id = encode(string, Id),
-  	<<16#03:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
+    Bin_Id = encode(string, Id),
+    <<16#03:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
 encode_node_id(#node_id{ns = Ns, type = guid, value = Id}) ->
-	Bin_Id = encode(guid, Id),
-  	<<16#04:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
+    Bin_Id = encode(guid, Id),
+    <<16#04:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
 encode_node_id(#node_id{ns = Ns, type = opaque, value = Id}) ->
-	Bin_Id = encode(string, Id),
-	<<16#05:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
+    Bin_Id = encode(string, Id),
+    <<16#05:8, Ns:16/little-unsigned-integer, Bin_Id/binary>>;
 encode_node_id(NodeSpec) ->
-	encode_node_id(opcua_codec:node_id(NodeSpec)).
+    encode_node_id(opcua_codec:node_id(NodeSpec)).
 
 encode_expanded_node_id(#{node_id := Node_Id, namespace_uri := Namespace_Uri,
-			  server_index := Server_Index}) ->
-	<<Mask:8, Rest/binary>> = encode_node_id(Node_Id),
-	{Namespace_Uri_Flag, Bin_Namespace_Uri}
-		= case Namespace_Uri of
-			  undefined -> {0, <<>>};
-			  _ -> {16#80, encode(string, Namespace_Uri)}
-		  end,
-	{Server_Index_Flag, Bin_Server_Index}
-		= case Server_Index of
-			  undefined -> {0, <<>>};
-			  _ -> {16#40, encode(uint32, Server_Index)}
-		  end,
-	<<(Mask + Namespace_Uri_Flag + Server_Index_Flag):8, Rest/binary,
-	  Bin_Namespace_Uri/binary, Bin_Server_Index/binary>>.
+              server_index := Server_Index}) ->
+    <<Mask:8, Rest/binary>> = encode_node_id(Node_Id),
+    {Namespace_Uri_Flag, Bin_Namespace_Uri}
+        = case Namespace_Uri of
+              undefined -> {0, <<>>};
+              _ -> {16#80, encode(string, Namespace_Uri)}
+          end,
+    {Server_Index_Flag, Bin_Server_Index}
+        = case Server_Index of
+              undefined -> {0, <<>>};
+              _ -> {16#40, encode(uint32, Server_Index)}
+          end,
+    <<(Mask + Namespace_Uri_Flag + Server_Index_Flag):8, Rest/binary,
+       Bin_Namespace_Uri/binary, Bin_Server_Index/binary>>.
 
 encode_diagnostic_info(Diagnostic_Info) ->
-	Types = [{int32, maps:get(symbolic_id, Diagnostic_Info, undefined)},
-		 {int32, maps:get(namespace_uri, Diagnostic_Info, undefined)},
-		 {int32, maps:get(locale, Diagnostic_Info, undefined)},
-		 {int32, maps:get(localized_text, Diagnostic_Info, undefined)},
-		 {string, maps:get(additional_info, Diagnostic_Info, undefined)},
-		 {status_code, maps:get(inner_status_code, Diagnostic_Info, undefined)},
-		 {diagnostic_info, maps:get(inner_diagnostic_info, Diagnostic_Info, undefined)}],
-	encode_masked(Types).
+    Types = [{int32, maps:get(symbolic_id, Diagnostic_Info, undefined)},
+         {int32, maps:get(namespace_uri, Diagnostic_Info, undefined)},
+         {int32, maps:get(locale, Diagnostic_Info, undefined)},
+         {int32, maps:get(localized_text, Diagnostic_Info, undefined)},
+         {string, maps:get(additional_info, Diagnostic_Info, undefined)},
+         {status_code, maps:get(inner_status_code, Diagnostic_Info, undefined)},
+         {diagnostic_info, maps:get(inner_diagnostic_info, Diagnostic_Info, undefined)}],
+    encode_masked(Types).
 
 encode_qualified_name(#{namespace_index := Namespace_Index, name := Name}) ->
-	encode_multi([{uint16, Namespace_Index}, {string, Name}]).
+    encode_multi([{uint16, Namespace_Index}, {string, Name}]).
 
 encode_localized_text(Localized_Text) ->
-	Types = [{string, maps:get(locale, Localized_Text, undefined)},
-		 {string, maps:get(text, Localized_Text, undefined)}],
-	encode_masked(Types).
+    Types = [{string, maps:get(locale, Localized_Text, undefined)},
+         {string, maps:get(text, Localized_Text, undefined)}],
+    encode_masked(Types).
 
 encode_extension_object(#{type_id := Type_Id, encoding := undefined, body := undefined}) ->
-	Node_Id = encode(node_id, Type_Id),
-	<<Node_Id/binary, 16#00:8>>;
+    Node_Id = encode(node_id, Type_Id),
+    <<Node_Id/binary, 16#00:8>>;
 encode_extension_object(#{type_id := Type_Id, encoding := Encoding, body := Body}) ->
-	Node_Id = encode(node_id, Type_Id),
-	%% NOTE: encoding byte strings and xml also
-	%% encodes the 'Length' of those as prefix
-	Bin_Body = encode(Encoding, Body),
-	Encoding_Flag = case Encoding of
-				byte_string -> 16#01;
-				xml -> 16#02
-			end,
-	<<Node_Id/binary, Encoding_Flag:8, Bin_Body/binary>>.
+    Node_Id = encode(node_id, Type_Id),
+    %% NOTE: encoding byte strings and xml also
+    %% encodes the 'Length' of those as prefix
+    Bin_Body = encode(Encoding, Body),
+    Encoding_Flag = case Encoding of
+                        byte_string -> 16#01;
+                        xml -> 16#02
+                    end,
+    <<Node_Id/binary, Encoding_Flag:8, Bin_Body/binary>>.
 
 encode_variant(#{type := Type, value := Multi_Array}) ->
-	Type_Id = opcua_codec:builtin_type_id(Type),
-	{Length, Value, Dims} = build_variant_value(Multi_Array),
-	case Length of
-		0 ->
-			<<0:2, Type_Id:6>>;
-		Length when Length > 0 ->
-			Bin_Length = encode(int32, Length),
-			Bin_Dim_Length = encode(int32, length(Dims)),
-			Bin_Dims = list_to_binary([encode(int32, Dim) || Dim <- Dims]),
-			<<3:2, Type_Id:6, Bin_Length/binary, Value/binary,
-			  Bin_Dim_Length/binary, Bin_Dims/binary>>
-	end.
+    Type_Id = opcua_codec:builtin_type_id(Type),
+    {Length, Value, Dims} = build_variant_value(Multi_Array),
+    case Length of
+        0 ->
+            <<0:2, Type_Id:6>>;
+        Length when Length > 0 ->
+            Bin_Length = encode(int32, Length),
+            Bin_Dim_Length = encode(int32, length(Dims)),
+            Bin_Dims = list_to_binary([encode(int32, Dim) || Dim <- Dims]),
+            <<3:2, Type_Id:6, Bin_Length/binary, Value/binary,
+              Bin_Dim_Length/binary, Bin_Dims/binary>>
+    end.
 
 build_variant_value(Multi_Array) ->
-	build_variant_value(Multi_Array, 0, <<>>, []).
+    build_variant_value(Multi_Array, 0, <<>>, []).
 
 build_variant_value([], Length, Value, Dims) ->
-	{Length, Value, Dims};
+    {Length, Value, Dims};
 build_variant_value([Elem|T], Length, Value, Dims) ->
-	{Array_Length, Array_Bin} =
-		case Elem of
-			Elem when is_list(Elem) ->
-				{length(Elem), list_to_binary(Elem)};
-			_ ->
-				{1, Elem}
-		end,
-	build_variant_value(T, Length + Array_Length,
-			    <<Value/binary, Array_Bin/binary>>,
-			    [Array_Length|Dims]).
+    {Array_Length, Array_Bin} =
+        case Elem of
+            Elem when is_list(Elem) ->
+                {length(Elem), list_to_binary(Elem)};
+            _ ->
+                {1, Elem}
+        end,
+    build_variant_value(T, Length + Array_Length,
+                <<Value/binary, Array_Bin/binary>>,
+                [Array_Length|Dims]).
 
 encode_data_value(Data_Value) ->
-	Types = [{variant, maps:get(value, Data_Value, undefined)},
-		 {status_code, maybe_undefined(status, Data_Value, good)},
-		 {date_time, maybe_undefined(source_timestamp, Data_Value, 0)},
-		 {uint16, maybe_undefined(source_pico_seconds, Data_Value, 0)},
-		 {date_time, maybe_undefined(server_timestamp, Data_Value, 0)},
-		 {uint16, maybe_undefined(server_pico_seconds, Data_Value, 0)}],
-	encode_masked(Types).
+    Types = [{variant, maps:get(value, Data_Value, undefined)},
+             {status_code, maybe_undefined(status, Data_Value, good)},
+             {date_time, maybe_undefined(source_timestamp, Data_Value, 0)},
+             {uint16, maybe_undefined(source_pico_seconds, Data_Value, 0)},
+             {date_time, maybe_undefined(server_timestamp, Data_Value, 0)},
+             {uint16, maybe_undefined(server_pico_seconds, Data_Value, 0)}],
+    encode_masked(Types).
 
 maybe_undefined(Key, Map, Cond) ->
-	case maps:get(Key, Map, undefined) of
-		Cond ->
-			undefined;
-		Value ->
-			Value
-	end.
+    case maps:get(Key, Map, undefined) of
+        Cond ->
+            undefined;
+        Value ->
+            Value
+    end.
 
 encode_multi(Type_List) ->
-	encode_multi(Type_List, <<>>).
+    encode_multi(Type_List, <<>>).
 
 encode_multi([], Bin) ->
-	Bin;
+    Bin;
 encode_multi([{Type, Value}|Type_List], Bin) ->
-	NewBin = encode(Type, Value),
-	encode_multi(Type_List, <<Bin/binary, NewBin/binary>>).
+    NewBin = encode(Type, Value),
+    encode_multi(Type_List, <<Bin/binary, NewBin/binary>>).
 
 encode_masked(Type_List) ->
-	encode_masked(Type_List, <<>>, <<>>).
+    encode_masked(Type_List, <<>>, <<>>).
 
 encode_masked([], Mask, Bin) ->
-	<<0:(8-bit_size(Mask)), Mask, Bin/binary>>;
+    <<0:(8-bit_size(Mask)), Mask, Bin/binary>>;
 encode_masked([{_Type, undefined}|Type_List], Mask, Bin) ->
-	encode_masked(Type_List, <<0:1, Mask>>, Bin);
+    encode_masked(Type_List, <<0:1, Mask>>, Bin);
 encode_masked([{Type, Value}|Type_List], Mask, Bin) ->
-	NewBin = encode(Type, Value),
-	encode_masked(Type_List, <<1:1, Mask>>, <<Bin/binary, NewBin/binary>>).
+    NewBin = encode(Type, Value),
+    encode_masked(Type_List, <<1:1, Mask>>, <<Bin/binary, NewBin/binary>>).
