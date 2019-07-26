@@ -38,8 +38,8 @@ start_link(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
 -spec lookup_schema(node_spec()) -> opcua_schema().
-lookup_schema(_NodeSpec) ->
-    error(not_implemented).
+lookup_schema(NodeSpec) ->
+    opcua_data_types:lookup(opcua_codec:node_id(NodeSpec)).
 
 -spec lookup_id(node_spec()) -> node_id().
 lookup_id(NodeSpec) ->

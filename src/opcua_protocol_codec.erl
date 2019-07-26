@@ -220,7 +220,7 @@ decode_chunk(MsgType, ChunkType, Data, Chunk)
   when MsgType =:= channel_close, ChunkType =:= final;
        MsgType =:= channel_message ->
     #uacp_chunk{header = Header} = Chunk,
-    Spec = [unint32, uint32],
+    Spec = [uint32, uint32],
     {[ChannelId, TokenId], LockedData} = opcua_codec_binary:decode(Spec, Data),
     FullDataSize = byte_size(Data),
     LockedDataSize = byte_size(LockedData),
@@ -299,7 +299,7 @@ freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Chu
     EncChunkType = encode_chunk_type(ChunkType),
     Len = LockedSize + HeaderSize,
     Header1 = <<EncMsgType:3/binary, EncChunkType:1/binary, Len:32/little-unsigned-integer>>,
-    Header2Spec = [uint32, unint32],
+    Header2Spec = [uint32, uint32],
     Header2Data = [ChannelId, TokenId],
     {Header2, []} = opcua_codec_binary:encode(Header2Spec, Header2Data),
     ?assertEqual(Chunk#uacp_chunk.header_size, iolist_size([Header1, Header2])),
