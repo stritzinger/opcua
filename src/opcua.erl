@@ -36,4 +36,4 @@ load_information_models() ->
     File = filename:join([code:priv_dir(opcua),
                           "nodesets",
                           "Opc.Ua.NodeSet2.Services.xml"]),
-    opcua_data_types:setup(File).
+    opcua_codec_data_types:setup(File).
