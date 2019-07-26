@@ -33,7 +33,7 @@ stop_listener() ->
 	ranch:stop_listener(?REF).
 
 load_information_models() ->
-    File = filename:join([code:priv_dir(opcua),
-                          "nodesets",
-                          "Opc.Ua.NodeSet2.Services.xml"]),
-    opcua_codec_data_types:setup(File).
+    NodeSetFileName = "Opc.Ua.NodeSet2.Services.xml",
+    NodeSetFile = filename:join([code:priv_dir(opcua), "nodesets", NodeSetFileName]),
+    opcua_codec_data_types:setup(NodeSetFile),
+    opcua_codec_encodings:setup(NodeSetFile).
