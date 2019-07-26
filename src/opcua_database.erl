@@ -39,7 +39,7 @@ start_link(Opts) ->
 
 -spec lookup_schema(node_spec()) -> opcua_schema().
 lookup_schema(NodeSpec) ->
-    opcua_data_types:lookup(opcua_codec:node_id(NodeSpec)).
+    opcua_codec_data_types:lookup(opcua_codec:node_id(NodeSpec)).
 
 -spec lookup_id(node_spec()) -> node_id().
 lookup_id(NodeSpec) ->
