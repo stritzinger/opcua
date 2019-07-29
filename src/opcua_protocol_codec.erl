@@ -130,20 +130,10 @@ decode_object(Data) ->
 
 -spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
 encode_object(NodeId, Data) ->
-    case opcua_database:lookup_encoding(NodeId, binary) of
-        #node_id{value = 449} = EncNodeId ->
-            #{channel_id := ChannelId, token_id := TokenId} = Data,
-            Now = opcua_util:date_time(),
-            ObjSpec = [node_id,    date_time, uint32, uint32, byte, uint32, byte, byte, byte, uint32, uint32,    uint32,  date_time, uint32,  uint32],
-            ObjData = [EncNodeId,  Now,       1,      0,      0,    0,      0,    0,    0,    0,      ChannelId, TokenId, Now,       3600000, 0],
-            {Resp, []} = opcua_codec_binary:encode(ObjSpec, ObjData),
-            Resp;
-        % #node_id{value = 455} ->
-        EncNodeId ->
-            {Header, _} = pcua_codec_binary:encode(node_id, EncNodeId),
-            {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
-            [Header, Msg]
-    end.
+    EncNodeId = opcua_database:lookup_encoding(NodeId, binary),
+    {Header, _} = pcua_codec_binary:encode(node_id, EncNodeId),
+    {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
+    [Header, Msg].
 
 -spec decode_sequence_header(iodata()) -> {{SeqNum, ReqId}, iodata()}
   when SeqNum :: opcua_protocol:sequence_num(),
