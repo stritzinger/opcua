@@ -333,9 +333,9 @@ encode_masked(Type_List) ->
     encode_masked(Type_List, <<>>, <<>>).
 
 encode_masked([], Mask, Bin) ->
-    <<0:(8-bit_size(Mask)), Mask, Bin/binary>>;
+    <<0:(8-bit_size(Mask)), Mask/bits, Bin/binary>>;
 encode_masked([{_Type, undefined}|Type_List], Mask, Bin) ->
-    encode_masked(Type_List, <<0:1, Mask>>, Bin);
+    encode_masked(Type_List, <<0:1, Mask/bits>>, Bin);
 encode_masked([{Type, Value}|Type_List], Mask, Bin) ->
     NewBin = encode(Type, Value),
-    encode_masked(Type_List, <<1:1, Mask>>, <<Bin/binary, NewBin/binary>>).
+    encode_masked(Type_List, <<1:1, Mask/bits>>, <<Bin/binary, NewBin/binary>>).
