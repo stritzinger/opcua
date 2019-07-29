@@ -1,6 +1,6 @@
 -module(opcua_codec_encodings).
 
--export([resolve/1, setup/1]).
+-export([resolve/1, lookup/2, setup/1]).
 
 %% event handler for sax parser
 -export([parse/3]).
@@ -14,6 +14,10 @@
 
 resolve(NodeId) ->
     proplists:get_value(NodeId, ets:lookup(?DB_ENCODINGS, NodeId)).
+
+lookup(NodeId, Encoding) ->
+    Key = {NodeId, Encoding},
+    proplists:get_value(Key, ets:lookup(?DB_ENCODINGS, Key)).
 
 setup(File) ->
     _Tid = ets:new(?DB_ENCODINGS, [named_table]),
@@ -36,13 +40,14 @@ parse({startElement, _, "Reference", _, Attributes}, _Loc, EncodingTypeMap)
     end;
 parse({characters, Chars}, _Loc, {await_target_node_id, EncodingTypeMap}) ->
     maps:put(target_node_id, parse_node_id(Chars), EncodingTypeMap);
-parse({endElement, _, "UAObject", _}, _Loc, #{node_id := NodeId, target_node_id := TargetNodeId, type := Type}) ->
-    store_data_type(NodeId, TargetNodeId, Type);
+parse({endElement, _, "UAObject", _}, _Loc, #{node_id := NodeId, target_node_id := TargetNodeId, type := Encoding}) ->
+    store_encoding(NodeId, TargetNodeId, Encoding);
 parse(_Event, _Loc, State) ->
     State.
 
-store_data_type(NodeId, TargetNodeId, Type) ->
-    ets:insert(?DB_ENCODINGS, [{NodeId, {TargetNodeId, Type}}]).
+store_encoding(NodeId, TargetNodeId, Encoding) ->
+    ets:insert(?DB_ENCODINGS, [{NodeId, {TargetNodeId, Encoding}},
+                               {{TargetNodeId, Encoding}, NodeId}]).
 
 get_node_id(Key, Attributes) ->
     case get_attr(Key, Attributes) of
