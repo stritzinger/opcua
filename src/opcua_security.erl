@@ -75,14 +75,30 @@ unlock(_Chunk, _State) ->
 -spec open(opcua_protocol:message(), state())
     -> {ok, opcua_protocol:message(), state()} | {error, term()}.
 open(#uacp_message{type = channel_open,
+                   request_id = ReqId,
                    node_id = #node_id{ns = 0, value = 444},
                    payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel opened: ~p", [Msg]),
     #state{channel_id = ChannelId, token_id = TokenId} = State,
     ServerPolicy = #uacp_security_policy{policy_url = ?POLICY_NONE},
+    Now = opcua_util:date_time(),
     Resp = opcua_protocol:req2res(Req, 447, #{
-      channel_id => ChannelId,
-      token_id => TokenId
+        response_header => #{
+          timestamp => Now,
+          request_handle => ReqId,
+          service_result => 0,
+          service_diagnostic => #{},
+          string_table => [],
+          additional_headers => #{}
+        },
+        server_protocol_version => 0,
+        security_token => #{
+            channel_id => ChannelId,
+            token_id => TokenId,
+            created_at => Now,
+            revised_lifetime => 3600000
+        },
+        server_nonce => undefined
     }),
     {ok, Resp, State#state{server_policy = ServerPolicy}}.
 
