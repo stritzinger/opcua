@@ -62,7 +62,7 @@ decode_builtin(extension_object, Data) ->
         opcua_codec_binary_builtin:decode(extension_object, iolist_to_binary(Data)),
     case NodeId of
         #node_id{value = 0} ->
-            {ExtObj#{body := undefined}, Data};
+            {ExtObj#{body := undefined}, Data1};
         _ ->
             {DecodedBody, _} = decode(NodeId, Body),
             {ExtObj#{body := DecodedBody}, Data1}
@@ -235,9 +235,14 @@ encode_field(#field{node_id = NodeId, value_rank = N}, Array)
     Array = encode_array(NodeId, Array, []),
     {[Dims, Array], undefined}.
 
-resolve_dims(List = [El|_], Acc) when is_list(List) ->
+resolve_dims(List, Acc) when is_list(List) ->
     {EncDim, _} = encode(int32, length(List)),
-    resolve_dims(El, [EncDim|Acc]);
+    case List of
+        [El|_] ->
+            resolve_dims(El, [EncDim|Acc]);
+        [] ->
+            lists:reverse([EncDim|Acc])
+    end;
 resolve_dims(_El, Acc) ->
     lists:reverse(Acc).
 
