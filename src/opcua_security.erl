@@ -173,21 +173,6 @@ next_server_sequence(#state{last_server_seq = LastNum} = State)
 next_server_sequence(#state{last_server_seq = LastNum} = State) ->
     {LastNum + 1, State#state{last_server_seq = LastNum + 1}}.
 
-prepare_chunk(State, Security,
-              #uacp_chunk{state = unlocked, header_size = HSize,
-                          unlocked_size = USize, request_id = ReqId,
-                          body = Body} = Chunk)
-  when HSize =/= undefined, USize =/= undefined,
-       ReqId =/= undefined, Body =/= undefined ->
-    ?assertEqual(USize, iolist_size(Body)),
-    {SeqNum, State2} = next_server_sequence(State),
-    Chunk2 = Chunk#uacp_chunk{
-        security = Security,
-        sequence_num = SeqNum,
-        locked_size = USize + 8
-    },
-    {ok, Chunk2, State2}.
-
 generate_token_id(Except) when is_list(Except) ->
     Token = crypto:bytes_to_integer(crypto:strong_rand_bytes(4)),
     case lists:member(Token, Except) of
