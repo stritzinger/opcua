@@ -9,6 +9,7 @@
 
 %% API Functions
 -export([decode/2]).
+-export([decode_schema/2]).
 -export([encode/2]).
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
