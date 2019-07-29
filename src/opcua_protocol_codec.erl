@@ -122,8 +122,6 @@ encode_error(Data) ->
 decode_object(Data) ->
     {NodeId, RemData} = opcua_codec_binary:decode(node_id, iolist_to_binary(Data)),
     case opcua_database:resolve_encoding(NodeId) of
-        {#node_id{value = 444} = ObjNodeId, binary} -> {ObjNodeId, #{}};
-        {#node_id{value = 450} = ObjNodeId, binary} -> {ObjNodeId, #{}};
         {ObjNodeId, binary} ->
             {Obj, _} = opcua_codec_binary:decode(ObjNodeId, RemData),
             {ObjNodeId, Obj};
