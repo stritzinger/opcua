@@ -169,9 +169,14 @@ encode_type(NodeSpec, Data) ->
     encode_type(opcua_codec:node_id(NodeSpec), Data).
 
 encode_builtin(extension_object, #{type_id := NodeId, body := Body} = ExtObj) ->
-    {EncodedBody, _} = encode(NodeId, Body),
-    ExtObj2 = ExtObj#{body := EncodedBody},
-    {opcua_codec_binary_builtin:encode(extension_object, ExtObj2), undefined};
+    ExtObj1 = case NodeId of
+                #node_id{value = 0} ->
+                    ExtObj#{body := undefined};
+                NodeId ->
+                    {EncodedBody, _} = encode(NodeId, Body),
+                    ExtObj#{body := EncodedBody}
+              end,
+    {opcua_codec_binary_builtin:encode(extension_object, ExtObj1), undefined};
 encode_builtin(Type, Data) ->
     {opcua_codec_binary_builtin:encode(Type, Data), undefined}.
 
@@ -184,7 +189,7 @@ encode_schema(#union{fields = Fields}, UnionMap) ->
     [Field] = [Field || Field = #field{name=FieldName} <- Fields, FieldName==Name],
     {SwitchValue, _} = encode_builtin(uint32, Field#field.value),
     {EncodedValue, _} = encode_field(Field, maps:get(Name, UnionMap)),
-    {[SwitchValue, EncodedValue], #{}};
+    {[SwitchValue, EncodedValue], undefined};
 encode_schema(#enum{fields = Fields}, #{name := Name}) ->
     [Field] = [Field || Field = #field{name=FieldName} <- Fields, FieldName==Name],
     encode_builtin(int32, Field#field.value);
@@ -198,7 +203,7 @@ encode_masked_fields([], Data, Mask, Acc) ->
     BinFields1 = lists:reverse(Acc),
     Mask1 = lists:foldl(fun(Bit, M) -> M bxor Bit end, 0, [1 bsl (N-1) || N <- Mask]),
     {BinMask1, _} = encode_builtin(uint32, Mask1),
-    {[BinMask1, BinFields1], Data};
+    {iolist_to_binary([BinMask1, BinFields1]), Data};
 encode_masked_fields([Field = #field{is_optional = false, name = Name} | Fields], Data, Mask, Acc) ->
     {Value, Data2} = maps:take(Name, Data),
     {EncodedField, _} = encode_field(Field, Value),
@@ -215,8 +220,8 @@ encode_masked_fields([Field = #field{is_optional = true, name = Name} | Fields],
 encode_fields(Fields, Data) ->
     encode_fields(Fields, Data, []).
 
-encode_fields([], Data, Acc) ->
-    {lists:reverse(Acc), Data};
+encode_fields([], _Data, Acc) ->
+    {iolist_to_binary(lists:reverse(Acc)), undefined};
 encode_fields([Field | Fields], Data, Acc) ->
     {Value, Data2} = maps:take(Field#field.name, Data),
     {FieldValue, _} = encode_field(Field, Value),
