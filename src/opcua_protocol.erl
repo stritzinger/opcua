@@ -720,10 +720,21 @@ security_sym_unlock(#state{curr_token_id = Token} = State,
         {error, Reason} -> {error, Reason, State2};
         {ok, Chunk2, Sub2} ->
             {ok, Chunk2, State2#state{curr_sec = Sub2}};
-        {expired, _Sub2} ->
-            opcua_security:cleanup(Sub),
+        {expired, Sub2} ->
+            opcua_security:cleanup(Sub2),
             State3 = State2#state{curr_token_id = undefined, curr_sec = undefined},
             {error, 'Bad_SecureChannelTokenUnknown', State3}
+    end;
+security_sym_unlock(#state{temp_token_id = Token, temp_sec = Sub} = State,
+                    #uacp_chunk{security = Token} = Chunk) ->
+    case opcua_security:unlock(Chunk, Sub) of
+        {error, Reason} -> {error, Reason, State};
+        {ok, Chunk2, Sub2} ->
+            {ok, Chunk2, State#state{temp_sec = Sub2}};
+        {expired, Sub2} ->
+            opcua_security:cleanup(Sub2),
+            State2 = State#state{temp_token_id = undefined, temp_sec = undefined},
+            {error, 'Bad_SecureChannelTokenUnknown', State2}
     end;
 security_sym_unlock(State, _Chunk) ->
     {error, 'Bad_SecureChannelTokenUnknown', State}.
