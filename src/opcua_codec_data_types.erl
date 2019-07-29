@@ -42,8 +42,11 @@ parse({startElement, _, "Field", _, Attributes}, _Loc, DataTypeMap) ->
     NodeId = get_node_id("DataType", Attributes),
     Value = get_attr("Value", Attributes),
     ValueRank = get_attr("ValueRank", Attributes, -1),
-    NewField = #{node_id => NodeId, value => Value, value_rank => ValueRank},
-    NewFields = maps:get(fields, DataTypeMap) ++ [{Name, NewField}],
+    NewField = #field{name = Name,
+                      node_id = NodeId,
+                      value_rank = ValueRank,
+                      value = Value},
+    NewFields = maps:get(fields, DataTypeMap) ++ [NewField],
     maps:put(fields, NewFields, DataTypeMap);
 parse({endElement, _, "UADataType", _}, _Loc, #{node_id := #node_id{value =Id}})
   when ?IS_BUILTIN_TYPE_ID(Id) -> ok;
