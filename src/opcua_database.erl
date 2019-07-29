@@ -50,20 +50,13 @@ lookup_id(NodeSpec) ->
 
 %% The returned node id is canonical, meaning it is always numeric.
 -spec lookup_encoding(node_spec(), opcua_encoding()) -> node_id().
-% OpenSecureChannelResponse
-lookup_encoding(#node_id{ns = 0, type = numeric, value = 447}, binary) ->
-    #node_id{value = 449};
-% CloseSecureChannelResponse
-lookup_encoding(#node_id{ns = 0, type = numeric, value = 453}, binary) ->
-    #node_id{value = 455};
-lookup_encoding(#node_id{}, binary) ->
-    error(not_implemented);
-lookup_encoding(NodeSpec, binary) ->
-    lookup_encoding(opcua_codec:node_id(NodeSpec), binary).
+lookup_encoding(NodeId = #node_id{}, Encoding) ->
+    opcua_codec_encodings:lookup(NodeId, Encoding);
+lookup_encoding(NodeSpec, Encoding) ->
+    lookup_encoding(opcua_codec:node_id(NodeSpec), Encoding).
 
 %% The returned node id is canonical, meaning it is always numeric.
 -spec resolve_encoding(node_spec()) -> {node_id(), opcua_encoding()}.
-% OpenSecureChannelRequest
 resolve_encoding(NodeId = #node_id{}) ->
     opcua_codec_encodings:resolve(NodeId);
 resolve_encoding(NodeSpec) ->
