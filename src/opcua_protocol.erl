@@ -77,8 +77,7 @@
     curr_token_id :: undefined | pos_integer(),
     temp_token_id :: undefined | pos_integer(),
     curr_sec :: term(),
-    temp_sec :: term(),
-    handler :: term()
+    temp_sec :: term()
 }).
 
 -type state() :: #state{}.
@@ -172,23 +171,16 @@ init(Parent, Ref, Socket, Transport, Opts) ->
     SockRes = Transport:sockname(Socket),
     case {PeerRes, SockRes} of
         {{ok, Peer}, {ok, Sock}} ->
-            case opcua_handler:init([]) of
-                {ok, Sub} ->
-                    State = #state{
-                        opts = Opts,
-                        parent = Parent,
-                        ref = Ref,
-                        socket = Socket,
-                        transport = Transport,
-                        peer = Peer,
-                        sock = Sock,
-                        handler = Sub
-                    },
-                    loop(State, <<>>);
-                {error, Reason} ->
-                    terminate(undefined, {internal_error, Reason,
-                        'An error occured while setting up request handler.'})
-            end;
+            State = #state{
+                opts = Opts,
+                parent = Parent,
+                ref = Ref,
+                socket = Socket,
+                transport = Transport,
+                peer = Peer,
+                sock = Sock
+            },
+            loop(State, <<>>);
         {{error, Reason}, _} ->
             terminate(undefined, {socket_error, Reason,
                 'A socket error occurred when retrieving the peer name.'});
@@ -537,12 +529,10 @@ handle_request(State, #uacp_message{type = channel_close} = Request) ->
         {ok, Resp, State2} -> handle_response(State2, Resp)
     end;
 handle_request(State, #uacp_message{type = channel_message} = Request) ->
-    #state{handler = HandlerSub} = State,
-    case opcua_handler:handle_request(Request, HandlerSub) of
+    case opcua_session_manager:handle_request(Request) of
         {error, Reason} -> {error, Reason, State};
-        {ok, HandlerSub2} -> {ok, State#state{handler = HandlerSub2}};
-        {reply, Resp, HandlerSub2} ->
-            handle_response(State#state{handler = HandlerSub2}, Resp)
+        {reply, Resp} -> handle_response(State, Resp);
+        ok -> {ok, State}
     end.
 
 handle_response(State, #uacp_message{type = MsgType} = Response)

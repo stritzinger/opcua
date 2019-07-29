@@ -26,4 +26,9 @@ init([]) ->
         id => opcua_registry,
         start => {opcua_registry, start_link, [#{}]}
     },
-    {ok, {SupFlags, [DatabaseSpec, RegistrySpec]}}.
+    SessionsSupSpec = #{
+        id => opcua_sessions_sup,
+        type => supervisor,
+        start => {opcua_sessions_sup, start_link, []}
+    },
+    {ok, {SupFlags, [DatabaseSpec, RegistrySpec, SessionsSupSpec]}}.
