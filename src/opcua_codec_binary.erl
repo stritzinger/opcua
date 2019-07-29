@@ -9,7 +9,6 @@
 
 %% API Functions
 -export([decode/2]).
--export([decode_schema/2]).
 -export([encode/2]).
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -59,10 +58,15 @@ decode_type(NodeSpec, Data) ->
     decode_type(opcua_codec:node_id(NodeSpec), Data).
 
 decode_builtin(extension_object, Data) ->
-    {#{type_id := NodeId, body := Body} = ExtObj, Data2} =
+    {#{type_id := NodeId, body := Body} = ExtObj, Data1} =
         opcua_codec_binary_builtin:decode(extension_object, iolist_to_binary(Data)),
-    {DecodedBody, _} = decode(NodeId, Body),
-    {ExtObj#{body := DecodedBody}, Data2};
+    case NodeId of
+        #node_id{value = 0} ->
+            {undefined, Data1};
+        _ ->
+            {DecodedBody, _} = decode(NodeId, Body),
+            {ExtObj#{body := DecodedBody}, Data1}
+    end;
 decode_builtin(Type, Data) ->
     opcua_codec_binary_builtin:decode(Type, iolist_to_binary(Data)).
 

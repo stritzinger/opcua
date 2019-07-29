@@ -40,8 +40,8 @@ parse({characters, Chars}, _Loc, {await_subtype, DataTypeMap}) ->
 parse({startElement, _, "Field", _, Attributes}, _Loc, DataTypeMap) ->
     Name = convert_name(get_attr("Name", Attributes)),
     NodeId = get_node_id("DataType", Attributes),
-    Value = get_attr("Value", Attributes),
-    ValueRank = get_attr("ValueRank", Attributes, -1),
+    Value = get_int("Value", Attributes),
+    ValueRank = get_int("ValueRank", Attributes, -1),
     NewField = #field{name = Name,
                       node_id = NodeId,
                       value_rank = ValueRank,
@@ -56,6 +56,15 @@ parse({endElement, _, "UADataType", _}, _Loc, DataTypeMap = #{node_id := NodeId,
     store_data_type(NodeId, Name, DataType);
 parse(_Event, _Loc, State) ->
     State.
+
+get_int(Key, Attributes) ->
+    get_int(Key, Attributes, undefined).
+
+get_int(Key, Attributes, Default) ->
+    case get_attr(Key, Attributes, Default) of
+        Default     -> Default;
+        StringInt   -> list_to_integer(StringInt)
+    end.
 
 resolve_type(#node_id{value = 22}, Map = #{node_id := NodeId}, Fields) ->
     #structure{node_id = NodeId, with_options = maps:get(is_option_set, Map, false), fields = Fields};
