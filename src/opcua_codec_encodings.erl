@@ -1,6 +1,6 @@
 -module(opcua_codec_encodings).
 
--export([lookup/1, setup/1]).
+-export([resolve/1, setup/1]).
 
 %% event handler for sax parser
 -export([parse/3]).
@@ -12,7 +12,7 @@
 
 %% PUBLIC API
 
-lookup(NodeId) ->
+resolve(NodeId) ->
     proplists:get_value(NodeId, ets:lookup(?DB_ENCODINGS, NodeId)).
 
 setup(File) ->
