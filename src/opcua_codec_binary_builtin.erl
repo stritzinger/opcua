@@ -155,9 +155,10 @@ decode_masked(Mask, Types, Bin) ->
     Apply1 = element(1, lists:unzip(Apply)),
     Defaults1 = element(1, lists:unzip(Defaults)),
     Final_Defaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults1),
+    Final_Defaults1 = lists:filter(fun({_, Default}) -> Default =/= undefined end, Final_Defaults),
     {List, T} = decode_multi(lists:map(fun({_,Type,_}) -> Type end, Apply1), Bin),
     Final_Apply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
-    {maps:from_list(Final_Apply ++ Final_Defaults), T}.
+    {maps:from_list(Final_Apply ++ Final_Defaults1), T}.
 
 boolean_mask(Mask) when is_bitstring(Mask) ->
     [X==1 || <<X:1>> <= Mask];
