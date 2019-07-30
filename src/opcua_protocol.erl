@@ -205,8 +205,9 @@ loop_consume(#state{parent = P, socket = S, transport = T} = State, Buff) ->
                 {ok, Buff2, State2} ->
                     loop_produce(State2, Buff2, fun loop/2)
             catch
-                _:Reason ->
-                    loop_error(State, Reason, Buff, fun loop/2)
+                Class:Reason:Stack ->
+                    Error = {exception, Class, Reason, Stack},
+                    loop_error(State, Error, Buff, fun loop/2)
             end;
         {Closed, S} ->
             ?LOG_DEBUG("Socket closed"),
@@ -235,17 +236,25 @@ loop_produce(#state{socket = S, transport = T} = State, Buff, Cont) ->
         {ok, Output, State2} ->
             ?LOG_DEBUG("Sending:  ~p", [Output]),
             case T:send(S, Output) of
-                {error, Reason} -> loop_error(State2, Reason, Buff, Cont);
-                ok -> Cont(State2, Buff)
+                ok -> Cont(State2, Buff);
+                {error, Reason} ->
+                    loop_error(State2, Reason, Buff, Cont)
             end
     catch
-        _:Reason -> loop_error(State, Reason, Buff, Cont)
+        Class:Reason:Stack ->
+            Error = {exception, Class, Reason, Stack},
+            loop_error(State, Error, Buff, Cont)
     end.
 
 -spec loop_error(state(), term(), binary(), function()) -> no_return().
+%%TODO: Implemente proper error handling, support non-fatal errors and send
+%%      error message to the client.
+loop_error(State, {exception, Class, Reason, Stack}, _Buff, _Cont) ->
+    ?LOG_ERROR("Protocol ~s exception: ~p", [Class, Reason]),
+    ?LOG_DEBUG("Stacktrace: ~p", [Stack]),
+    terminate(State, Reason);
 loop_error(State, Reason, _Buff, _Cont) ->
-    %TODO: Implemente proper error handling, support non-fatal errors and send
-    %      error message to the client.
+    ?LOG_ERROR("Protocol error: ~p", [Reason]),
     terminate(State, Reason).
 
 terminate(undefined, Reason) ->
@@ -295,7 +304,7 @@ handle_data(State, Data, Buff) ->
             AllData = <<Buff/binary, Data/binary>>,
             {Chunks, Buff2} = opcua_protocol_codec:decode_chunks(AllData),
             case handle_chunks(State, Chunks) of
-                {error, Reason, State} -> {error, Reason, Buff2, State};
+                {error, Reason, State2} -> {error, Reason, Buff2, State2};
                 {ok, State2} -> {ok, Buff2, State2}
             end
     end.
@@ -307,7 +316,7 @@ handle_chunks(State, [Chunk | Rest]) ->
         {error, _Reason, _State} = Error -> Error;
         {ok, State2} -> handle_chunks(State2, Rest)
     catch
-        _:Reason -> {error, Reason, State}
+        Class:Reason:Stack -> {error, {exception, Class, Reason, Stack}, State}
     end.
 
 handle_chunk(State, #uacp_chunk{state = undefined, message_type = MsgType,

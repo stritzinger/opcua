@@ -84,12 +84,16 @@ open(#uacp_message{type = channel_open,
     Now = opcua_util:date_time(),
     Resp = opcua_protocol:req2res(Req, 447, #{
         response_header => #{
-          timestamp => Now,
-          request_handle => ReqId,
-          service_result => 0,
-          service_diagnostic => #{},
-          string_table => [],
-          additional_headers => #{}
+            timestamp => Now,
+            request_handle => ReqId,
+            service_result => 0,
+            service_diagnostics => #{},
+            string_table => [],
+            additional_header => #{
+                body => undefined,
+                encoding => undefined,
+                type_id => 0
+            }
         },
         server_protocol_version => 0,
         security_token => #{
@@ -100,6 +104,7 @@ open(#uacp_message{type = channel_open,
         },
         server_nonce => undefined
     }),
+    ?LOG_DEBUG("Open Secure channel response: ~p", [Resp]),
     {ok, Resp, State#state{server_policy = ServerPolicy}}.
 
 -spec setup_asym(opcua_protocol:chunk(), state())
@@ -153,12 +158,16 @@ close(#uacp_message{type = channel_close,
     Now = opcua_util:date_time(),
     Resp = opcua_protocol:req2res(Req, 455, #{
         response_header => #{
-          timestamp => Now,
-          request_handle => ReqId,
-          service_result => 0,
-          service_diagnostic => #{},
-          string_table => [],
-          additional_headers => #{}
+            timestamp => Now,
+            request_handle => ReqId,
+            service_result => 0,
+            service_diagnostics => #{},
+            string_table => [],
+            additional_header => #{
+                body => undefined,
+                encoding => undefined,
+                type_id => 0
+            }
         }
     }),
     {ok, Resp, State}.
