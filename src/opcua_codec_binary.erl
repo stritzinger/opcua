@@ -168,8 +168,8 @@ encode_type(#node_id{} = NodeId, Data) ->
 encode_type(NodeSpec, Data) ->
     encode_type(opcua_codec:node_id(NodeSpec), Data).
 
-encode_builtin(extension_object, #{type_id := NodeId, body := Body} = ExtObj) ->
-    ExtObj1 = case NodeId of
+encode_builtin(extension_object, #{type_id := NodeSpec, body := Body} = ExtObj) ->
+    ExtObj1 = case opcua_database:lookup_id(NodeSpec) of
                 #node_id{value = 0} ->
                     ExtObj#{body := undefined};
                 NodeId ->

@@ -131,7 +131,7 @@ decode_object(Data) ->
 -spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
 encode_object(NodeId, Data) ->
     EncNodeId = opcua_database:lookup_encoding(NodeId, binary),
-    {Header, _} = pcua_codec_binary:encode(node_id, EncNodeId),
+    {Header, _} = opcua_codec_binary:encode(node_id, EncNodeId),
     {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
     [Header, Msg].
 
