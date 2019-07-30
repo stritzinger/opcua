@@ -1,4 +1,4 @@
--module(codec_tests).
+-module(codec_schema_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 -include("opcua_codec.hrl").
