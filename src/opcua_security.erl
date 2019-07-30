@@ -81,25 +81,12 @@ open(#uacp_message{type = channel_open,
     ?LOG_DEBUG("Secure channel opened: ~p", [Msg]),
     #state{channel_id = ChannelId, token_id = TokenId} = State,
     ServerPolicy = #uacp_security_policy{policy_url = ?POLICY_NONE},
-    Now = opcua_util:date_time(),
     Resp = opcua_protocol:req2res(Req, 447, #{
-        response_header => #{
-            timestamp => Now,
-            request_handle => ReqId,
-            service_result => 0,
-            service_diagnostics => #{},
-            string_table => [],
-            additional_header => #{
-                body => undefined,
-                encoding => undefined,
-                type_id => 0
-            }
-        },
         server_protocol_version => 0,
         security_token => #{
             channel_id => ChannelId,
             token_id => TokenId,
-            created_at => Now,
+            created_at => opcua_util:date_time(),
             revised_lifetime => 3600000
         },
         server_nonce => undefined
@@ -156,20 +143,7 @@ close(#uacp_message{type = channel_close,
                     payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel closed: ~p", [Msg]),
     Now = opcua_util:date_time(),
-    Resp = opcua_protocol:req2res(Req, 455, #{
-        response_header => #{
-            timestamp => Now,
-            request_handle => ReqId,
-            service_result => 0,
-            service_diagnostics => #{},
-            string_table => [],
-            additional_header => #{
-                body => undefined,
-                encoding => undefined,
-                type_id => 0
-            }
-        }
-    }),
+    Resp = opcua_protocol:req2res(Req, 455, #{}),
     {ok, Resp, State}.
 
 -spec cleanup(state()) -> ok.

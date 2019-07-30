@@ -254,7 +254,9 @@ encode_diagnostic_info(Diagnostic_Info) ->
 encode_qualified_name(#{namespace_index := Namespace_Index, name := Name}) ->
     encode_multi([{uint16, Namespace_Index}, {string, Name}]).
 
-encode_localized_text(Localized_Text) ->
+encode_localized_text(Localized_Text) when is_binary(Localized_Text) ->
+    encode_localized_text(#{local => undefined, text => Localized_Text});
+encode_localized_text(Localized_Text) when is_map(Localized_Text) ->
     Types = [{string, maps:get(locale, Localized_Text, undefined)},
          {string, maps:get(text, Localized_Text, undefined)}],
     encode_masked(Types).

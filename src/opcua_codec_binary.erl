@@ -223,7 +223,7 @@ encode_fields(Fields, Data) ->
 encode_fields([], _Data, Acc) ->
     {iolist_to_binary(lists:reverse(Acc)), undefined};
 encode_fields([Field | Fields], Data, Acc) ->
-    {Value, Data2} = maps:take(Field#field.name, Data),
+    {_, {Value, Data2}} = {Field#field.name, maps:take(Field#field.name, Data)},
     {FieldValue, _} = encode_field(Field, Value),
     encode_fields(Fields, Data2, [FieldValue|Acc]).
 
@@ -232,8 +232,8 @@ encode_field(#field{node_id = NodeId, value_rank = -1}, Data) ->
 encode_field(#field{node_id = NodeId, value_rank = N}, Array)
   when N>=1, is_list(Array) ->
     Dims = resolve_dims(Array, []),
-    Array = encode_array(NodeId, Array, []),
-    {[Dims, Array], undefined}.
+    Array2 = encode_array(NodeId, Array, []),
+    {[Dims, Array2], undefined}.
 
 resolve_dims(List, Acc) when is_list(List) ->
     {EncDim, _} = encode(int32, length(List)),

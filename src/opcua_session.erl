@@ -5,11 +5,15 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-include("opcua_codec.hrl").
+-include("opcua_protocol.hrl").
+
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
 -export([start_link/1]).
+-export([handle_request/2]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -35,6 +39,11 @@
 
 start_link(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Opts, []).
+
+handle_request(#uacp_message{node_id = NodeSpec, payload = Msg}, Sess) ->
+    #node_id{value = Num} = opcua_database:lookup_id(NodeSpec),
+    ?LOG_DEBUG("Unexpected OPCUA request ~w for session ~w: ~p", [Num, Sess, Msg]),
+    {error, 'Bad_RequestNotAllowed'}.
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

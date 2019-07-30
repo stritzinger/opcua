@@ -244,7 +244,7 @@ prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Ch
     Chunk#uacp_chunk{header_size = HeaderSize, unlocked_size = UnlockedSize};
 prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType} = Chunk)
   when State =:= unlocked, MsgType =:= channel_close, ChunkType =:= final;
-       State =:= unlocked, MsgType =:= channel_msg ->
+       State =:= unlocked, MsgType =:= channel_message ->
     #uacp_chunk{body = UnlockedBody} = Chunk,
     UnlockedSize = iolist_size(UnlockedBody),
     Chunk#uacp_chunk{header_size = 8 + 4 + 4, unlocked_size = UnlockedSize};
@@ -276,7 +276,7 @@ freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Chu
 freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType,
                          header_size = HeaderSize, locked_size = LockedSize} = Chunk)
   when State =:= unlocked, MsgType =:= channel_close, ChunkType =:= final, HeaderSize =/= undefined, LockedSize =/= undefined;
-       State =:= unlocked, MsgType =:= channel_msg, HeaderSize =/= undefined, LockedSize =/= undefined ->
+       State =:= unlocked, MsgType =:= channel_message, HeaderSize =/= undefined, LockedSize =/= undefined ->
     #uacp_chunk{
         channel_id = ChannelId,
         security = TokenId,

@@ -1,7 +1,7 @@
 -module(opcua_util).
 
 -export([trace/2, trace/3, trace_clear/0, date_time/0,
-         date_time_to_rfc3339/1, bin_to_hex/1,
+         nonce/0, date_time_to_rfc3339/1, bin_to_hex/1,
          guid_to_hex/1, bin_to_hex/2, hex_to_bin/1]).
 
 -spec trace(atom(), atom()) -> non_neg_integer().
@@ -15,6 +15,9 @@ trace(Mod, Fun, N) ->
 -spec trace_clear() -> ok.
 trace_clear() ->
     recon_trace:clear().
+
+nonce() ->
+    crypto:strong_rand_bytes(32).
 
 date_time() ->
     Now = erlang:system_time(nanosecond),
