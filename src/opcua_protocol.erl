@@ -77,7 +77,8 @@
     curr_token_id :: undefined | pos_integer(),
     temp_token_id :: undefined | pos_integer(),
     curr_sec :: term(),
-    temp_sec :: term()
+    temp_sec :: term(),
+    session :: undefined | pid()
 }).
 
 -type state() :: #state{}.
@@ -141,7 +142,25 @@ start_link(Ref, _Socket, Transport, Opts) ->
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 req2res(#uacp_message{type = T, request_id = ReqId}, NodeId, Payload) ->
-    #uacp_message{type = T, request_id = ReqId, node_id = NodeId, payload = Payload}.
+    FinalPayload = case maps:is_key(response_header, Payload) of
+        true -> Payload;
+        false ->
+            Header = #{
+                timestamp => opcua_util:date_time(),
+                request_handle => ReqId,
+                service_result => 0,
+                service_diagnostics => #{},
+                string_table => [],
+                additional_header => #{
+                    body => undefined,
+                    encoding => undefined,
+                    type_id => 0
+                }
+            },
+            Payload#{response_header => Header}
+    end,
+    #uacp_message{type = T, request_id = ReqId,
+                  node_id = NodeId, payload = FinalPayload}.
 
 
 %%% SYSTEM CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -537,12 +556,23 @@ handle_request(State, #uacp_message{type = channel_close} = Request) ->
         {error, _Reason, _State2} = Error -> Error;
         {ok, Resp, State2} -> handle_response(State2, Resp)
     end;
-handle_request(State, #uacp_message{type = channel_message} = Request) ->
+handle_request(#state{session = undefined} = State,
+               #uacp_message{type = channel_message} = Request) ->
     case opcua_session_manager:handle_request(Request) of
+        {error, Reason} -> {error, Reason, State};
+        {reply, Resp} -> handle_response(State, Resp);
+        {bind, Resp, Session} ->
+            handle_response(State#state{session = Session}, Resp)
+    end;
+handle_request(#state{session = Session} = State,
+               #uacp_message{type = channel_message} = Request) ->
+    case opcua_session:handle_request(Request, Session) of
         {error, Reason} -> {error, Reason, State};
         {reply, Resp} -> handle_response(State, Resp);
         ok -> {ok, State}
     end.
+
+
 
 handle_response(State, #uacp_message{type = MsgType} = Response)
   when MsgType =:= acknowledge; MsgType =:= error ->
