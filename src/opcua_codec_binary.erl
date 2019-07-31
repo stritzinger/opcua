@@ -133,7 +133,6 @@ resolve_union_value(SwitchValue, Fields, Data) ->
     decode_fields([Field], Data).
 
 resolve_enum_value(EnumValue, Fields) ->
-    io:format("~p ~p~n", [EnumValue, Fields]),
     [Field] = [F || F = #field{value=Value} <- Fields, Value == EnumValue],
     Field#field.name.
 
