@@ -142,7 +142,7 @@ create_session(#state{sessions = Sessions} = State,
                             application_uri => <<"urn:stritzinger:opcua:erlang:server">>,
                             product_uri => <<"urn:stritzinger.com:opcua:erlang:server">>,
                             application_name => <<"Stritzinger GmbH OPCUA Server">>,
-                            application_type => #{name => server},
+                            application_type => server,
                             gateway_server_uri => undefined,
                             discovery_profile_uri => undefined,
                             discovery_urls => [
@@ -150,12 +150,12 @@ create_session(#state{sessions = Sessions} = State,
                             ]
                         },
                         server_certificate => undefined,
-                        security_mode => #{name => none},
+                        security_mode => none,
                         security_policy_uri => <<"http://opcfoundation.org/UA/SecurityPolicy#None">>,
                         user_identity_tokens => [
                             #{
                                 policy_id => <<"anonymous">>,
-                                token_type => #{name => anonymous},
+                                token_type => anonymous,
                                 issued_token_type => undefined,
                                 issuer_endpoint_url => undefined,
                                 security_policy_uri => undefined

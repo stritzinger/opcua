@@ -98,7 +98,7 @@ enum() ->
     meck:expect(opcua_database, lookup_schema,
         fun(#node_id{value = 101}) -> Enum end),
     NodeId = #node_id{type = numeric, value = 101},
-    ToBeEncoded = #{name => field_2},
+    ToBeEncoded = field_2,
     assert_codec(NodeId, ToBeEncoded).
 
 union() ->
