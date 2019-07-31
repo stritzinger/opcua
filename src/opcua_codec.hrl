@@ -22,7 +22,7 @@
 
 -record(extension_object, {
     type_id = #node_id{} :: node_id(),
-    encoding :: xml | binary | undefined,
+    encoding :: xml | byte_string | undefined,
     body :: term()
 }).
 
