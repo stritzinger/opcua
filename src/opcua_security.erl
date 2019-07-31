@@ -75,7 +75,6 @@ unlock(_Chunk, _State) ->
 -spec open(opcua_protocol:message(), state())
     -> {ok, opcua_protocol:message(), state()} | {error, term()}.
 open(#uacp_message{type = channel_open,
-                   request_id = ReqId,
                    node_id = #node_id{ns = 0, value = 444},
                    payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel opened: ~p", [Msg]),
@@ -138,11 +137,9 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
 -spec close(opcua_protocol:message(), state())
     -> {ok, opcua_protocol:message(), state()} | {error, term()}.
 close(#uacp_message{type = channel_close,
-                    request_id = ReqId,
                     node_id = #node_id{ns = 0, value = 450},
                     payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel closed: ~p", [Msg]),
-    Now = opcua_util:date_time(),
     Resp = opcua_protocol:req2res(Req, 455, #{}),
     {ok, Resp, State}.
 

@@ -79,7 +79,8 @@
     temp_token_id :: undefined | pos_integer(),
     curr_sec :: term(),
     temp_sec :: term(),
-    session :: undefined | pid()
+    conn :: undefined | connection(),
+    sess :: undefined | pid()
 }).
 
 -type state() :: #state{}.
@@ -93,6 +94,7 @@
 -type security_policy() :: #uacp_security_policy{}.
 -type chunk() :: #uacp_chunk{}.
 -type message() :: #uacp_message{}.
+-type connection() :: #uacp_connection{}.
 
 -type hello_payload() :: #{
     ver := non_neg_integer(),
@@ -194,7 +196,8 @@ init(Parent, Ref, Socket, Transport, Opts) ->
                 socket = Socket,
                 transport = Transport,
                 peer = Peer,
-                sock = Sock
+                sock = Sock,
+                conn = #uacp_connection{pid = self()}
             },
             loop(State, <<>>);
         {{error, Reason}, _} ->
@@ -553,20 +556,20 @@ handle_request(State, #uacp_message{type = channel_close} = Request) ->
         {error, _Reason, _State2} = Error -> Error;
         {ok, Resp, State2} -> handle_response(State2, Resp)
     end;
-handle_request(#state{session = undefined} = State,
+handle_request(#state{conn = Conn, sess = undefined} = State,
                #uacp_message{type = channel_message} = Request) ->
-    case opcua_session_manager:handle_request(Request) of
+    case opcua_session_manager:handle_request(Conn, Request) of
         {error, Reason} -> {error, Reason, State};
-        {reply, Resp} -> handle_response(State, Resp);
-        {bind, Resp, Session} ->
-            handle_response(State#state{session = Session}, Resp)
+        {created, Resp, _SessPid} -> handle_response(State, Resp);
+        {bound, Resp, SessPid} ->
+            handle_response(State#state{sess = SessPid}, Resp)
     end;
-handle_request(#state{session = Session} = State,
+handle_request(#state{conn = Conn, sess = Session} = State,
                #uacp_message{type = channel_message} = Request) ->
-    case opcua_session:handle_request(Request, Session) of
+    case opcua_session:handle_request(Conn, Request, Session) of
         {error, Reason} -> {error, Reason, State};
-        {reply, Resp} -> handle_response(State, Resp);
-        ok -> {ok, State}
+        {closed, Resp} -> handle_response(State#state{sess = undefined}, Resp);
+        {reply, Resp} -> handle_response(State, Resp)
     end.
 
 
