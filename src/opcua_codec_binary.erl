@@ -130,7 +130,7 @@ resolve_union_value(SwitchValue, Fields, Data) ->
 
 resolve_enum_value(EnumValue, Fields) ->
     [Field] = [F || F = #field{value=Value} <- Fields, Value == EnumValue],
-    #{name => Field#field.name}.
+    Field#field.name.
 
 
 %%% encoding
@@ -190,7 +190,7 @@ encode_schema(#union{fields = Fields}, UnionMap) ->
     {SwitchValue, _} = encode_builtin(uint32, Field#field.value),
     {EncodedValue, _} = encode_field(Field, maps:get(Name, UnionMap)),
     {[SwitchValue, EncodedValue], undefined};
-encode_schema(#enum{fields = Fields}, #{name := Name}) ->
+encode_schema(#enum{fields = Fields}, Name) ->
     [Field] = [Field || Field = #field{name=FieldName} <- Fields, FieldName==Name],
     encode_builtin(int32, Field#field.value);
 encode_schema(#builtin{builtin_node_id = BuiltinNodeId}, Data) ->

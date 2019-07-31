@@ -51,8 +51,8 @@ open_secure_channel_request() ->
           }
         },
         client_protocol_version => 0,
-        request_type => #{name => issue},
-        security_mode => #{name => none},
+        request_type => issue,
+        security_mode => none,
         client_nonce => <<>>,
         requested_lifetime => 3600000
     },
