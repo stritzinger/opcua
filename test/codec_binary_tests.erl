@@ -44,11 +44,7 @@ open_secure_channel_request() ->
           return_diagnostics => 0,
           audit_entry_id => undefined,
           timeout_hint => 1000,
-          additional_header => #{
-            body => undefined,
-            encoding => undefined,
-            type_id => #node_id{value = 0}
-          }
+          additional_header => #extension_object{}
         },
         client_protocol_version => 0,
         request_type => issue,
@@ -68,13 +64,9 @@ open_secure_channel_response() ->
           timestamp => 132061913263430080,
           request_handle => 1,
           service_result => 0,
-          service_diagnostics => #{},
+          service_diagnostics => #diagnostic_info{},
           string_table => [],
-          additional_header => #{
-            body => undefined,
-            encoding => undefined,
-            type_id => #node_id{value = 0}
-          }
+          additional_header => #extension_object{}
         },
         server_protocol_version => 0,
         security_token => #{

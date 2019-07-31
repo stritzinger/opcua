@@ -58,7 +58,7 @@ decode_type(NodeSpec, Data) ->
     decode_type(opcua_codec:node_id(NodeSpec), Data).
 
 decode_builtin(extension_object, Data) ->
-    {#{type_id := NodeId, body := Body} = ExtObj, Data1} =
+    {#extension_object{type_id = NodeId, body = Body} = ExtObj, Data1} =
         opcua_codec_binary_builtin:decode(extension_object, iolist_to_binary(Data)),
     NodeId1 = case opcua_database:resolve_encoding(NodeId) of
                   undefined                 -> NodeId;
@@ -66,10 +66,10 @@ decode_builtin(extension_object, Data) ->
               end,
     case NodeId1 of
         #node_id{value = 0} ->
-            {ExtObj#{body := undefined}, Data1};
+            {ExtObj#extension_object{body = undefined}, Data1};
         _ ->
             {DecodedBody, _} = decode(NodeId1, Body),
-            {ExtObj#{body := DecodedBody}, Data1}
+            {ExtObj#extension_object{body = DecodedBody}, Data1}
     end;
 decode_builtin(Type, Data) ->
     opcua_codec_binary_builtin:decode(Type, iolist_to_binary(Data)).
@@ -172,13 +172,13 @@ encode_type(#node_id{} = NodeId, Data) ->
 encode_type(NodeSpec, Data) ->
     encode_type(opcua_codec:node_id(NodeSpec), Data).
 
-encode_builtin(extension_object, #{type_id := NodeSpec, body := Body} = ExtObj) ->
+encode_builtin(extension_object, #extension_object{type_id = NodeSpec, body = Body} = ExtObj) ->
     ExtObj1 = case opcua_database:lookup_id(NodeSpec) of
                 #node_id{value = 0} ->
-                    ExtObj#{body := undefined};
+                    ExtObj#extension_object{body = undefined};
                 NodeId ->
                     {EncodedBody, _} = encode(NodeId, Body),
-                    ExtObj#{body := EncodedBody}
+                    ExtObj#extension_object{body = EncodedBody}
               end,
     {opcua_codec_binary_builtin:encode(extension_object, ExtObj1), undefined};
 encode_builtin(Type, Data) ->

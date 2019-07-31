@@ -1,7 +1,53 @@
 -record(node_id, {
     ns = 0 :: non_neg_integer(),
     type = numeric :: numeric | string | guid | opaque,
-    value :: non_neg_integer() | atom() | binary()
+    value = 0 :: non_neg_integer() | atom() | binary()
+}).
+
+-record(expanded_node_id, {
+    node_id = #node_id{} :: node_id(),
+    namespace_uri :: binary(),
+    server_index :: non_neg_integer()
+}).
+
+-record(qualified_name, {
+    namespace_index :: non_neg_integer(),
+    name :: binary()
+}).
+
+-record(localized_text, {
+    locale :: binary(),
+    text :: binary()
+}).
+
+-record(extension_object, {
+    type_id = #node_id{} :: node_id(),
+    encoding :: xml | binary | undefined,
+    body :: term()
+}).
+
+-record(data_value, {
+    value :: term(),
+    status :: integer(),
+    source_timestamp :: non_neg_integer(),
+    source_pico_seconds :: non_neg_integer(),
+    server_timestamp :: non_neg_integer(),
+    server_pico_seconds :: non_neg_integer()
+}).
+
+-record(variant, {
+    type :: builtin_type(),
+    value = [] :: list()
+}).
+
+-record(diagnostic_info, {
+    symbolic_id :: integer(),
+    namespace_uri :: integer(),
+    locale :: integer(),
+    localized_text :: integer(),
+    additional_info :: binary(),
+    inner_status_code :: integer(),
+    inner_diagnostic_info :: term()
 }).
 
 -record(structure, {
