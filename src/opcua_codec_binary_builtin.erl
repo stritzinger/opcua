@@ -154,21 +154,19 @@ decode_data_value(Mask, Bin) ->
 
 decode_masked(RecordInfo, Mask, Types, Bin) ->
     Boolean_Mask = boolean_mask(Mask),
-    {Apply, Defaults} = lists:splitwith(fun({_, Cond}) -> Cond end,
-                        lists:zip(Types, Boolean_Mask)),
+    Apply = lists:filter(fun({_, Cond}) -> Cond end, lists:zip(Types, Boolean_Mask)),
     Apply1 = element(1, lists:unzip(Apply)),
-    Defaults1 = element(1, lists:unzip(Defaults)),
-    Final_Defaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Defaults1),
+    Defaults = lists:map(fun({Name, _, Default}) -> {Name, Default} end, Types -- Apply1),
     {List, T} = decode_multi(lists:map(fun({_,Type,_}) -> Type end, Apply1), Bin),
     Final_Apply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
-    {to_record(RecordInfo, Final_Apply ++ Final_Defaults), T}.
+    {to_record(RecordInfo, Final_Apply ++ Defaults), T}.
 
 to_record({RecordName, RecordFields}, Proplist) ->
     Values = [proplists:get_value(Key, Proplist) || Key <- RecordFields],
     list_to_tuple([RecordName | Values]).
 
 boolean_mask(Mask) when is_bitstring(Mask) ->
-    [X==1 || <<X:1>> <= Mask];
+    lists:reverse([X==1 || <<X:1>> <= Mask]);
 boolean_mask(Mask) ->
     Mask.
 
