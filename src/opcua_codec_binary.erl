@@ -60,11 +60,15 @@ decode_type(NodeSpec, Data) ->
 decode_builtin(extension_object, Data) ->
     {#{type_id := NodeId, body := Body} = ExtObj, Data1} =
         opcua_codec_binary_builtin:decode(extension_object, iolist_to_binary(Data)),
-    case NodeId of
+    NodeId1 = case opcua_database:resolve_encoding(NodeId) of
+                  undefined                 -> NodeId;
+                  {DataTypeNodeId, binary}  -> DataTypeNodeId
+              end,
+    case NodeId1 of
         #node_id{value = 0} ->
             {ExtObj#{body := undefined}, Data1};
         _ ->
-            {DecodedBody, _} = decode(NodeId, Body),
+            {DecodedBody, _} = decode(NodeId1, Body),
             {ExtObj#{body := DecodedBody}, Data1}
     end;
 decode_builtin(Type, Data) ->
