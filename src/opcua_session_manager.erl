@@ -52,19 +52,10 @@ start_link(Opts) ->
 
 handle_request(Conn, #uacp_message{node_id = NodeSpec} = Req) ->
     case opcua_database:lookup_id(NodeSpec) of
-        %% CreateSessionRequest
-        #node_id{value = 459} ->
-            %TODO: Probably check the request header...
+        #node_id{value = 459} -> %% CreateSessionRequest
             gen_server:call(?SERVER, {create_session, Conn, Req});
-        %% ActivateSessionRequest
-        #node_id{value = 465} ->
-            %TODO: Probably check the request header, and do some security checks
-            %      It should be enforced that it is called in the same secure
-            %      channel as the corresponding CreateSesionRequest
-            gen_server:call(?SERVER, {activate_session, Conn, Req});
-        #node_id{value = Num} ->
-            ?LOG_DEBUG("Unexpected OPCUA request ~w: ~p", [Num, Req]),
-            {error, 'Bad_RequestNotAllowed'}
+        _Other ->
+            gen_server:call(?SERVER, {forward_request, Conn, Req})
     end.
 
 
@@ -79,8 +70,8 @@ handle_call({create_session, Conn, Req}, _From, State) ->
         {error, _Reason} = Error -> {reply, Error, State};
         {Result, State2} -> {reply, Result, State2}
     end;
-handle_call({activate_session, Conn, Req}, _From, State) ->
-    case activate_session(State, Conn, Req) of
+handle_call({forward_request, Conn, Req}, _From, State) ->
+    case forward_request(State, Conn, Req) of
         {error, _Reason} = Error -> {reply, Error, State};
         {Result, State2} -> {reply, Result, State2}
     end;
@@ -129,9 +120,24 @@ create_session(State, Conn, Req) ->
             end
     end.
 
-activate_session(_State, _Conn, Msg) ->
-    ?LOG_DEBUG(">>>>>>>>> ~p", [Msg]),
-    {error, 'Bad_NotImplemented'}.
+forward_request(State, Conn, #uacp_message{payload = Msg} = Req) ->
+    #{request_header := #{authentication_token := AuthToken}} = Msg,
+    case session_find_by_auth(State, AuthToken) of
+        error -> {error, 'Bad_SessionIdInvalid'};
+        {ok, #session{pid = SessPid}} ->
+            case opcua_session:handle_request(Conn, Req, SessPid) of
+                ok -> {{ok, SessPid}, State};
+                {error, _Reason} = Error -> Error;
+                {Tag, Resp} when is_atom(Tag) -> {{Tag, Resp, SessPid}, State}
+            end
+    end.
+
+session_find_by_auth(State, Auth) ->
+    #state{sessions = Sessions, auth_lookup = AuthLookup} = State,
+    case maps:find(Auth, AuthLookup) of
+        error -> error;
+        {ok, SessPid} -> maps:find(SessPid, Sessions)
+    end.
 
 session_add(State, Pid, Auth) ->
     #state{sessions = Sessions, auth_lookup = AuthLookup} = State,

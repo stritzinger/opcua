@@ -53,14 +53,14 @@ lookup_id(NodeSpec) ->
 lookup_encoding(NodeId = #node_id{}, Encoding) ->
     opcua_codec_encodings:lookup(NodeId, Encoding);
 lookup_encoding(NodeSpec, Encoding) ->
-    lookup_encoding(opcua_codec:node_id(NodeSpec), Encoding).
+    lookup_encoding(lookup_id(NodeSpec), Encoding).
 
 %% The returned node id is canonical, meaning it is always numeric.
 -spec resolve_encoding(node_spec()) -> {node_id(), opcua_encoding()}.
 resolve_encoding(NodeId = #node_id{}) ->
     opcua_codec_encodings:resolve(NodeId);
 resolve_encoding(NodeSpec) ->
-    resolve_encoding(opcua_codec:node_id(NodeSpec)).
+    resolve_encoding(lookup_id(NodeSpec)).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
