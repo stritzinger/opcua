@@ -68,3 +68,7 @@
     node_id :: undefined | opcua:node_id(),
     payload :: undefined | term()
 }).
+
+-record(uacp_connection, {
+    pid :: pid()
+}).

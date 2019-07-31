@@ -4,6 +4,7 @@
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -include_lib("kernel/include/logger.hrl").
+-include_lib("stdlib/include/assert.hrl").
 
 -include("opcua_codec.hrl").
 -include("opcua_protocol.hrl").
@@ -13,7 +14,7 @@
 
 %% API Functions
 -export([start_link/1]).
--export([handle_request/1]).
+-export([handle_request/2]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -31,9 +32,16 @@
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-record(session, {
+    pid :: pid(),
+    auth :: binary(),
+    ref :: reference()
+}).
+
 -record(state, {
     next_session_id = 1 :: pos_integer(),
-    sessions = #{} :: #{binary() => pid()}
+    sessions = #{} :: #{pid() => #session{}},
+    auth_lookup = #{} :: #{binary() => pid()}
 }).
 
 
@@ -42,18 +50,18 @@
 start_link(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Opts, []).
 
-handle_request(#uacp_message{node_id = NodeSpec} = Req) ->
+handle_request(Conn, #uacp_message{node_id = NodeSpec} = Req) ->
     case opcua_database:lookup_id(NodeSpec) of
         %% CreateSessionRequest
         #node_id{value = 459} ->
             %TODO: Probably check the request header...
-            gen_server:call(?SERVER, {create_session, Req});
+            gen_server:call(?SERVER, {create_session, Conn, Req});
         %% ActivateSessionRequest
         #node_id{value = 465} ->
             %TODO: Probably check the request header, and do some security checks
             %      It should be enforced that it is called in the same secure
             %      channel as the corresponding CreateSesionRequest
-            gen_server:call(?SERVER, {activate_session, Req});
+            gen_server:call(?SERVER, {activate_session, Conn, Req});
         #node_id{value = Num} ->
             ?LOG_DEBUG("Unexpected OPCUA request ~w: ~p", [Num, Req]),
             {error, 'Bad_RequestNotAllowed'}
@@ -66,15 +74,15 @@ init(Opts) ->
     ?LOG_DEBUG("OPCUA session manager process starting with options: ~p", [Opts]),
     {ok, #state{}}.
 
-handle_call({create_session, Req}, _From, State) ->
-    case create_session(State, Req) of
+handle_call({create_session, Conn, Req}, _From, State) ->
+    case create_session(State, Conn, Req) of
         {error, _Reason} = Error -> {reply, Error, State};
-        {ok, Resp, State2} -> {reply, {reply, Resp}, State2}
+        {Result, State2} -> {reply, Result, State2}
     end;
-handle_call({activate_session, Req}, _From, State) ->
-    case activate_session(State, Req) of
+handle_call({activate_session, Conn, Req}, _From, State) ->
+    case activate_session(State, Conn, Req) of
         {error, _Reason} = Error -> {reply, Error, State};
-        {ok, Resp, SessPid, State2} -> {reply, {bind, Resp, SessPid}, State2}
+        {Result, State2} -> {reply, Result, State2}
     end;
 handle_call(Req, From, State) ->
     ?LOG_WARNING("Unexpected gen_server call from ~p: ~p", [From, Req]),
@@ -84,6 +92,8 @@ handle_cast(Req, State) ->
     ?LOG_WARNING("Unexpected gen_server cast: ~p", [Req]),
     {noreply, State}.
 
+handle_info({'DOWN', MonRef, process, SessPid, _Info}, State) ->
+    {noreply, session_del(State, SessPid, MonRef)};
 handle_info(Msg, State) ->
     ?LOG_WARNING("Unexpected gen_server message: ~p", [Msg]),
     {noreply, State}.
@@ -104,76 +114,49 @@ generate_session_auth_token() ->
 next_session_node_id(#state{next_session_id = Id} = State) ->
     {#node_id{ns = 232, value = Id}, State#state{next_session_id = Id + 1}}.
 
-create_session(#state{sessions = Sessions} = State,
-               #uacp_message{payload = Msg} = Req) ->
-    %TODO: We need some imformation about the security channel from the protocol
-    %      like the transport uri, channel id, the policy URL...
-    %      For now it is all hardcoded.
-    SessReqOpts = maps:with([
-        client_certificate,
-        client_description,
-        client_nonce,
-        endpoint_url,
-        max_response_message_size,
-        requested_session_timeout,
-        session_name
-    ], Msg),
-    AuthToken = generate_session_auth_token(),
+create_session(State, Conn, Req) ->
+    %TODO: Probably check the request header...
     {SessNodeId, State2} = next_session_node_id(State),
-    ServerNonce = opcua_util:nonce(),
-    SessOpts = SessReqOpts#{
-        auth_token => AuthToken,
-        node_id => SessNodeId,
-        server_nonce => ServerNonce
-    },
-    case opcua_session_sup:start_session(SessOpts) of
+    AuthToken = generate_session_auth_token(),
+    case opcua_session_sup:start_session(SessNodeId, AuthToken) of
         {error, _Reason} = Error -> Error;
         {ok, SessPid} ->
-            Resp = opcua_protocol:req2res(Req, 462, #{
-                session_id => SessNodeId,
-                authentication_token => AuthToken,
-                revised_session_timeout => maps:get(requested_session_timeout, SessOpts),
-                server_nonce => ServerNonce,
-                server_certificate => undefined,
-                server_endpoints => [
-                    #{
-                        endpoint_url => maps:get(endpoint_url, SessOpts),
-                        server => #{
-                            application_uri => <<"urn:stritzinger:opcua:erlang:server">>,
-                            product_uri => <<"urn:stritzinger.com:opcua:erlang:server">>,
-                            application_name => <<"Stritzinger GmbH OPCUA Server">>,
-                            application_type => server,
-                            gateway_server_uri => undefined,
-                            discovery_profile_uri => undefined,
-                            discovery_urls => [
-                                <<"opc.tcp://0.0.0.0:4840">>
-                            ]
-                        },
-                        server_certificate => undefined,
-                        security_mode => none,
-                        security_policy_uri => <<"http://opcfoundation.org/UA/SecurityPolicy#None">>,
-                        user_identity_tokens => [
-                            #{
-                                policy_id => <<"anonymous">>,
-                                token_type => anonymous,
-                                issued_token_type => undefined,
-                                issuer_endpoint_url => undefined,
-                                security_policy_uri => undefined
-                            }
-                        ],
-                        transport_profile_uri => <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>,
-                        security_level => 0
-                    }
-                ],
-                server_software_certificates => [],
-                server_signature => #{
-                    algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
-                    signature => undefined
-                },
-                max_request_message_size => 0
-            }),
-            {ok, Resp, State2#state{sessions = Sessions#{AuthToken => SessPid}}}
+            case opcua_session:handle_request(Conn, Req, SessPid) of
+                {error, _Reason} = Error -> Error;
+                {created, Resp} ->
+                    State3 = session_add(State2, SessPid, AuthToken),
+                    {{created, Resp, SessPid}, State3}
+            end
     end.
 
-activate_session(_State, _Msg) ->
+activate_session(_State, _Conn, Msg) ->
+    ?LOG_DEBUG(">>>>>>>>> ~p", [Msg]),
     {error, 'Bad_NotImplemented'}.
+
+session_add(State, Pid, Auth) ->
+    #state{sessions = Sessions, auth_lookup = AuthLookup} = State,
+    ?assert(not maps:is_key(Pid, Sessions)),
+    ?assert(not maps:is_key(Auth, AuthLookup)),
+    MonRef = erlang:monitor(process, Pid),
+    SessRec = #session{pid = Pid, auth = Auth, ref = MonRef},
+    State#state{
+        sessions = Sessions#{Pid => SessRec},
+        auth_lookup = AuthLookup#{Auth => Pid}
+    }.
+
+session_del(State, Pid, MonRef) ->
+    #state{sessions = Sessions, auth_lookup = AuthLookup} = State,
+    case maps:take(Pid, Sessions) of
+        error -> State;
+        {#session{pid = Pid, ref = MonRef, auth = Auth}, Sessions2} ->
+            State#state{
+                sessions = Sessions2,
+                auth_lookup = maps:remove(Auth, AuthLookup)
+            };
+        {#session{pid = Pid, ref = OtherMonRef, auth = Auth}, Sessions2} ->
+            erlang:demonitor(OtherMonRef, [flush]),
+            State#state{
+                sessions = Sessions2,
+                auth_lookup = maps:remove(Auth, AuthLookup)
+            }
+    end.
