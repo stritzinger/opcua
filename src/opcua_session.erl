@@ -46,6 +46,8 @@
     server_nonce :: undefined | binary(),
     max_response_message_size :: undefined | non_neg_integer(),
     requested_session_timeout :: undefined | non_neg_integer(),
+    ident :: undefined | binary(),
+    local_ids :: undefined | [binary()],
     conn :: undefined | opcua_protocol:connection()
 }).
 
@@ -76,49 +78,69 @@ terminate(Reason, _State, _Data) ->
 
 started(state_timeout, terminate, _Data) -> {stop, timeout};
 started({call, From}, {request, Conn, Req}, Data) ->
-    #uacp_message{node_id = NodeSpec} = Req,
-    case opcua_database:lookup_id(NodeSpec) of
-        %% CreateSessionRequest
-        #node_id{value = 459} ->
-            case create_session(Data, Conn, Req) of
-                {error, _Reason} = Error -> Error;
-                {ok, Resp, Data2} ->
-                    {next_state, created, Data2, [
-                        {reply, From, {created, Resp}},
-                        {state_timeout, 10000, terminate}
-                    ]}
-            end;
-        #node_id{value = Num} ->
-            ?LOG_ERROR("Unexpected message ~w in state 'started': ~p",
-                       [Num, Req]),
-            {error, 'Bad_RequestNotAllowed'}
-    end.
+    dispatch_request(Data, started, From, Conn, Req, [], #{
+        459 => {next_state, created, fun create_session/3}
+    }, 'Bad_RequestNotAllowed', [{state_timeout, 10000, terminate}]).
 
 created(state_timeout, terminate, _Data) -> {stop, timeout};
 created({call, From}, {request, Conn, Req}, Data) ->
-    #uacp_message{node_id = NodeSpec} = Req,
-    case opcua_database:lookup_id(NodeSpec) of
-        %% ActivateSessionRequest
-        #node_id{value = 465} ->
-            case activate_session(Data, Conn, Req) of
-                {error, _Reason} = Error -> Error;
-                {ok, Resp, Data2} ->
-                    {next_state, bound, Data2, [
-                        {reply, From, {bound, Resp}}
-                    ]}
-            end;
-        #node_id{value = Num} ->
-            ?LOG_ERROR("Unexpected message ~w in state 'created': ~p",
-                       [Num, Req]),
-            {error, 'Bad_RequestNotAllowed'}
-    end.
+    dispatch_request(Data, created, From, Conn, Req, [fun validate_auth/2], #{
+        465 => {next_state, bound, fun activate_session/3}
+    }, 'Bad_SessionNotActivated', []).
 
-bound({call, From}, {request, _Conn, _Req}, Data) ->
-    Result = {error, 'Bad_RequestNotAllowed'},
-    {keep_state, Data, [{reply, From, Result}]}.
+bound({call, From}, {request, Conn, Req}, Data) ->
+    dispatch_request(Data, bound, From, Conn, Req, [fun validate_auth/2], #{
+    }, 'Bad_RequestNotAllowed', []).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+dispatch_request(Data, State, From, Conn, Req, Validators, HandlerMap, Reason, Extra) ->
+    case validate_request(Data, Req, Validators) of
+        {error, _Reason} = Error ->
+            {keep_state, Data, [{reply, From, Error} | Extra]};
+        ok ->
+            #uacp_message{node_id = NodeSpec} = Req,
+            #node_id{value = Num} = opcua_database:lookup_id(NodeSpec),
+            case maps:find(Num, HandlerMap) of
+                error ->
+                    ?LOG_ERROR("Unexpected request ~w in state ~w: ~p",
+                               [Num, State, Req]),
+                    {keep_state, Data, [{reply, From, {error, Reason}} | Extra]};
+                {ok, Spec} ->
+                    dispatch_request(Data, Spec, From, Conn, Req, Extra)
+            end
+    end.
+
+dispatch_request(Data, {keep_state, Fun}, From, Conn, Req, Extra) ->
+    case Fun(Data, Conn, Req) of
+        {error, _Reason} = Error ->
+            {keep_state, Data, [{reply, From, Error} | Extra]};
+        {Result, Data2} ->
+            {keep_state, Data2, [{reply, From, Result} | Extra]}
+    end;
+dispatch_request(Data, {next_state, NextState, Fun}, From, Conn, Req, Extra) ->
+    case Fun(Data, Conn, Req) of
+        {error, _Reason} = Error ->
+            {keep_state, Data, [{reply, From, Error} | Extra]};
+        {Result, Data2} ->
+            {next_state, NextState, Data2,
+             [{reply, From, Result} | Extra]}
+    end.
+
+validate_request(_Data, _Req, []) -> ok;
+validate_request(Data, Req, [Fun | Rest]) ->
+    case Fun(Data, Req) of
+        {error, _Reason} = Error -> Error;
+        ok -> validate_request(Data, Req, Rest)
+    end.
+
+validate_auth(#data{auth_token = AuthToken},
+              #uacp_message{payload = #{
+                request_header := #{authentication_token := AuthToken}}}) ->
+    ok;
+validate_auth(_State, _Headers) ->
+    {error, 'Bad_SessionIdInvalid'}.
 
 create_session(Data, _Conn, #uacp_message{payload = Msg} = Req) ->
     %TODO: Probably check the request header...
@@ -192,8 +214,37 @@ create_session(Data, _Conn, #uacp_message{payload = Msg} = Req) ->
         },
         max_request_message_size => 0
     }),
-    {ok, Resp, Data2}.
+    {{created, Resp}, Data2}.
 
-activate_session(_Data, _Conn, Req) ->
-    ?LOG_DEBUG(">>>>>>>>> ~p", [Req]),
-    {error, 'Bad_NotImplemented'}.
+activate_session(Data, Conn, #uacp_message{payload = Msg} = Req) ->
+    #{
+        locale_ids := LocalIds,
+        user_identity_token := IdentTokenExtObj
+    } = Msg,
+    case check_identity(IdentTokenExtObj) of
+        {error, _Reason} = Error -> Error;
+        {ok, Ident} ->
+            ServerNonce = opcua_util:nonce(),
+            Data2 = Data#data{
+                server_nonce = ServerNonce,
+                ident = Ident,
+                local_ids = LocalIds,
+                conn = Conn
+            },
+            Resp = opcua_protocol:req2res(Req, 468, #{
+                server_nonce => ServerNonce,
+                results => [],
+                diagnostic_infos => []
+            }),
+            {{bound, Resp}, Data2}
+    end.
+
+check_identity(ExtObj) ->
+    #extension_object{type_id = NodeSpec, body = Body} = ExtObj,
+    case opcua_database:lookup_id(NodeSpec) of
+        #node_id{value = 319} -> %% AnonymousIdentityToken
+            #{policy_id := PolicyId} = Body,
+            {ok, PolicyId};
+        _ ->
+            {error, 'Bad_UserAccessDenied'}
+    end.

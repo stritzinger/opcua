@@ -69,7 +69,7 @@ decode_builtin(extension_object, Data) ->
             {ExtObj#extension_object{body = undefined}, Data1};
         _ ->
             {DecodedBody, _} = decode(NodeId1, Body),
-            {ExtObj#extension_object{body = DecodedBody}, Data1}
+            {ExtObj#extension_object{type_id = NodeId1, body = DecodedBody}, Data1}
     end;
 decode_builtin(Type, Data) ->
     opcua_codec_binary_builtin:decode(Type, iolist_to_binary(Data)).
@@ -175,12 +175,19 @@ encode_type(NodeSpec, Data) ->
 
 encode_builtin(extension_object, #extension_object{type_id = NodeSpec, body = Body} = ExtObj) ->
     ExtObj1 = case opcua_database:lookup_id(NodeSpec) of
-                #node_id{value = 0} ->
-                    ExtObj#extension_object{body = undefined};
-                NodeId ->
+        #node_id{value = 0} -> ExtObj#extension_object{body = undefined};
+        NodeId ->
+            case opcua_database:lookup_encoding(NodeId, binary) of
+                undefined -> error('Bad_EncodingEror');
+                EncNodeId ->
                     {EncodedBody, _} = encode(NodeId, Body),
-                    ExtObj#extension_object{body = EncodedBody}
-              end,
+                    ExtObj#extension_object{
+                        type_id = EncNodeId,
+                        encoding = byte_string,
+                        body = EncodedBody
+                    }
+              end
+    end,
     {opcua_codec_binary_builtin:encode(extension_object, ExtObj1), undefined};
 encode_builtin(Type, Data) ->
     {opcua_codec_binary_builtin:encode(Type, Data), undefined}.
