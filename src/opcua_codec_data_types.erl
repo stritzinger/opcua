@@ -1,6 +1,6 @@
 -module(opcua_codec_data_types).
 
--export([lookup/1, setup/1]).
+-export([lookup/1, setup/1, example/1]).
 
 %% event handler for sax parser
 -export([parse/3]).
@@ -18,6 +18,25 @@ lookup(NodeId) ->
 setup(File) ->
     _Tid = ets:new(?DB_DATA_TYPES, [named_table]),
     xmerl_sax_parser:file(File, [{event_fun, fun parse/3}]).
+
+example(#node_id{value = Id}) when ?IS_BUILTIN_TYPE_ID(Id) ->
+    opcua_codec:builtin_type_name(Id);
+example(NodeId = #node_id{}) ->
+    example(lookup(NodeId));
+example(#structure{fields = Fields}) ->
+    lists:foldl(fun(#field{name=Name, node_id=NodeId, value_rank=N}, Map) when N==-1 ->
+                        maps:put(Name, example(NodeId), Map);
+                   (#field{name=Name, node_id=NodeId, value_rank=N}, Map) when N>0 ->
+                        maps:put(Name, [example(NodeId)], Map)
+                end, #{}, Fields);
+example(#enum{fields = [#field{name=Name}|_]}) ->
+    Name; %% just take the first element as example
+example(#union{fields = [#field{name=Name, node_id = NodeId}|_]}) ->
+    #{Name => example(NodeId)}; %% just take the first element as example
+example(#builtin{builtin_node_id = #node_id{value = Id}}) ->
+    opcua_codec:builtin_type_name(Id);
+example(Id) ->
+    example(opcua_codec:node_id(Id)).
 
 
 %% INTERNAL
