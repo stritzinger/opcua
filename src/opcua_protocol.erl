@@ -13,6 +13,7 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -include("opcua_protocol.hrl").
+-include("opcua_codec.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -149,13 +150,9 @@ req2res(#uacp_message{type = T, request_id = ReqId}, NodeId, Payload) ->
                 timestamp => opcua_util:date_time(),
                 request_handle => ReqId,
                 service_result => 0,
-                service_diagnostics => #{},
+                service_diagnostics => #diagnostic_info{},
                 string_table => [],
-                additional_header => #{
-                    body => undefined,
-                    encoding => undefined,
-                    type_id => 0
-                }
+                additional_header => #extension_object{}
             },
             Payload#{response_header => Header}
     end,
