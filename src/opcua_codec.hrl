@@ -28,16 +28,16 @@
 
 -record(data_value, {
     value :: term(),
-    status :: integer(),
-    source_timestamp :: non_neg_integer(),
-    source_pico_seconds :: non_neg_integer(),
-    server_timestamp :: non_neg_integer(),
-    server_pico_seconds :: non_neg_integer()
+    status = 0 :: integer(),
+    source_timestamp = 0 :: non_neg_integer(),
+    source_pico_seconds = 0 :: non_neg_integer(),
+    server_timestamp = 0 :: non_neg_integer(),
+    server_pico_seconds = 0 :: non_neg_integer()
 }).
 
 -record(variant, {
     type :: builtin_type(),
-    value = [] :: list()
+    value :: term()
 }).
 
 -record(diagnostic_info, {
