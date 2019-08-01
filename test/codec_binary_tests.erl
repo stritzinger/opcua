@@ -13,8 +13,8 @@ t_test_() ->
       fun create_session_request/0,
       fun create_session_response/0,
       fun activate_session_request/0,
-      fun activate_session_response/0
-      %fun read_request/0,
+      fun activate_session_response/0,
+      fun read_request/0
       %fun read_response/0,
       %fun browse_request/0,
       %fun browse_response/0
@@ -304,4 +304,53 @@ activate_session_response() ->
               "00000000200000008cc1b4736f99ed415e0c8c73"
               "96ff156b65ac17a2fbefa7867d0cd84225ec0ddb"
               "0000000000000000",
+    assert_codec(NodeId, ToBeEncoded, Encoded).
+
+read_request() ->
+    NodeId = #node_id{value = 629},
+    ToBeEncoded = #{
+        max_age => 0.0,
+        nodes_to_read => [
+            #{
+                attribute_id => 4,
+                data_encoding => #qualified_name{},
+                index_range => undefined,
+                node_id => #node_id{value = 84}
+            },
+            #{
+                attribute_id => 3,
+                data_encoding => #qualified_name{},
+                index_range => undefined,
+                node_id => #node_id{value = 84}
+            },
+            #{
+                attribute_id => 1,
+                data_encoding => #qualified_name{},
+                index_range => undefined,
+                node_id => #node_id{value = 84}
+            },
+            #{
+                attribute_id => 2,
+                data_encoding => #qualified_name{},
+                index_range => undefined,
+                node_id => #node_id{value = 84}
+            }
+        ],
+        request_header => #{
+            additional_header => #extension_object{},
+            audit_entry_id => undefined,
+            authentication_token => #node_id{value = 1001},
+            request_handle => 4,
+            return_diagnostics => 0,
+            timeout_hint => 1000,
+            timestamp => 132061913263484640
+        },
+        timestamps_to_return => source
+    },
+    Encoded = "020000e9030000e0ae6d449c2dd5010400000000"
+              "000000ffffffffe8030000000000000000000000"
+              "00000000000004000000005404000000ffffffff"
+              "0000ffffffff005403000000ffffffff0000ffff"
+              "ffff005401000000ffffffff0000ffffffff0054"
+              "02000000ffffffff0000ffffffff",
     assert_codec(NodeId, ToBeEncoded, Encoded).
