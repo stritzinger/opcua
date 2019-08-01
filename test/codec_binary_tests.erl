@@ -14,8 +14,8 @@ t_test_() ->
       fun create_session_response/0,
       fun activate_session_request/0,
       fun activate_session_response/0,
-      fun read_request/0
-      %fun read_response/0,
+      fun read_request/0,
+      fun read_response/0
       %fun browse_request/0,
       %fun browse_response/0
      ]}.
@@ -353,4 +353,34 @@ read_request() ->
               "0000ffffffff005403000000ffffffff0000ffff"
               "ffff005401000000ffffffff0000ffffffff0054"
               "02000000ffffffff0000ffffffff",
+    assert_codec(NodeId, ToBeEncoded, Encoded).
+
+read_response() ->
+    NodeId = #node_id{value = 632},
+    ToBeEncoded = #{
+        diagnostic_infos => [],
+        response_header => #{
+            additional_header => #extension_object{},
+            request_handle => 4,
+            service_diagnostics => #diagnostic_info{},
+            service_result => 0,
+            string_table => [],
+            timestamp => 132061913263494150
+        },
+        results => [
+            #data_value{value = #variant{type = localized_text,
+                                         value = #localized_text{text = <<"Root">>}}},
+            #data_value{value = #variant{type = qualified_name,
+                                         value = #qualified_name{name = <<"Root">>}}},
+            #data_value{value = #variant{type = node_id,
+                                         value = #node_id{value = 84}}},
+            #data_value{value = #variant{type = int32,
+                                         value = 1}}
+        ]
+    },
+    Encoded = "06d46d449c2dd501040000000000000000000000"
+              "000000000400000003150204000000526f6f7400"
+              "0000000314000004000000526f6f740000000003"
+              "1102000054000000000000000306010000000000"
+              "000000000000",
     assert_codec(NodeId, ToBeEncoded, Encoded).

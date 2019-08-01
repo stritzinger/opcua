@@ -30,7 +30,7 @@ decode(qualified_name, Bin) -> decode_qualified_name(Bin);
 decode(localized_text, <<Mask:1/binary, Bin/binary>>) -> decode_localized_text(Mask, Bin);
 decode(extension_object, Bin) -> decode_extension_object(Bin);
 decode(variant, <<0:6, Bin/binary>>) -> {undefined, Bin};
-decode(variant, <<Type_Id:6, Dim_Flag:1/bits, Array_Flag:1/bits, Bin/binary>>) ->
+decode(variant, <<Dim_Flag:1/bits, Array_Flag:1/bits, Type_Id:6/little-unsigned-integer, Bin/binary>>) ->
     decode_variant(Type_Id, Dim_Flag, Array_Flag, Bin);
 decode(data_value, <<0:2, Mask:6/bits, Bin/binary>>) -> decode_data_value(Mask, Bin);
 decode(_Type, _Bin) -> error('Bad_DecodingError').
@@ -133,18 +133,22 @@ decode_extension_object1(16#02, Type_Id, T) ->
     {Body, T1} = decode(xml, T),
     {#extension_object{type_id = Type_Id, encoding = xml, body = Body}, T1}.
 
-decode_variant(Type_Id, _Dim_Flag, <<0:1>>, Bin) ->
-    {#variant{type = opcua_codec:builtin_type_name(Type_Id), value = []}, Bin};
+decode_variant(Type_Id, <<0:1>>, <<0:1>>, Bin) ->
+    Type_Name = opcua_codec:builtin_type_name(Type_Id),
+    {Value, Bin1} = decode(Type_Name, Bin),
+    {#variant{type = Type_Name, value = Value}, Bin1};
 decode_variant(Type_Id, <<0:1>>, <<1:1>>, Bin) ->
-    {Array, Bin1} = decode_array(opcua_codec:builtin_type_name(Type_Id), Bin),
-    {#variant{type = opcua_codec:builtin_type_name(Type_Id), value = Array}, Bin1};
+    Type_Name = opcua_codec:builtin_type_name(Type_Id),
+    {Array, Bin1} = decode_array(Type_Name, Bin),
+    {#variant{type = Type_Name, value = Array}, Bin1};
 decode_variant(Type_Id, <<1:1>>, <<1:1>>, Bin) ->
-    {Multi_Array, Bin1} = decode_multi_array(opcua_codec:builtin_type_name(Type_Id), Bin),
-    {#variant{type = opcua_codec:builtin_type_name(Type_Id), value = Multi_Array}, Bin1}.
+    Type_Name = opcua_codec:builtin_type_name(Type_Id),
+    {Multi_Array, Bin1} = decode_multi_array(Type_Name, Bin),
+    {#variant{type = Type_Name, value = Multi_Array}, Bin1}.
 
 decode_data_value(Mask, Bin) ->
     Types = [{value, variant, undefined},
-             {status, status_code, good},
+             {status, status_code, 0},
              {source_timestamp, date_time, 0},
              {source_pico_seconds, uint16, 0},
              {server_timestamp, date_time, 0},
@@ -280,9 +284,10 @@ encode_extension_object(#extension_object{type_id = Type_Id, encoding = Encoding
                     end,
     <<Node_Id/binary, Encoding_Flag:8, Bin_Body/binary>>.
 
-encode_variant(#variant{type = Type, value = Multi_Array}) ->
+encode_variant(#variant{type = Type, value = Multi_Array})
+  when is_list(Multi_Array) ->
     Type_Id = opcua_codec:builtin_type_id(Type),
-    {Length, Value, Dims} = build_variant_value(Multi_Array),
+    {Length, Value, Dims} = build_variant_value(Type, Multi_Array),
     case Length of
         0 ->
             <<0:2, Type_Id:6>>;
@@ -292,41 +297,42 @@ encode_variant(#variant{type = Type, value = Multi_Array}) ->
             Bin_Dims = list_to_binary([encode(int32, Dim) || Dim <- Dims]),
             <<3:2, Type_Id:6, Bin_Length/binary, Value/binary,
               Bin_Dim_Length/binary, Bin_Dims/binary>>
-    end.
+    end;
+encode_variant(#variant{type = Type, value = Value}) ->
+    Type_Id = opcua_codec:builtin_type_id(Type),
+    Bin_Value = encode(Type, Value),
+    <<0:2, Type_Id:6, Bin_Value/binary>>.
 
-build_variant_value(Multi_Array) ->
-    build_variant_value(Multi_Array, 0, <<>>, []).
+build_variant_value(Type, Multi_Array) ->
+    build_variant_value(Type, Multi_Array, 0, <<>>, []).
 
-build_variant_value([], Length, Value, Dims) ->
+build_variant_value(_Type, [], Length, Value, Dims) ->
     {Length, Value, Dims};
-build_variant_value([Elem|T], Length, Value, Dims) ->
+build_variant_value(Type, [Elem|T], Length, Value, Dims) ->
     {Array_Length, Array_Bin} =
         case Elem of
             Elem when is_list(Elem) ->
-                {length(Elem), list_to_binary(Elem)};
+                {BinElemList, _} = lists:unzip([encode(Type, El) || El <- Elem]),
+                {length(Elem), BinElemList};
             _ ->
-                {1, Elem}
+                {BinElem, _} = encode(Type, Elem),
+                {1, BinElem}
         end,
-    build_variant_value(T, Length + Array_Length,
-                <<Value/binary, Array_Bin/binary>>,
-                [Array_Length|Dims]).
+    build_variant_value(Type, T, Length + Array_Length,
+                        <<Value/binary, Array_Bin/binary>>,
+                        [Array_Length|Dims]).
 
 encode_data_value(Data_Value) ->
-    Types = [{variant, maps:get(value, Data_Value, undefined)},
-             {status_code, maybe_undefined(status, Data_Value, good)},
-             {date_time, maybe_undefined(source_timestamp, Data_Value, 0)},
-             {uint16, maybe_undefined(source_pico_seconds, Data_Value, 0)},
-             {date_time, maybe_undefined(server_timestamp, Data_Value, 0)},
-             {uint16, maybe_undefined(server_pico_seconds, Data_Value, 0)}],
+    Types = [{variant,      Data_Value#data_value.value},
+             {status_code,  maybe_undefined(Data_Value#data_value.status, 0)},
+             {date_time,    maybe_undefined(Data_Value#data_value.source_timestamp, 0)},
+             {uint16,       maybe_undefined(Data_Value#data_value.source_pico_seconds, 0)},
+             {date_time,    maybe_undefined(Data_Value#data_value.server_timestamp, 0)},
+             {uint16,       maybe_undefined(Data_Value#data_value.server_pico_seconds, 0)}],
     encode_masked(Types).
 
-maybe_undefined(Key, Map, Cond) ->
-    case maps:get(Key, Map, undefined) of
-        Cond ->
-            undefined;
-        Value ->
-            Value
-    end.
+maybe_undefined(Value, Value) -> undefined;
+maybe_undefined(Value, _Cond) -> Value.
 
 encode_multi(Type_List) ->
     encode_multi(Type_List, <<>>).
