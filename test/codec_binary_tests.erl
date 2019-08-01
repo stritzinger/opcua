@@ -15,8 +15,8 @@ t_test_() ->
       fun activate_session_request/0,
       fun activate_session_response/0,
       fun read_request/0,
-      fun read_response/0
-      %fun browse_request/0,
+      fun read_response/0,
+      fun browse_request/0
       %fun browse_response/0
      ]}.
 
@@ -383,4 +383,37 @@ read_response() ->
               "0000000314000004000000526f6f740000000003"
               "1102000054000000000000000306010000000000"
               "000000000000",
+    assert_codec(NodeId, ToBeEncoded, Encoded).
+
+browse_request() ->
+    NodeId = #node_id{value = 525},
+    ToBeEncoded = #{
+        nodes_to_browse => [#{
+            browse_direction => forward,
+            include_subtypes => true,
+            node_class_mask => 0,
+            node_id => #node_id{value = 84},
+            reference_type_id => #node_id{value = 33},
+            result_mask => 63
+        }],
+        request_header => #{
+            additional_header => #extension_object{},
+            audit_entry_id => undefined,
+            authentication_token => #node_id{value = 1001},
+            request_handle => 5,
+            return_diagnostics => 0,
+            timeout_hint => 1000,
+            timestamp => 132061913263633950
+        },
+        requested_max_references_per_node => 0,
+        view => #{
+            timestamp => 0,
+            view_id => #node_id{},
+            view_version => 0
+        }
+    },
+    Encoded = "020000e90300001ef66f449c2dd5010500000000"
+              "000000ffffffffe8030000000000000000000000"
+              "0000000000000000000000000100000000540000"
+              "0000002101000000003f000000",
     assert_codec(NodeId, ToBeEncoded, Encoded).
