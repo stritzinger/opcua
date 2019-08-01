@@ -16,8 +16,8 @@ t_test_() ->
       fun activate_session_response/0,
       fun read_request/0,
       fun read_response/0,
-      fun browse_request/0
-      %fun browse_response/0
+      fun browse_request/0,
+      fun browse_response/0
      ]}.
 
 setup() ->
@@ -416,4 +416,62 @@ browse_request() ->
               "000000ffffffffe8030000000000000000000000"
               "0000000000000000000000000100000000540000"
               "0000002101000000003f000000",
+    assert_codec(NodeId, ToBeEncoded, Encoded).
+
+browse_response() ->
+    NodeId = #node_id{value = 528},
+    ToBeEncoded = #{
+        diagnostic_infos => [],
+        response_header => #{
+            additional_header => #extension_object{},
+            request_handle => 5,
+            service_diagnostics => #diagnostic_info{},
+            service_result => 0,
+            string_table => [],
+            timestamp => 132061913263644760
+        },
+        results => [#{
+            continuation_point => undefined,
+            references => [
+                #{
+                    browse_name => #qualified_name{name = <<"Objects">>},
+                    display_name => #localized_text{text = <<"Objects">>},
+                    is_forward => true,
+                    node_class => object,
+                    node_id => #expanded_node_id{node_id = #node_id{value = 85}},
+                    reference_type_id => #node_id{value = 35},
+                    type_definition => #expanded_node_id{node_id = #node_id{value = 61}}
+                },
+                #{
+                    browse_name => #qualified_name{name = <<"Types">>},
+                    display_name => #localized_text{text = <<"Types">>},
+                    is_forward => true,
+                    node_class => object,
+                    node_id => #expanded_node_id{node_id = #node_id{value = 86}},
+                    reference_type_id => #node_id{value = 35},
+                    type_definition => #expanded_node_id{node_id = #node_id{value = 61}}
+                },
+                #{
+                    browse_name => #qualified_name{name = <<"Views">>},
+                    display_name => #localized_text{text = <<"Views">>},
+                    is_forward => true,
+                    node_class => object,
+                    node_id => #expanded_node_id{node_id = #node_id{value = 87}},
+                    reference_type_id => #node_id{value = 35},
+                    type_definition => #expanded_node_id{node_id = #node_id{value = 61}}
+                }
+            ],
+            status_code => 0
+        }]
+    },
+    Encoded = "582070449c2dd501050000000000000000000000"
+              "000000000100000000000000ffffffff03000000"
+              "0200002300000001020000550000000000070000"
+              "004f626a6563747302070000004f626a65637473"
+              "010000000200003d000000020000230000000102"
+              "0000560000000000050000005479706573020500"
+              "00005479706573010000000200003d0000000200"
+              "0023000000010200005700000000000500000056"
+              "6965777302050000005669657773010000000200"
+              "003d00000000000000",
     assert_codec(NodeId, ToBeEncoded, Encoded).
