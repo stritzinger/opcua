@@ -55,13 +55,13 @@ open_secure_channel_request() ->
     NodeId = #node_id{value = 444},
     ToBeEncoded = #{
         request_header => #{
-          authentication_token => #node_id{value = 0},
-          timestamp => 132061913263422630,
-          request_handle => 1,
-          return_diagnostics => 0,
-          audit_entry_id => undefined,
-          timeout_hint => 1000,
-          additional_header => #extension_object{}
+            authentication_token => #node_id{value = 0},
+            timestamp => 132061913263422630,
+            request_handle => 1,
+            return_diagnostics => 0,
+            audit_entry_id => undefined,
+            timeout_hint => 1000,
+            additional_header => #extension_object{}
         },
         client_protocol_version => 0,
         request_type => issue,
@@ -78,19 +78,19 @@ open_secure_channel_response() ->
     NodeId = #node_id{value = 447},
     ToBeEncoded = #{
         response_header => #{
-          timestamp => 132061913263430080,
-          request_handle => 1,
-          service_result => 0,
-          service_diagnostics => #diagnostic_info{},
-          string_table => [],
-          additional_header => #extension_object{}
+            timestamp => 132061913263430080,
+            request_handle => 1,
+            service_result => 0,
+            service_diagnostics => #diagnostic_info{},
+            string_table => [],
+            additional_header => #extension_object{}
         },
         server_protocol_version => 0,
         security_token => #{
-          channel_id => 6,
-          token_id => 14,
-          created_at => 132061913263429970,
-          revised_lifetime => 3600000
+            channel_id => 6,
+            token_id => 14,
+            created_at => 132061913263429970,
+            revised_lifetime => 3600000
         },
         server_nonce => <<>>
     },
@@ -112,7 +112,10 @@ create_session_request() ->
             gateway_server_uri => undefined,
             product_uri => <<"urn:freeopcua.github.io:client">>
         },
-        client_nonce => opcua_util:hex_to_bin("dcb709b91898921af025dabacbfdcfaa4891d0cd9fe09a3addb2e094db4048dc"),
+        client_nonce => opcua_util:hex_to_bin("dcb709b91898921af025"
+                                              "dabacbfdcfaa4891d0cd"
+                                              "9fe09a3addb2e094db40"
+                                              "48dc"),
         endpoint_url => <<"opc.tcp://localhost:4840">>,
         max_response_message_size => 0,
         request_header => #{
@@ -173,7 +176,8 @@ create_session_response() ->
                 product_uri => <<"urn:freeopcua.github.io:python:server">>
             },
             server_certificate => undefined,
-            transport_profile_uri => <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>,
+            transport_profile_uri => <<"http://opcfoundation.org/UA-Profile/"
+                                       "Transport/uatcp-uasc-uabinary">>,
             user_identity_tokens => [
                 #{
                     issued_token_type => undefined,
@@ -198,7 +202,10 @@ create_session_response() ->
                 }
             ]
         }],
-        server_nonce => opcua_util:hex_to_bin("68924a95b8434526a36cb9373085289748b9dd60fbdff38153339e7844ef8c14"),
+        server_nonce => opcua_util:hex_to_bin("68924a95b8434526a36c"
+                                              "b9373085289748b9dd60"
+                                              "fbdff38153339e7844ef"
+                                              "8c14"),
         server_signature => #{
             algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
             signature => <<>>
