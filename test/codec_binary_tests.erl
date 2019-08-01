@@ -11,8 +11,8 @@ t_test_() ->
       fun open_secure_channel_request/0,
       fun open_secure_channel_response/0,
       fun create_session_request/0,
-      fun create_session_response/0
-      %fun activate_session_request/0,
+      fun create_session_response/0,
+      fun activate_session_request/0
       %fun activate_session_response/0,
       %fun read_request/0,
       %fun read_response/0,
@@ -236,4 +236,41 @@ create_session_response() ->
               "687474703a2f2f7777772e77332e6f72672f3230"
               "30302f30392f786d6c64736967237273612d7368"
               "61310000000000000100",
+    assert_codec(NodeId, ToBeEncoded, Encoded).
+
+activate_session_request() ->
+    NodeId = #node_id{value = 465},
+    ToBeEncoded = #{
+        client_signature => #{
+            algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
+            signature => <<>>
+        },
+        client_software_certificates => [],
+        locale_ids => [<<"en">>],
+        request_header => #{
+            additional_header => #extension_object{},
+            audit_entry_id => undefined,
+            authentication_token => #node_id{value = 1001},
+            request_handle => 3,
+            return_diagnostics => 0,
+            timeout_hint => 1000,
+            timestamp => 132061913263467530
+        },
+        user_identity_token => #extension_object{
+                                type_id = #node_id{value = 319},
+                                encoding = byte_string,
+                                body = #{policy_id => <<"anonymous">>}
+                               },
+        user_token_signature => #{
+            algorithm => undefined,
+            signature => undefined
+        }
+    },
+    Encoded = "020000e90300000a6c6d449c2dd5010300000000"
+              "000000ffffffffe80300000000002a0000006874"
+              "74703a2f2f7777772e77332e6f72672f32303030"
+              "2f30392f786d6c64736967237273612d73686131"
+              "00000000000000000100000002000000656e0100"
+              "4101010d00000009000000616e6f6e796d6f7573"
+              "ffffffffffffffff",
     assert_codec(NodeId, ToBeEncoded, Encoded).
