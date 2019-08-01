@@ -12,8 +12,8 @@ t_test_() ->
       fun open_secure_channel_response/0,
       fun create_session_request/0,
       fun create_session_response/0,
-      fun activate_session_request/0
-      %fun activate_session_response/0,
+      fun activate_session_request/0,
+      fun activate_session_response/0
       %fun read_request/0,
       %fun read_response/0,
       %fun browse_request/0,
@@ -273,4 +273,28 @@ activate_session_request() ->
               "00000000000000000100000002000000656e0100"
               "4101010d00000009000000616e6f6e796d6f7573"
               "ffffffffffffffff",
+    assert_codec(NodeId, ToBeEncoded, Encoded).
+
+activate_session_response() ->
+    NodeId = #node_id{value = 468},
+    ToBeEncoded = #{
+        diagnostic_infos => [],
+        response_header => #{
+            additional_header => #extension_object{},
+            request_handle => 3,
+            service_diagnostics => #diagnostic_info{},
+            service_result => 0,
+            string_table => [],
+            timestamp => 132061913263475920
+        },
+        results => [],
+        server_nonce => opcua_util:hex_to_bin("8cc1b4736f99ed415e0c"
+                                              "8c7396ff156b65ac17a2"
+                                              "fbefa7867d0cd84225ec"
+                                              "0ddb")
+    },
+    Encoded = "d08c6d449c2dd501030000000000000000000000"
+              "00000000200000008cc1b4736f99ed415e0c8c73"
+              "96ff156b65ac17a2fbefa7867d0cd84225ec0ddb"
+              "0000000000000000",
     assert_codec(NodeId, ToBeEncoded, Encoded).
