@@ -28,7 +28,7 @@
 
 -record(data_value, {
     value :: term(),
-    status = 0 :: integer(),
+    status = good :: integer(),
     source_timestamp = 0 :: non_neg_integer(),
     source_pico_seconds = 0 :: non_neg_integer(),
     server_timestamp = 0 :: non_neg_integer(),

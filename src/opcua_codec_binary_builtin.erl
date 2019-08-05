@@ -21,7 +21,9 @@ decode(string, <<Int32:32/little-signed-integer, String:Int32/binary, T/binary>>
 decode(date_time, Bin) -> decode(int64, Bin);
 decode(guid, Bin) -> decode_guid(Bin);
 decode(xml, Bin) -> decode(string, Bin);
-decode(status_code, Bin) -> opcua_database_status_codes:name(decode(uint32, Bin));
+decode(status_code, Bin) ->
+    {Code, Rest} = decode(uint32, Bin),
+    {opcua_database_status_codes:name(Code, Code), Rest};
 decode(byte_string, Bin) -> decode(string, Bin);
 decode(node_id, <<Mask:8, Bin/binary>>) -> decode_node_id(Mask, Bin);
 decode(expanded_node_id, <<Mask:8, Bin/binary>>) -> decode_expanded_node_id(Mask, Bin);

@@ -67,6 +67,8 @@ is_code(_Other) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+lookup(good, _Default) -> {0, good, <<"Good">>};
+lookup(0, _Default) -> {0, good, <<"Good">>};
 lookup(StatusName, Default) when is_atom(StatusName) ->
     case ets:lookup(?DB_STATUS_NAME_TO_CODE, StatusName) of
         [{_, StatusCode}] -> lookup(StatusCode, Default);
