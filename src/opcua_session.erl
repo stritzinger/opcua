@@ -6,9 +6,11 @@
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -include_lib("kernel/include/logger.hrl").
+-include_lib("stdlib/include/assert.hrl").
 
 -include("opcua_codec.hrl").
 -include("opcua_protocol.hrl").
+-include("opcua_node_command.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -31,6 +33,8 @@
 %%% MACRO %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -define(SERVER, ?MODULE).
+-define(EPSILON, 1.0e-5).
+-define(MAX_INT32, 4294967296).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -71,7 +75,7 @@ init([SessId, AuthToken]) ->
 callback_mode() -> state_functions.
 
 terminate(Reason, _State, _Data) ->
-    ?LOG_DEBUG("OPCUA registry process terminating: ~p", [Reason]),
+    ?LOG_DEBUG("OPCUA session process terminating: ~p", [Reason]),
     ok.
 
 %%% BEHAVIOUR gen_statem STATE FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -80,17 +84,18 @@ started(state_timeout, terminate, _Data) -> {stop, timeout};
 started({call, From}, {request, Conn, Req}, Data) ->
     dispatch_request(Data, started, From, Conn, Req, [], #{
         459 => {next_state, created, fun session_create_command/3}
-    }, 'Bad_RequestNotAllowed', [{state_timeout, 10000, terminate}]).
+    }, bad_request_not_allowed, [{state_timeout, 10000, terminate}]).
 
 created(state_timeout, terminate, _Data) -> {stop, timeout};
 created({call, From}, {request, Conn, Req}, Data) ->
     dispatch_request(Data, created, From, Conn, Req, [fun validate_auth/2], #{
         465 => {next_state, bound, fun session_activate_command/3}
-    }, 'Bad_SessionNotActivated', []).
+    }, bad_session_not_activated, []).
 
 bound({call, From}, {request, Conn, Req}, Data) ->
     dispatch_request(Data, bound, From, Conn, Req, [fun validate_auth/2], #{
-    }, 'Bad_RequestNotAllowed', []).
+        629 => {keep_state, fun attribute_read_command/3}
+    }, bad_request_not_allowed, []).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -113,26 +118,36 @@ dispatch_request(Data, State, From, Conn, Req, Validators, HandlerMap, Reason, E
     end.
 
 dispatch_request(Data, {keep_state, Fun}, From, Conn, Req, Extra) ->
-    case Fun(Data, Conn, Req) of
+    try Fun(Data, Conn, Req) of
         {error, _Reason} = Error ->
             {keep_state, Data, [{reply, From, Error} | Extra]};
         {Result, Data2} ->
             {keep_state, Data2, [{reply, From, Result} | Extra]}
+    catch
+        Reason ->
+            Error = {error, Reason},
+            {keep_state, Data, [{reply, From, Error} | Extra]}
     end;
 dispatch_request(Data, {next_state, NextState, Fun}, From, Conn, Req, Extra) ->
-    case Fun(Data, Conn, Req) of
+    try Fun(Data, Conn, Req) of
         {error, _Reason} = Error ->
             {keep_state, Data, [{reply, From, Error} | Extra]};
         {Result, Data2} ->
             {next_state, NextState, Data2,
              [{reply, From, Result} | Extra]}
+    catch
+        Reason ->
+            Error = {error, Reason},
+            {keep_state, Data, [{reply, From, Error} | Extra]}
     end.
 
 validate_request(_Data, _Req, []) -> ok;
 validate_request(Data, Req, [Fun | Rest]) ->
-    case Fun(Data, Req) of
+    try Fun(Data, Req) of
         {error, _Reason} = Error -> Error;
         ok -> validate_request(Data, Req, Rest)
+    catch
+        Reason -> {error, Reason}
     end.
 
 validate_auth(#data{auth_token = AuthToken},
@@ -140,7 +155,7 @@ validate_auth(#data{auth_token = AuthToken},
                 request_header := #{authentication_token := AuthToken}}}) ->
     ok;
 validate_auth(_State, _Headers) ->
-    {error, 'Bad_SessionIdInvalid'}.
+    {error, bad_session_id_invalid}.
 
 
 %-- SESSION SERVICE SET --------------------------------------------------------
@@ -249,5 +264,66 @@ check_identity(ExtObj) ->
             #{policy_id := PolicyId} = Body,
             {ok, PolicyId};
         _ ->
-            {error, 'Bad_UserAccessDenied'}
+            {error, bad_user_access_denied}
     end.
+
+
+%-- ATTRIBUTE SERVICE SET ------------------------------------------------------
+
+attribute_read_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
+    ?LOG_DEBUG("READ COMMAND REQUEST: ~p", [Req]),
+    #{
+        max_age := MaxAge,
+        % timestamp_to_return := TimestampsToReturn,
+        nodes_to_read := NodesToRead
+    } = Msg,
+    TimestampsToReturn = source,
+
+    ReadOpts = #{
+        max_age => parse_max_age(MaxAge),
+        timestamp_type => TimestampsToReturn
+    },
+    Results = attribute_read(Data, ReadOpts, NodesToRead),
+    ?assertEqual(length(NodesToRead), length(Results)),
+    Resp = opcua_connection:req2res(Conn, Req, 632, #{
+        results => Results,
+        diagnostic_infos => []
+    }),
+    {{reply, Resp}, Data}.
+
+attribute_read(Data, ReadOpts, ReadIds) ->
+    attribute_read(Data, ReadOpts, ReadIds, []).
+
+attribute_read(_Data, _ReadOpts, [], Acc) -> lists:reverse(Acc);
+attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
+    #{
+        node_id := NodeId,
+        attribute_id := AttributeId,
+        index_range := RangeStr,
+        data_encoding := DataEncoding
+    } = ReadId,
+    case DataEncoding of
+        #qualified_name{ns = 0, name = Name}
+          when Name =:= <<"Default Binary">>; Name =:= undefined ->
+            Command = #read_attribute{
+                attr = opcua_database_attributes:name(AttributeId),
+                range = opcua_util:parse_range(RangeStr),
+                opts = ReadOpts
+            },
+            case opcua_registry:perform(NodeId, [Command]) of
+                [{error, Reason}] ->
+                    Status = opcua_database_status_codes:name(Reason, bad_internal_error),
+                    Result = #data_value{status = Status},
+                    attribute_read(Data, ReadOpts, Rest, [Result | Acc]);
+                [{ok, #data_value{} = Result}] ->
+                    attribute_read(Data, ReadOpts, Rest, [Result | Acc])
+            end;
+        _ ->
+            Result = #data_value{status = bad_data_encoding_unsupported},
+            attribute_read(Data, ReadOpts, Rest, [Result | Acc])
+    end.
+
+parse_max_age(Age) when Age >= 0, Age < ?EPSILON -> newest;
+parse_max_age(Age) when Age >= ?MAX_INT32 -> cached;
+parse_max_age(Age) when Age >= 0 -> trunc(Age);
+parse_max_age(_Other) -> throw(bad_max_age_invalid).

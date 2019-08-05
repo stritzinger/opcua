@@ -21,7 +21,7 @@ decode(string, <<Int32:32/little-signed-integer, String:Int32/binary, T/binary>>
 decode(date_time, Bin) -> decode(int64, Bin);
 decode(guid, Bin) -> decode_guid(Bin);
 decode(xml, Bin) -> decode(string, Bin);
-decode(status_code, Bin) -> decode(uint32, Bin);
+decode(status_code, Bin) -> opcua_database_status_codes:name(decode(uint32, Bin));
 decode(byte_string, Bin) -> decode(string, Bin);
 decode(node_id, <<Mask:8, Bin/binary>>) -> decode_node_id(Mask, Bin);
 decode(expanded_node_id, <<Mask:8, Bin/binary>>) -> decode_expanded_node_id(Mask, Bin);
@@ -33,7 +33,7 @@ decode(variant, <<0:6, Bin/binary>>) -> {undefined, Bin};
 decode(variant, <<DimFlag:1/bits, ArrayFlag:1/bits, TypeId:6/little-unsigned-integer, Bin/binary>>) ->
     decode_variant(TypeId, DimFlag, ArrayFlag, Bin);
 decode(data_value, <<0:2, Mask:6/bits, Bin/binary>>) -> decode_data_value(Mask, Bin);
-decode(_Type, _Bin) -> error('Bad_DecodingError').
+decode(_Type, _Bin) -> throw(bad_decoding_error).
 
 encode(boolean, false) -> <<0:8>>;
 encode(boolean, true) -> <<1:8>>;
@@ -52,7 +52,10 @@ encode(string, String) -> <<(byte_size(String)):32/little-signed-integer, String
 encode(date_time, Bin) -> encode(int64, Bin);
 encode(guid, Guid) -> encode_guid(Guid);
 encode(xml, Bin) -> encode(string, Bin);
-encode(status_code, UInt32) -> encode(uint32, UInt32);
+encode(status_code, Atom) when is_atom(Atom) ->
+    encode(uint32, opcua_database_status_codes:code(Atom));
+encode(status_code, UInt32) when is_integer(UInt32), UInt32 >= 0 ->
+    encode(uint32, UInt32);
 encode(byte_string, Bin) -> encode(string, Bin);
 encode(node_id, NodeId) -> encode_node_id(NodeId);
 encode(expanded_node_id, ExpandedNodeId) -> encode_expanded_node_id(ExpandedNodeId);
@@ -62,7 +65,7 @@ encode(localized_text, LocalizedText) -> encode_localized_text(LocalizedText);
 encode(extension_object, ExtensionObject) -> encode_extension_object(ExtensionObject);
 encode(variant, Variant) -> encode_variant(Variant);
 encode(data_value, DataValue) -> encode_data_value(DataValue);
-encode(_Type, _Value) -> error('Bad_EncodingError').
+encode(_Type, _Value) -> throw(bad_encoding_error).
 
 
 %% internal

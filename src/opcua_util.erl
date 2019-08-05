@@ -4,7 +4,8 @@
          nonce/0, date_time_to_rfc3339/1, bin_to_hex/1,
          guid_to_hex/1, bin_to_hex/2, hex_to_bin/1,
          get_node_id/2, parse_node_id/1, get_attr/2,
-         get_attr/3, get_int/2, get_int/3, convert_name/1]).
+         get_attr/3, get_int/2, get_int/3, convert_name/1,
+         parse_range/1]).
 
 
 -spec trace(atom(), atom()) -> non_neg_integer().
@@ -96,3 +97,32 @@ convert_name([FirstLetter|Rest]) ->
                   _     -> Char
               end
           end, Rest))).
+
+parse_range(undefined) -> undefined;
+parse_range(<<>>) -> undefined;
+parse_range(Range) -> parse_range_dims(Range, []).
+
+%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+parse_range_dims(<<>>, Acc) -> lists:reverse(Acc);
+parse_range_dims(Ranges, Acc) ->
+    {Item, Rest} = parse_range_min(Ranges, []),
+    parse_range_dims(Rest, [Item | Acc]).
+
+parse_range_min(<<>>, Acc) ->
+    {list_to_integer(lists:reverse(Acc)), <<>>};
+parse_range_min(<<",", Rest/binary>>, Acc) ->
+    {list_to_integer(lists:reverse(Acc)), Rest};
+parse_range_min(<<":", Rest/binary>>, Acc) ->
+    parse_range_max(Rest, list_to_integer(lists:reverse(Acc)), []);
+parse_range_min(<<C, Rest/binary>>, Acc) ->
+    parse_range_min(Rest, [C | Acc]).
+
+parse_range_max(<<>>, Min, Acc) ->
+    validate_range(Min, list_to_integer(lists:reverse(Acc)), <<>>);
+parse_range_max(<<",", Rest/binary>>, Min, Acc) ->
+    validate_range(Min, list_to_integer(lists:reverse(Acc)), Rest);
+parse_range_max(<<C, Rest/binary>>, Min, Acc) ->
+    parse_range_max(Rest, Min, [C | Acc]).
+
+validate_range(Min, Max, Rest) when Min >= 0, Max > Min -> {{Min, Max}, Rest}.

@@ -61,7 +61,7 @@ init(ChannelId, #uacp_security_policy{policy_url = ?POLICY_NONE} = Policy,
     State = #state{channel_id = ChannelId, client_policy = Policy, token_id = NewTokenId},
     {ok, NewTokenId, State};
 init(_ChannelId, _SecurityPolicy, _ParentState) ->
-    {error, 'Bad_SecurityPolicyRejected'}.
+    {error, bad_security_policy_rejected}.
 
 -spec unlock(opcua_protocol:chunk(), state())
     -> {ok, opcua_protocol:chunk(), state()} | {error, term()}.
@@ -70,7 +70,7 @@ unlock(#uacp_chunk{security = Security} = Chunk,
   when Security =:= ClientPolicy; Security =:= TokenId ->
     validate_client_sequence(State, decode_sequence_header(Chunk));
 unlock(_Chunk, _State) ->
-    {error, 'Bad_SecurityChecksFailed'}.
+    {error, bad_security_checks_failed}.
 
 -spec open(opcua_protocol:connection(), opcua_protocol:message(), state())
     -> {ok, opcua_protocol:message(), state()} | {error, term()}.
@@ -170,7 +170,7 @@ validate_client_sequence(#state{last_client_seq = LastNum} = State,
   when LastNum > 4294966271, NewNum < 1024 ->
     {ok, Chunk, State#state{last_client_seq = NewNum}};
 validate_client_sequence(_State, _Chunk) ->
-    {error, 'Bad_SequenceNumberInvalid'}.
+    {error, bad_sequence_number_invalid}.
 
 next_server_sequence(#state{last_server_seq = undefined} = State) ->
     {1, State#state{last_server_seq = 1}};
