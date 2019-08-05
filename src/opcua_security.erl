@@ -16,12 +16,12 @@
 %% API Functions
 -export([init/3]).
 -export([unlock/2]).
--export([open/2]).
+-export([open/3]).
 -export([setup_asym/2]).
 -export([setup_sym/2]).
 -export([prepare/2]).
 -export([lock/2]).
--export([close/2]).
+-export([close/3]).
 -export([cleanup/1]).
 
 
@@ -72,15 +72,15 @@ unlock(#uacp_chunk{security = Security} = Chunk,
 unlock(_Chunk, _State) ->
     {error, 'Bad_SecurityChecksFailed'}.
 
--spec open(opcua_protocol:message(), state())
+-spec open(opcua_protocol:connection(), opcua_protocol:message(), state())
     -> {ok, opcua_protocol:message(), state()} | {error, term()}.
-open(#uacp_message{type = channel_open,
-                   node_id = #node_id{ns = 0, value = 444},
-                   payload = Msg} = Req, State) ->
+open(Conn, #uacp_message{type = channel_open,
+                         node_id = #node_id{ns = 0, value = 444},
+                         payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel opened: ~p", [Msg]),
     #state{channel_id = ChannelId, token_id = TokenId} = State,
     ServerPolicy = #uacp_security_policy{policy_url = ?POLICY_NONE},
-    Resp = opcua_protocol:req2res(Req, 447, #{
+    Resp = opcua_connection:req2res(Conn, Req, 447, #{
         server_protocol_version => 0,
         security_token => #{
             channel_id => ChannelId,
@@ -134,13 +134,13 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
         body = [SeqHeader, Body]
     }, State}.
 
--spec close(opcua_protocol:message(), state())
+-spec close(opcua_protocol:connection(), opcua_protocol:message(), state())
     -> {ok, opcua_protocol:message(), state()} | {error, term()}.
-close(#uacp_message{type = channel_close,
-                    node_id = #node_id{ns = 0, value = 450},
-                    payload = Msg} = Req, State) ->
+close(Conn, #uacp_message{type = channel_close,
+                          node_id = #node_id{ns = 0, value = 450},
+                          payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel closed: ~p", [Msg]),
-    Resp = opcua_protocol:req2res(Req, 455, #{}),
+    Resp = opcua_connection:req2res(Conn, Req, 455, #{}),
     {ok, Resp, State}.
 
 -spec cleanup(state()) -> ok.

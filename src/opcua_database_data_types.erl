@@ -1,4 +1,4 @@
--module(opcua_codec_data_types).
+-module(opcua_database_data_types).
 
 -export([lookup/1, setup/1, example/1]).
 

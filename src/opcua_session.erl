@@ -79,13 +79,13 @@ terminate(Reason, _State, _Data) ->
 started(state_timeout, terminate, _Data) -> {stop, timeout};
 started({call, From}, {request, Conn, Req}, Data) ->
     dispatch_request(Data, started, From, Conn, Req, [], #{
-        459 => {next_state, created, fun create_session/3}
+        459 => {next_state, created, fun session_create_command/3}
     }, 'Bad_RequestNotAllowed', [{state_timeout, 10000, terminate}]).
 
 created(state_timeout, terminate, _Data) -> {stop, timeout};
 created({call, From}, {request, Conn, Req}, Data) ->
     dispatch_request(Data, created, From, Conn, Req, [fun validate_auth/2], #{
-        465 => {next_state, bound, fun activate_session/3}
+        465 => {next_state, bound, fun session_activate_command/3}
     }, 'Bad_SessionNotActivated', []).
 
 bound({call, From}, {request, Conn, Req}, Data) ->
@@ -142,7 +142,10 @@ validate_auth(#data{auth_token = AuthToken},
 validate_auth(_State, _Headers) ->
     {error, 'Bad_SessionIdInvalid'}.
 
-create_session(Data, _Conn, #uacp_message{payload = Msg} = Req) ->
+
+%-- SESSION SERVICE SET --------------------------------------------------------
+
+session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     %TODO: Probably check the request header...
     %TODO: We need some imformation about the security channel from the protocol
     %      like the transport uri, channel id, the policy URL...
@@ -171,7 +174,7 @@ create_session(Data, _Conn, #uacp_message{payload = Msg} = Req) ->
         requested_session_timeout = RequestedSessionTimeout,
         session_name = SessionName
     },
-    Resp = opcua_protocol:req2res(Req, 462, #{
+    Resp = opcua_connection:req2res(Conn, Req, 462, #{
         session_id => SessId,
         authentication_token => AuthToken,
         revised_session_timeout => RequestedSessionTimeout,
@@ -216,7 +219,7 @@ create_session(Data, _Conn, #uacp_message{payload = Msg} = Req) ->
     }),
     {{created, Resp}, Data2}.
 
-activate_session(Data, Conn, #uacp_message{payload = Msg} = Req) ->
+session_activate_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     #{
         locale_ids := LocalIds,
         user_identity_token := IdentTokenExtObj
@@ -231,7 +234,7 @@ activate_session(Data, Conn, #uacp_message{payload = Msg} = Req) ->
                 local_ids = LocalIds,
                 conn = Conn
             },
-            Resp = opcua_protocol:req2res(Req, 468, #{
+            Resp = opcua_connection:req2res(Conn, Req, 468, #{
                 server_nonce => ServerNonce,
                 results => [],
                 diagnostic_infos => []

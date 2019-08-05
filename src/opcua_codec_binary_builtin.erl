@@ -112,7 +112,7 @@ decode_diagnostic_info(<<0:1, Mask:7/bits>>, Bin) ->
 
 decode_qualified_name(Bin) ->
     {[NamespaceIndex, Name], T}  = decode_multi([uint16, string], Bin),
-    {#qualified_name{namespace_index = NamespaceIndex, name = Name}, T}.
+    {#qualified_name{ns = NamespaceIndex, name = Name}, T}.
 
 decode_localized_text(<<0:6, Mask:2/bits>>, Bin) ->
     Types = [{locale, string, undefined},
@@ -261,7 +261,7 @@ encode_diagnostic_info(DI = #diagnostic_info{}) ->
              {diagnostic_info, DI#diagnostic_info.inner_diagnostic_info}],
     encode_masked(Types).
 
-encode_qualified_name(#qualified_name{namespace_index = NamespaceIndex, name = Name}) ->
+encode_qualified_name(#qualified_name{ns = NamespaceIndex, name = Name}) ->
     encode_multi([{uint16, NamespaceIndex}, {string, Name}]).
 
 encode_localized_text(LocalizedText) when is_binary(LocalizedText) ->

@@ -1,4 +1,4 @@
--module(opcua_codec_encodings).
+-module(opcua_database_encodings).
 
 -export([resolve/1, lookup/2, setup/1]).
 
