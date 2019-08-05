@@ -12,6 +12,7 @@
 -export([start_link/1]).
 -export([allocate_secure_channel/1]).
 -export([release_secure_channel/1]).
+-export([perform/2]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -47,6 +48,10 @@ allocate_secure_channel(Pid) ->
 
 release_secure_channel(ChannelId) ->
     gen_server:call(?SERVER, {release_secure_channel, ChannelId}).
+
+perform(NodeId, Commands) ->
+    ?LOG_DEBUG("Asking node ~p to perform ~p", [NodeId, Commands]),
+    [{error, bad_not_implemented} || _ <- Commands].
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

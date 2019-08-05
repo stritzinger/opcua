@@ -123,7 +123,7 @@ create_session(State, Conn, Req) ->
 forward_request(State, Conn, #uacp_message{payload = Msg} = Req) ->
     #{request_header := #{authentication_token := AuthToken}} = Msg,
     case session_find_by_auth(State, AuthToken) of
-        error -> {error, 'Bad_SessionIdInvalid'};
+        error -> {error, bad_session_id_invalid};
         {ok, #session{pid = SessPid}} ->
             case opcua_session:handle_request(Conn, Req, SessPid) of
                 ok -> {{ok, SessPid}, State};
