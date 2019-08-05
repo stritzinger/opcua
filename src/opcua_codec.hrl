@@ -11,7 +11,7 @@
 }).
 
 -record(qualified_name, {
-    namespace_index = 0 :: non_neg_integer(),
+    ns  = 0 :: non_neg_integer(),
     name :: binary()
 }).
 
