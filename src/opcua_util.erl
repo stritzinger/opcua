@@ -2,7 +2,10 @@
 
 -export([trace/2, trace/3, trace_clear/0, date_time/0,
          nonce/0, date_time_to_rfc3339/1, bin_to_hex/1,
-         guid_to_hex/1, bin_to_hex/2, hex_to_bin/1]).
+         guid_to_hex/1, bin_to_hex/2, hex_to_bin/1,
+         get_node_id/2, parse_node_id/1, get_attr/2,
+         get_attr/3, get_int/2, get_int/3, convert_name/1]).
+
 
 -spec trace(atom(), atom()) -> non_neg_integer().
 trace(Mod, Fun) ->
@@ -52,3 +55,44 @@ hex_to_bin([X,Y|T], Acc) ->
 hex_to_bin([X|T], Acc) ->
         {ok, [V], []} = io_lib:fread("~16u", lists:flatten([X,"0"])),
         hex_to_bin(T, [V | Acc]).
+
+%% helpers for parsing XML information models using a SAX parser
+get_node_id(Key, Attributes) ->
+    case get_attr(Key, Attributes) of
+        undefined       -> undefined;
+        NodeIdString    -> parse_node_id(NodeIdString)
+    end.
+
+parse_node_id(String) ->
+    [_, String1] = string:split(String, "="),
+    opcua_codec:node_id(list_to_integer(String1)).
+
+get_attr(Key, Attributes) ->
+    get_attr(Key, Attributes, undefined).
+
+get_attr(Key, Attributes, Default) ->
+    case lists:keyfind(Key, 3, Attributes) of
+        false -> Default;
+        Value -> element(4, Value)
+    end.
+
+get_int(Key, Attributes) ->
+    get_int(Key, Attributes, undefined).
+
+get_int(Key, Attributes, Default) ->
+    case get_attr(Key, Attributes, Default) of
+        Default     -> Default;
+        StringInt   -> list_to_integer(StringInt)
+    end.
+
+%% converts CamelCase strings to snake_case atoms
+convert_name([FirstLetter|Rest]) ->
+    list_to_atom(
+      string:lowercase([FirstLetter]) ++ 
+        lists:flatten(
+          lists:map(fun(Char) ->
+              case string:uppercase([Char]) of
+                  [Char]  -> "_" ++ string:lowercase([Char]);
+                  _     -> Char
+              end
+          end, Rest))).

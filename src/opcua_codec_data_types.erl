@@ -42,25 +42,25 @@ example(Id) ->
 %% INTERNAL
 
 parse({startElement, _, "UADataType", _, Attributes}, _Loc, _State) ->
-    NodeId = get_node_id("NodeId", Attributes),
-    Name = convert_name(get_attr("BrowseName", Attributes)),
+    NodeId = opcua_util:get_node_id("NodeId", Attributes),
+    Name = opcua_util:convert_name(opcua_util:get_attr("BrowseName", Attributes)),
     #{node_id => NodeId, name => Name, fields => []};
 parse({startElement, _, "Definition", _, Attributes}, _Loc, DataTypeMap) ->
-    IsOptionSet = get_attr("IsOptionSet", Attributes, false) == "true",
+    IsOptionSet = opcua_util:get_attr("IsOptionSet", Attributes, false) == "true",
     maps:put(is_option_set, IsOptionSet, DataTypeMap);
 parse({startElement, _, "Reference", _, Attributes}, _Loc, DataTypeMap)
   when is_map(DataTypeMap) ->
-    case get_attr("ReferenceType", Attributes) of
+    case opcua_util:get_attr("ReferenceType", Attributes) of
         "HasSubtype" -> {await_subtype, DataTypeMap};
         _ -> DataTypeMap
     end;
 parse({characters, Chars}, _Loc, {await_subtype, DataTypeMap}) ->
-    maps:put(parent_node_id, parse_node_id(Chars), DataTypeMap);
+    maps:put(parent_node_id, opcua_util:parse_node_id(Chars), DataTypeMap);
 parse({startElement, _, "Field", _, Attributes}, _Loc, DataTypeMap) ->
-    Name = convert_name(get_attr("Name", Attributes)),
-    NodeId = get_node_id("DataType", Attributes),
-    Value = get_int("Value", Attributes),
-    ValueRank = get_int("ValueRank", Attributes, -1),
+    Name = opcua_util:convert_name(opcua_util:get_attr("Name", Attributes)),
+    NodeId = opcua_util:get_node_id("DataType", Attributes),
+    Value = opcua_util:get_int("Value", Attributes),
+    ValueRank = opcua_util:get_int("ValueRank", Attributes, -1),
     NewField = #field{name = Name,
                       node_id = NodeId,
                       value_rank = ValueRank,
@@ -75,15 +75,6 @@ parse({endElement, _, "UADataType", _}, _Loc, DataTypeMap = #{node_id := NodeId,
     store_data_type(NodeId, Name, DataType);
 parse(_Event, _Loc, State) ->
     State.
-
-get_int(Key, Attributes) ->
-    get_int(Key, Attributes, undefined).
-
-get_int(Key, Attributes, Default) ->
-    case get_attr(Key, Attributes, Default) of
-        Default     -> Default;
-        StringInt   -> list_to_integer(StringInt)
-    end.
 
 resolve_type(#node_id{value = 22}, Map = #{node_id := NodeId}, Fields) ->
     #structure{node_id = NodeId, with_options = maps:get(is_option_set, Map, false), fields = Fields};
@@ -119,34 +110,3 @@ store_data_type(NodeId = #node_id{value = Id}, Name, DataType) ->
     KeyValuePairs = [{StringNodeId, DataType}, {NodeId, DataType},
                      {{0, Name}, DataType}, {{0, Id}, DataType}],
     ets:insert(?DB_DATA_TYPES, KeyValuePairs).
-
-get_node_id(Key, Attributes) ->
-    case get_attr(Key, Attributes) of
-        undefined       -> undefined;
-        NodeIdString    -> parse_node_id(NodeIdString)
-    end.
-
-parse_node_id(String) ->
-    [_, String1] = string:split(String, "="),
-    opcua_codec:node_id(list_to_integer(String1)).
-
-get_attr(Key, Attributes) ->
-    get_attr(Key, Attributes, undefined).
-
-get_attr(Key, Attributes, Default) ->
-    case lists:keyfind(Key, 3, Attributes) of
-        false -> Default;
-        Value -> element(4, Value)
-    end.
-
-%% converts CamelCase strings to snake_case atoms
-convert_name([FirstLetter|Rest]) ->
-    list_to_atom(
-      string:lowercase([FirstLetter]) ++ 
-        lists:flatten(
-          lists:map(fun(Char) ->
-              case string:uppercase([Char]) of
-                  [Char]  -> "_" ++ string:lowercase([Char]);
-                  _     -> Char
-              end
-          end, Rest))).
