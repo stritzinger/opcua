@@ -32,7 +32,6 @@
 
 %%% MACRO %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(SERVER, ?MODULE).
 -define(EPSILON, 1.0e-5).
 -define(MAX_INT32, 4294967296).
 
@@ -52,14 +51,15 @@
     requested_session_timeout :: undefined | non_neg_integer(),
     ident :: undefined | binary(),
     local_ids :: undefined | [binary()],
-    conn :: undefined | opcua_protocol:connection()
+    conn :: undefined | opcua_protocol:connection(),
+    mon_ref :: undefined | reference()
 }).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_link(SessId, AuthToken) ->
-    gen_statem:start_link({local, ?SERVER}, ?MODULE, [SessId, AuthToken], []).
+    gen_statem:start_link(?MODULE, [SessId, AuthToken], []).
 
 handle_request(Conn, #uacp_message{} = Req, SessPid) ->
     gen_statem:call(SessPid, {request, Conn, Req}).
@@ -92,9 +92,15 @@ created({call, From}, {request, Conn, Req}, Data) ->
         465 => {next_state, bound, fun session_activate_command/3}
     }, bad_session_not_activated, []).
 
+bound(info, {'DOWN', MonRef, process, _Pid, _Info},
+      #data{mon_ref = MonRef} = Data) ->
+    ?LOG_DEBUG("Session disconnected"),
+    {next_state, created, session_deactivate(Data),
+     [{state_timeout, 600000, terminate}]};
 bound({call, From}, {request, Conn, Req}, Data) ->
     dispatch_request(Data, bound, From, Conn, Req, [fun validate_auth/2], #{
-        629 => {keep_state, fun attribute_read_command/3}
+        629 => {keep_state, fun attribute_read_command/3},
+        471 => {stop, normal, fun session_close_command/3}
     }, bad_request_not_allowed, []).
 
 
@@ -139,7 +145,19 @@ dispatch_request(Data, {next_state, NextState, Fun}, From, Conn, Req, Extra) ->
         Reason ->
             Error = {error, Reason},
             {keep_state, Data, [{reply, From, Error} | Extra]}
+    end;
+dispatch_request(Data, {stop, Reason, Fun}, From, Conn, Req, Extra) ->
+    try Fun(Data, Conn, Req) of
+        {error, _Reason} = Error ->
+            {keep_state, Data, [{reply, From, Error} | Extra]};
+        {Result, Data2} ->
+            {stop_and_reply, Reason, [{reply, From, Result}], Data2}
+    catch
+        Reason ->
+            Error = {error, Reason},
+            {keep_state, Data, [{reply, From, Error} | Extra]}
     end.
+
 
 validate_request(_Data, _Req, []) -> ok;
 validate_request(Data, Req, [Fun | Rest]) ->
@@ -242,12 +260,14 @@ session_activate_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     case check_identity(IdentTokenExtObj) of
         {error, _Reason} = Error -> Error;
         {ok, Ident} ->
+            MonRef = opcua_connection:monitor(Conn),
             ServerNonce = opcua_util:nonce(),
             Data2 = Data#data{
                 server_nonce = ServerNonce,
                 ident = Ident,
                 local_ids = LocalIds,
-                conn = Conn
+                conn = Conn,
+                mon_ref = MonRef
             },
             Resp = opcua_connection:req2res(Conn, Req, 468, #{
                 server_nonce => ServerNonce,
@@ -256,6 +276,16 @@ session_activate_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
             }),
             {{bound, Resp}, Data2}
     end.
+
+session_deactivate(Data) ->
+    Data#data{conn = undefined, mon_ref = undefined}.
+
+session_close_command(Data, Conn, #uacp_message{payload = _Msg} = Req) ->
+    #data{mon_ref = MonRef} = Data,
+    opcua_connection:demonitor(Conn, MonRef),
+    Data2 = Data#data{conn = undefined, mon_ref = undefined},
+    Resp = opcua_connection:req2res(Conn, Req, 474, #{}),
+    {{reply, Resp}, Data2}.
 
 check_identity(ExtObj) ->
     #extension_object{type_id = NodeSpec, body = Body} = ExtObj,
