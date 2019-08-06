@@ -33,7 +33,7 @@ load(FilePath) ->
 name(AttrName) when is_atom(AttrName) -> AttrName;
 name(AttrId) when is_integer(AttrId), AttrId > 0 ->
     case ets:lookup(?DB_ATTRIBUTE_NAMES, AttrId) of
-        [{_, AttrId}] -> AttrId;
+        [{_, AttrName}] -> AttrName;
         [] -> undefined
     end.
 

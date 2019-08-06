@@ -146,7 +146,7 @@ encode_map([], Data, Acc) ->
     {lists:reverse(Acc), Data};
 encode_map([{Key, Spec} | Rest], Data, Acc) ->
     case maps:take(Key, Data) of
-        error -> error('Bad_EncodingError');
+        error -> throw(bad_encoding_error);
         {Value, Data2} ->
             {Result, _} = encode(Spec, Value),
             encode_map(Rest, Data2, [Result | Acc])
@@ -177,7 +177,7 @@ encode_builtin(extension_object, #extension_object{type_id = NodeSpec, body = Bo
         #node_id{value = 0} -> ExtObj#extension_object{body = undefined};
         NodeId ->
             case opcua_database:lookup_encoding(NodeId, binary) of
-                undefined -> error('Bad_EncodingEror');
+                undefined -> throw(bad_encoding_error);
                 EncNodeId ->
                     {EncodedBody, _} = encode(NodeId, Body),
                     ExtObj#extension_object{
