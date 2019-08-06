@@ -88,7 +88,7 @@ decode_hello(Data) ->
         {Result, <<>>} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("HELLO message decoding error; extra data: ~p", [Extra]),
-            error('Bad_DecodingError')
+            throw(bad_decoding_error)
     end.
 
 -spec encode_acknowledge(opcua_protocol:acknowledge_payload()) -> iodata().
@@ -97,7 +97,7 @@ encode_acknowledge(Map) ->
         {Result, Extra} when Extra =:= #{} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("ACKNOWLEDGE message encoding error; extra data: ~p", [Extra]),
-            error('Bad_EncodingError')
+            throw(bad_encoding_error)
     end.
 
 -spec decode_error(iodata()) -> opcua_protocol:error_payload().
@@ -106,7 +106,7 @@ decode_error(Data) ->
         {Result, <<>>} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("ERROR message decoding error; extra data: ~p", [Extra]),
-            error('Bad_DecodingError')
+            throw(bad_decoding_error)
     end.
 
 -spec encode_error(opcua_protocol:error_payload()) -> iodata().
@@ -115,7 +115,7 @@ encode_error(Data) ->
         {Result, Extra} when Extra =:= #{} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("ERROR message encoding error; extra data: ~p", [Extra]),
-            error('Bad_EncodingError')
+            throw(bad_encoding_error)
     end.
 
 -spec decode_object(iodata()) -> {opcua:node_id(), opcua:node_object()}.
@@ -125,7 +125,7 @@ decode_object(Data) ->
         {ObjNodeId, binary} ->
             {Obj, _} = opcua_codec_binary:decode(ObjNodeId, RemData),
             {ObjNodeId, Obj};
-        {_, _} -> error('Bad_DataEncodingUnsupported')
+        {_, _} -> throw(bad_data_encoding_unsupported)
     end.
 
 -spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
@@ -227,7 +227,7 @@ decode_chunk(MsgType, ChunkType, Data, Chunk)
 decode_chunk(MsgType, ChunkType, Data, _Chunk) ->
     ?LOG_ERROR("Failed to decode unexpected ~s ~s chunk: ~p",
                [ChunkType, MsgType, Data]),
-    error('Bad_UnexpectedError').
+    throw(bad_unexpected_error).
 
 prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType} = Chunk)
   when State =:= unlocked, MsgType =:= channel_open, ChunkType =:= final ->
@@ -251,7 +251,7 @@ prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Ch
 prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType} = Chunk) ->
     ?LOG_ERROR("Failed to prepare unexpected ~s ~s ~s chunk: ~p",
                [State, ChunkType, MsgType, Chunk]),
-    error('Bad_UnexpectedError').
+    throw(bad_unexpected_error).
 
 freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType,
                          header_size = HeaderSize, locked_size = LockedSize} = Chunk)
@@ -295,7 +295,7 @@ freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Chu
 freeze_chunk(#uacp_chunk{message_type = MsgType, chunk_type = ChunkType, state = State} = Chunk) ->
     ?LOG_ERROR("Failed to freeze unexpected ~s ~s ~s chunk: ~p",
                [State, ChunkType, MsgType, Chunk]),
-    error('Bad_UnexpectedError').
+    throw(bad_unexpected_error).
 
 encode_chunk(#uacp_chunk{state = undefined, message_type = MsgType, chunk_type = ChunkType} = Chunk)
   when MsgType =:= hello, ChunkType =:= final;
@@ -316,7 +316,7 @@ encode_chunk(#uacp_chunk{state = locked, header = Header, body = Body} = Chunk)
 encode_chunk(#uacp_chunk{message_type = MsgType, chunk_type = ChunkType, state = State} = Chunk) ->
     ?LOG_ERROR("Failed to encode unexpected ~s ~s ~s chunk: ~p",
                [State, ChunkType, MsgType, Chunk]),
-    error('Bad_UnexpectedError').
+    throw(bad_unexpected_error).
 
 decode_message_type(<<"HEL">>) -> hello;
 decode_message_type(<<"ACK">>) -> acknowledge;
@@ -325,7 +325,7 @@ decode_message_type(<<"RHE">>) -> reverse_hello;
 decode_message_type(<<"OPN">>) -> channel_open;
 decode_message_type(<<"CLO">>) -> channel_close;
 decode_message_type(<<"MSG">>) -> channel_message;
-decode_message_type(_) -> error('Bad_TcpMessageTypeInvalid').
+decode_message_type(_) -> throw(bad_tcp_message_type_invalid).
 
 encode_message_type(hello)              -> <<"HEL">>;
 encode_message_type(acknowledge)        -> <<"ACK">>;
@@ -338,7 +338,7 @@ encode_message_type(channel_message)    -> <<"MSG">>.
 decode_chunk_type(<<"F">>) -> final;
 decode_chunk_type(<<"C">>) -> intermediate;
 decode_chunk_type(<<"A">>) -> aborted;
-decode_chunk_type(_) -> error('Bad_TcpMessageTypeInvalid').
+decode_chunk_type(_) -> throw(bad_tcp_message_type_invalid).
 
 encode_chunk_type(final)        -> <<"F">>;
 encode_chunk_type(intermediate) -> <<"C">>;

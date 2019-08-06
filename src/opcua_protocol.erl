@@ -318,7 +318,7 @@ handle_data(State, Data, Buff) ->
     %      same data all over again.
     TotalSize = byte_size(Data) + byte_size(Buff),
     case TotalSize > State#state.max_req_chunk_size of
-        true -> {error, 'Bad_EncodingLimitsExceeded', Buff, State};
+        true -> {error, bad_encoding_limits_exceeded, Buff, State};
         false ->
             AllData = <<Buff/binary, Data/binary>>,
             {Chunks, Buff2} = opcua_protocol_codec:decode_chunks(AllData),
@@ -678,7 +678,8 @@ encode_basic_payload(error, Payload) ->
 
 channel_validate(#state{channel_id = undefined}, channel_open, 0) -> ok;
 channel_validate(#state{channel_id = ChannelId}, _MsgType, ChannelId) -> ok;
-channel_validate(_State, _MsgType, _ChannelId) -> error('Bad_TcpSecureChannelUnknown').
+channel_validate(_State, _MsgType, _ChannelId) ->
+    throw(bad_tcp_secure_channel_unknown).
 
 channel_allocate(#state{channel_id = undefined} = State) ->
     case opcua_registry:allocate_secure_channel(self()) of
@@ -719,12 +720,12 @@ security_init(#state{channel_id = ChannelId, temp_token_id = undefined} = State,
     end;
 security_init(State, _SecurityPolicy) ->
     % If we already have two valid token ids, we must reject any new one
-    {error, 'Bad_SecurityPolicyRejected', State}.
+    {error, bad_security_policy_rejected, State}.
 
 security_asym_unlock(#state{curr_sec = Sub} = State, Chunk) ->
     case opcua_security:unlock(Chunk, Sub) of
         {error, Reason} -> {error, Reason, State};
-        {expired, _Sub2} -> {error, 'Bad_InternalError', State};
+        {expired, _Sub2} -> {error, bad_internal_error, State};
         {ok, Chunk2, Sub2} -> {ok, Chunk2, State#state{curr_sec = Sub2}}
     end.
 
@@ -738,7 +739,7 @@ security_sym_unlock(#state{curr_token_id = Token, temp_token_id = undefined} = S
         {expired, _Sub2} ->
             opcua_security:cleanup(Sub),
             State2 = State#state{curr_token_id = undefined, curr_sec = undefined},
-            {error, 'Bad_SecureChannelTokenUnknown', State2}
+            {error, bad_secure_channel_token_unknown, State2}
     end;
 security_sym_unlock(#state{curr_token_id = Token} = State,
                     #uacp_chunk{security = Token} = Chunk) ->
@@ -752,7 +753,7 @@ security_sym_unlock(#state{curr_token_id = Token} = State,
         {expired, Sub2} ->
             opcua_security:cleanup(Sub2),
             State3 = State2#state{curr_token_id = undefined, curr_sec = undefined},
-            {error, 'Bad_SecureChannelTokenUnknown', State3}
+            {error, bad_secure_channel_token_unknown, State3}
     end;
 security_sym_unlock(#state{temp_token_id = Token, temp_sec = Sub} = State,
                     #uacp_chunk{security = Token} = Chunk) ->
@@ -763,14 +764,15 @@ security_sym_unlock(#state{temp_token_id = Token, temp_sec = Sub} = State,
         {expired, Sub2} ->
             opcua_security:cleanup(Sub2),
             State2 = State#state{temp_token_id = undefined, temp_sec = undefined},
-            {error, 'Bad_SecureChannelTokenUnknown', State2}
+            {error, bad_secure_channel_token_unknown, State2}
     end;
 security_sym_unlock(State, _Chunk) ->
-    {error, 'Bad_SecureChannelTokenUnknown', State}.
+    {error, bad_secure_channel_token_unknown, State}.
 
-security_open(#state{curr_token_id = Tok, curr_sec = Sub} = State, Req)
+security_open(#state{curr_token_id = Tok} = State, Req)
   when Tok =/= undefined ->
-    case opcua_security:open(Req, Sub) of
+    #state{curr_sec = Sub, conn = Conn} = State,
+    case opcua_security:open(Conn, Req, Sub) of
         {error, Reason} ->
             State2 = State#state{curr_token_id = undefined, curr_sec = undefined},
             {error, Reason, State2};
@@ -802,9 +804,10 @@ security_lock(#state{curr_sec = Sub} = State, Chunk) ->
         {ok, Chunk2, Sub2} -> {ok, Chunk2, State#state{curr_sec = Sub2}}
     end.
 
-security_close(#state{curr_token_id = Tok, curr_sec = Sub} = State, Req)
+security_close(#state{curr_token_id = Tok} = State, Req)
   when Tok =/= undefined ->
-    case opcua_security:close(Req, Sub) of
+    #state{curr_sec = Sub, conn = Conn} = State,
+    case opcua_security:close(Conn, Req, Sub) of
         {error, Reason} ->
             State2 = State#state{curr_token_id = undefined, curr_sec = undefined},
             {error, Reason, State2};

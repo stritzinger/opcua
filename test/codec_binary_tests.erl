@@ -80,7 +80,7 @@ open_secure_channel_response() ->
         response_header => #{
             timestamp => 132061913263430080,
             request_handle => 1,
-            service_result => 0,
+            service_result => good,
             service_diagnostics => #diagnostic_info{},
             string_table => [],
             additional_header => #extension_object{}
@@ -155,7 +155,7 @@ create_session_response() ->
             additional_header => #extension_object{},
             request_handle => 2,
             service_diagnostics => #diagnostic_info{},
-            service_result => 0,
+            service_result => good,
             string_table => [],
             timestamp => 132061913263448480
         },
@@ -290,7 +290,7 @@ activate_session_response() ->
             additional_header => #extension_object{},
             request_handle => 3,
             service_diagnostics => #diagnostic_info{},
-            service_result => 0,
+            service_result => good,
             string_table => [],
             timestamp => 132061913263475920
         },
@@ -363,7 +363,7 @@ read_response() ->
             additional_header => #extension_object{},
             request_handle => 4,
             service_diagnostics => #diagnostic_info{},
-            service_result => 0,
+            service_result => good,
             string_table => [],
             timestamp => 132061913263494150
         },
@@ -426,7 +426,7 @@ browse_response() ->
             additional_header => #extension_object{},
             request_handle => 5,
             service_diagnostics => #diagnostic_info{},
-            service_result => 0,
+            service_result => good,
             string_table => [],
             timestamp => 132061913263644760
         },
@@ -461,7 +461,7 @@ browse_response() ->
                     type_definition => #expanded_node_id{node_id = #node_id{value = 61}}
                 }
             ],
-            status_code => 0
+            status_code => good
         }]
     },
     Encoded = "582070449c2dd501050000000000000000000000"
