@@ -10,11 +10,14 @@
 
 %% API functions
 -export([req2res/4]).
+-export([monitor/1]).
+-export([demonitor/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-req2res(_Conn, #uacp_message{type = T, request_id = ReqId}, NodeId, Payload) ->
+req2res(#uacp_connection{},
+        #uacp_message{type = T, request_id = ReqId}, NodeId, Payload) ->
     FinalPayload = case maps:is_key(response_header, Payload) of
         true -> Payload;
         false ->
@@ -30,3 +33,9 @@ req2res(_Conn, #uacp_message{type = T, request_id = ReqId}, NodeId, Payload) ->
     end,
     #uacp_message{type = T, request_id = ReqId,
                   node_id = NodeId, payload = FinalPayload}.
+
+monitor(#uacp_connection{pid = Pid}) ->
+    erlang:monitor(process, Pid).
+
+demonitor(#uacp_connection{}, MonRef) ->
+    erlang:demonitor(MonRef, [flush]).

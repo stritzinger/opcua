@@ -140,7 +140,7 @@ close(Conn, #uacp_message{type = channel_close,
                           node_id = #node_id{ns = 0, value = 450},
                           payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel closed: ~p", [Msg]),
-    Resp = opcua_connection:req2res(Conn, Req, 455, #{}),
+    Resp = opcua_connection:req2res(Conn, Req, 453, #{}),
     {ok, Resp, State}.
 
 -spec cleanup(state()) -> ok.
