@@ -5,6 +5,10 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-include("opcua_codec.hrl").
+-include("opcua_protocol.hrl").
+-include("opcua_node_command.hrl").
+
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -49,9 +53,11 @@ allocate_secure_channel(Pid) ->
 release_secure_channel(ChannelId) ->
     gen_server:call(?SERVER, {release_secure_channel, ChannelId}).
 
-perform(NodeId, Commands) ->
-    ?LOG_DEBUG("Asking node ~p to perform ~p", [NodeId, Commands]),
-    [{error, bad_not_implemented} || _ <- Commands].
+perform(NodeSpec, Commands) ->
+    case opcua_database:lookup_id(NodeSpec) of
+        #node_id{ns = 0, type = numeric, value = NodeNum} ->
+            [model_perform(NodeNum, C) || C <- Commands]
+    end.
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -96,3 +102,27 @@ next_secure_channel_id(#state{next_secure_channel_id = ?MAX_SECURE_CHANNEL_ID} =
 
 next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
     {Id, State#state{next_secure_channel_id = Id + 1}}.
+
+
+%-- HARDCODED MODEL ------------------------------------------------------------
+
+model_perform(NodeNum, #read_attribute{attr = Attr, range = Range}) ->
+    DataValue = case model_attribute(NodeNum, Attr, Range) of
+        {error, Reason} -> #data_value{status = Reason};
+        {TypeSpec, Value} -> data_value(TypeSpec, Value)
+    end,
+    DataValue.
+
+data_value(Type, Value) when ?IS_BUILTIN_TYPE_NAME(Type) ->
+    #data_value{value = #variant{type = Type, value = Value}};
+data_value(TypeSpec, Value) ->
+    NodeId = opcua_database:lookup_id(TypeSpec),
+    ExtObj = #extension_object{type_id = NodeId, encoding = byte_string, body = Value},
+    #data_value{value = #variant{type = extension_object, value = ExtObj}}.
+
+model_attribute(NodeNum, node_id, _) -> {node_id, #node_id{value = NodeNum}};
+model_attribute(84, display_name, _) -> {localized_text, #localized_text{text = <<"Root">>}};
+model_attribute(84, browse_name, _) -> {qualified_name, #qualified_name{name = <<"Root">>}};
+model_attribute(84, node_class, _) -> {int32, 1};
+model_attribute(84, _, _) -> {error, bad_attribute_id_invalid};
+model_attribute(_, _, _) -> {error, bad_node_id_unknown}.

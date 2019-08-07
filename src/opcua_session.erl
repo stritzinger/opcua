@@ -301,7 +301,6 @@ check_identity(ExtObj) ->
 %-- ATTRIBUTE SERVICE SET ------------------------------------------------------
 
 attribute_read_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
-    ?LOG_DEBUG("READ COMMAND REQUEST: ~p", [Req]),
     #{
         max_age := MaxAge,
         % timestamp_to_return := TimestampsToReturn,
@@ -345,7 +344,7 @@ attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
                     Status = opcua_database_status_codes:name(Reason, bad_internal_error),
                     Result = #data_value{status = Status},
                     attribute_read(Data, ReadOpts, Rest, [Result | Acc]);
-                [{ok, #data_value{} = Result}] ->
+                [#data_value{} = Result] ->
                     attribute_read(Data, ReadOpts, Rest, [Result | Acc])
             end;
         _ ->

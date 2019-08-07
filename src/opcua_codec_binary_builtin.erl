@@ -3,6 +3,8 @@
 -include("opcua_codec.hrl").
 
 -export([encode/2, decode/2]).
+-export([decode_masked/4]).
+-export([encode_masked/1]).
 
 decode(boolean, <<0, T/binary>>) -> {false, T};
 decode(boolean, <<_Bin:1/binary, T/binary>>) -> {true, T};
@@ -30,11 +32,6 @@ decode(expanded_node_id, <<Mask:8, Bin/binary>>) -> decode_expanded_node_id(Mask
 decode(diagnostic_info, <<Mask:1/binary, Bin/binary>>) -> decode_diagnostic_info(Mask, Bin);
 decode(qualified_name, Bin) -> decode_qualified_name(Bin);
 decode(localized_text, <<Mask:1/binary, Bin/binary>>) -> decode_localized_text(Mask, Bin);
-decode(extension_object, Bin) -> decode_extension_object(Bin);
-decode(variant, <<0:6, Bin/binary>>) -> {undefined, Bin};
-decode(variant, <<DimFlag:1/bits, ArrayFlag:1/bits, TypeId:6/little-unsigned-integer, Bin/binary>>) ->
-    decode_variant(TypeId, DimFlag, ArrayFlag, Bin);
-decode(data_value, <<0:2, Mask:6/bits, Bin/binary>>) -> decode_data_value(Mask, Bin);
 decode(_Type, _Bin) -> throw(bad_decoding_error).
 
 encode(boolean, false) -> <<0:8>>;
@@ -64,9 +61,6 @@ encode(expanded_node_id, ExpandedNodeId) -> encode_expanded_node_id(ExpandedNode
 encode(diagnostic_info, DiagnosticInfo) -> encode_diagnostic_info(DiagnosticInfo);
 encode(qualified_name, QualifiedName) -> encode_qualified_name(QualifiedName);
 encode(localized_text, LocalizedText) -> encode_localized_text(LocalizedText);
-encode(extension_object, ExtensionObject) -> encode_extension_object(ExtensionObject);
-encode(variant, Variant) -> encode_variant(Variant);
-encode(data_value, DataValue) -> encode_data_value(DataValue);
 encode(_Type, _Value) -> throw(bad_encoding_error).
 
 
@@ -125,41 +119,14 @@ decode_localized_text(<<0:6, Mask:2/bits>>, Bin) ->
     RecordInfo = {localized_text, record_info(fields, localized_text)},
     decode_masked(RecordInfo, Mask, Types, Bin).
 
-decode_extension_object(Bin) ->
-    {TypeId, <<Mask:8, T/binary>>} = decode(node_id, Bin),
-    decode_extension_object1(Mask, TypeId, T).
+decode_multi(TypeList, Bin) ->
+    decode_multi(TypeList, Bin, []).
 
-decode_extension_object1(16#00, TypeId, T) ->
-    {#extension_object{type_id = TypeId, encoding = undefined, body = undefined}, T};
-decode_extension_object1(16#01, TypeId, T) ->
-    {Body, T1} = decode(byte_string, T),
-    {#extension_object{type_id = TypeId, encoding = byte_string, body = Body}, T1};
-decode_extension_object1(16#02, TypeId, T) ->
-    {Body, T1} = decode(xml, T),
-    {#extension_object{type_id = TypeId, encoding = xml, body = Body}, T1}.
-
-decode_variant(TypeId, <<0:1>>, <<0:1>>, Bin) ->
-    TypeName = opcua_codec:builtin_type_name(TypeId),
-    {Value, Bin1} = decode(TypeName, Bin),
-    {#variant{type = TypeName, value = Value}, Bin1};
-decode_variant(TypeId, <<0:1>>, <<1:1>>, Bin) ->
-    TypeName = opcua_codec:builtin_type_name(TypeId),
-    {Array, Bin1} = decode_array(TypeName, Bin),
-    {#variant{type = TypeName, value = Array}, Bin1};
-decode_variant(TypeId, <<1:1>>, <<1:1>>, Bin) ->
-    TypeName = opcua_codec:builtin_type_name(TypeId),
-    {MultiArray, Bin1} = decode_multi_array(TypeName, Bin),
-    {#variant{type = TypeName, value = MultiArray}, Bin1}.
-
-decode_data_value(Mask, Bin) ->
-    Types = [{value, variant, undefined},
-             {status, status_code, 0},
-             {source_timestamp, date_time, 0},
-             {source_pico_seconds, uint16, 0},
-             {server_timestamp, date_time, 0},
-             {server_pico_seconds, uint16, 0}],
-    RecordInfo = {data_value, record_info(fields, data_value)},
-    decode_masked(RecordInfo, Mask, Types, Bin).
+decode_multi([], T, Acc) ->
+    {lists:reverse(Acc), T};
+decode_multi([Type|TypeList], Bin, Acc) ->
+    {Elem, T} = decode(Type, Bin),
+    decode_multi(TypeList, T, [Elem|Acc]).
 
 decode_masked(RecordInfo, Mask, Types, Bin) ->
     BooleanMask = boolean_mask(Mask),
@@ -170,52 +137,14 @@ decode_masked(RecordInfo, Mask, Types, Bin) ->
     FinalApply = lists:zip(lists:map(fun({Name,_,_}) -> Name end, Apply1), List),
     {to_record(RecordInfo, FinalApply ++ Defaults), T}.
 
-to_record({RecordName, RecordFields}, Proplist) ->
-    Values = [proplists:get_value(Key, Proplist) || Key <- RecordFields],
-    list_to_tuple([RecordName | Values]).
-
 boolean_mask(Mask) when is_bitstring(Mask) ->
     lists:reverse([X==1 || <<X:1>> <= Mask]);
 boolean_mask(Mask) ->
     Mask.
 
-decode_multi(TypeList, Bin) ->
-    decode_multi(TypeList, Bin, []).
-
-decode_multi([], T, Acc) ->
-    {lists:reverse(Acc), T};
-decode_multi([Type|TypeList], Bin, Acc) ->
-    {Elem, T} = decode(Type, Bin),
-    decode_multi(TypeList, T, [Elem|Acc]).
-
-decode_multi_array(Type, Bin) ->
-    {ObjectArray, T} = decode_array(Type, Bin),
-    {DimArray, T1} = decode_array(int32, T),
-    {honor_dimensions(ObjectArray, DimArray), T1}.
-
-decode_array(Type, Bin) ->
-    {Length, T} = decode(int32, Bin),
-    decode_array(Type, T, Length).
-
-decode_array(_Type, _Array, -1) ->
-    undefined;
-decode_array(Type, Array, N) ->
-    decode_array(Type, Array, N, []).
-
-decode_array(_Type, T, 0, Acc) ->
-    {lists:reverse(Acc), T};
-decode_array(Type, Array, N, Acc) ->
-    {Elem, T} = decode(Type, Array),
-    decode_array(Type, T, N-1, [Elem|Acc]).
-
-honor_dimensions(ObjectArray, DimArray) ->
-    lists:reverse(
-      lists:foldl(fun(X, Acc) -> honor_dimensions1(X, Acc) end,
-                  {[], ObjectArray}, DimArray)).
-
-honor_dimensions1(Dim, {Array, ArrayList}) ->
-    {El, NewArray} = lists:split(Dim, Array),
-    {NewArray, [El|ArrayList]}.
+to_record({RecordName, RecordFields}, Proplist) ->
+    Values = [proplists:get_value(Key, Proplist) || Key <- RecordFields],
+    list_to_tuple([RecordName | Values]).
 
 encode_guid(<<D1:32/big-integer, D2:16/big-integer, D3:16/big-integer, D4:8/binary>>) ->
     <<D1:32/little-integer, D2:16/little-integer, D3:16/little-integer, D4:8/binary>>.
@@ -274,70 +203,6 @@ encode_localized_text(LocalizedText) when is_binary(LocalizedText) ->
 encode_localized_text(#localized_text{locale = Locale, text = Text}) ->
     Types = [{string, Locale}, {string, Text}],
     encode_masked(Types).
-
-encode_extension_object(#extension_object{type_id = TypeId, encoding = undefined, body = undefined}) ->
-    NodeId = encode(node_id, TypeId),
-    <<NodeId/binary, 16#00:8>>;
-encode_extension_object(#extension_object{type_id = TypeId, encoding = Encoding, body = Body}) ->
-    NodeId = encode(node_id, TypeId),
-    %% NOTE: encoding byte strings and xml also
-    %% encodes the 'Length' of those as prefix
-    BinBody = encode(Encoding, Body),
-    EncodingFlag = case Encoding of
-                        byte_string -> 16#01;
-                        xml -> 16#02
-                    end,
-    <<NodeId/binary, EncodingFlag:8, BinBody/binary>>.
-
-encode_variant(#variant{type = Type, value = MultiArray})
-  when is_list(MultiArray) ->
-    TypeId = opcua_codec:builtin_type_id(Type),
-    {Length, Value, Dims} = build_variant_value(Type, MultiArray),
-    case Length of
-        0 ->
-            <<0:2, TypeId:6>>;
-        Length when Length > 0 ->
-            BinLength = encode(int32, Length),
-            BinDimLength = encode(int32, length(Dims)),
-            BinDims = list_to_binary([encode(int32, Dim) || Dim <- Dims]),
-            <<3:2, TypeId:6, BinLength/binary, Value/binary,
-              BinDimLength/binary, BinDims/binary>>
-    end;
-encode_variant(#variant{type = Type, value = Value}) ->
-    TypeId = opcua_codec:builtin_type_id(Type),
-    BinValue = encode(Type, Value),
-    <<0:2, TypeId:6, BinValue/binary>>.
-
-build_variant_value(Type, MultiArray) ->
-    build_variant_value(Type, MultiArray, 0, <<>>, []).
-
-build_variant_value(_Type, [], Length, Value, Dims) ->
-    {Length, Value, Dims};
-build_variant_value(Type, [Elem|T], Length, Value, Dims) ->
-    {ArrayLength, ArrayBin} =
-        case Elem of
-            Elem when is_list(Elem) ->
-                {BinElemList, _} = lists:unzip([encode(Type, El) || El <- Elem]),
-                {length(Elem), BinElemList};
-            _ ->
-                {BinElem, _} = encode(Type, Elem),
-                {1, BinElem}
-        end,
-    build_variant_value(Type, T, Length + ArrayLength,
-                        <<Value/binary, ArrayBin/binary>>,
-                        [ArrayLength|Dims]).
-
-encode_data_value(DataValue) ->
-    Types = [{variant,      DataValue#data_value.value},
-             {status_code,  maybe_undefined(DataValue#data_value.status, 0)},
-             {date_time,    maybe_undefined(DataValue#data_value.source_timestamp, 0)},
-             {uint16,       maybe_undefined(DataValue#data_value.source_pico_seconds, 0)},
-             {date_time,    maybe_undefined(DataValue#data_value.server_timestamp, 0)},
-             {uint16,       maybe_undefined(DataValue#data_value.server_pico_seconds, 0)}],
-    encode_masked(Types).
-
-maybe_undefined(Value, Value) -> undefined;
-maybe_undefined(Value, _Cond) -> Value.
 
 encode_multi(TypeList) ->
     encode_multi(TypeList, <<>>).

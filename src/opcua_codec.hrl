@@ -28,7 +28,7 @@
 
 -record(data_value, {
     value :: term(),
-    status = good :: integer(),
+    status = good :: atom() | pos_integer(),
     source_timestamp = 0 :: non_neg_integer(),
     source_pico_seconds = 0 :: non_neg_integer(),
     server_timestamp = 0 :: non_neg_integer(),
@@ -96,6 +96,8 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-define(UNDEF_NODE_ID, #node_id{ns = 0, type = numeric, value = 0}).
+-define(UNDEF_EXT_OBJ, #extension_object{type_id = ?UNDEF_NODE_ID, body = undefined}).
 -define(IS_BUILTIN_TYPE_NAME(T),
     T =:= boolean;
     T =:= sbyte;
