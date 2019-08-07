@@ -13,11 +13,17 @@
 %% PUBLIC API
 
 resolve(NodeId) ->
-    proplists:get_value(NodeId, ets:lookup(?DB_ENCODINGS, NodeId)).
+    case ets:lookup(?DB_ENCODINGS, NodeId) of
+        [] -> {NodeId, undefined};
+        [{_, Result}] -> Result
+    end.
 
 lookup(NodeId, Encoding) ->
     Key = {NodeId, Encoding},
-    proplists:get_value(Key, ets:lookup(?DB_ENCODINGS, Key)).
+    case ets:lookup(?DB_ENCODINGS, Key) of
+        [] -> {NodeId, undefined};
+        [{_, Result}] -> {Result, Encoding}
+    end.
 
 setup(File) ->
     _Tid = ets:new(?DB_ENCODINGS, [named_table]),

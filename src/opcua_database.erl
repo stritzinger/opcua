@@ -49,14 +49,16 @@ lookup_id(NodeSpec) ->
     end.
 
 %% The returned node id is canonical, meaning it is always numeric.
--spec lookup_encoding(node_spec(), opcua_encoding()) -> node_id().
+-spec lookup_encoding(node_spec(), opcua_encoding())
+    -> {node_id(), undefined | opcua_encoding()}.
 lookup_encoding(NodeId = #node_id{}, Encoding) ->
     opcua_database_encodings:lookup(NodeId, Encoding);
 lookup_encoding(NodeSpec, Encoding) ->
     lookup_encoding(lookup_id(NodeSpec), Encoding).
 
 %% The returned node id is canonical, meaning it is always numeric.
--spec resolve_encoding(node_spec()) -> {node_id(), opcua_encoding()}.
+-spec resolve_encoding(node_spec())
+    -> {node_id(), undefined | opcua_encoding()}.
 resolve_encoding(NodeId = #node_id{}) ->
     opcua_database_encodings:resolve(NodeId);
 resolve_encoding(NodeSpec) ->
