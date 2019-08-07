@@ -8,7 +8,7 @@
 %% this is probably never used but still
 %% left to sit here as an example for what
 %% a bare node looks like
--record(node, {
+-record(opcua_node, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -22,7 +22,7 @@
     references                  :: references()
 }).
 
--record(object, {
+-record(opcua_object, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -37,7 +37,7 @@
     event_notifier              :: byte()
 }).
 
--record(variable, {
+-record(opcua_variable, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -60,7 +60,7 @@
     access_level_ex             :: non_neg_integer()
 }).
 
--record(method, {
+-record(opcua_method, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -76,13 +76,13 @@
     user_executable             :: boolean()
 }).
 
--record(reference, {
+-record(opcua_reference, {
     reference_type_id           :: node_id(),
     is_inverse                  :: boolean(),
     target_id                   :: expanded_node_id()
 }).
 
--record(object_type, {
+-record(opcua_object_type, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -97,7 +97,7 @@
     is_abstract                 :: boolean()
 }).
 
--record(variable_type, {
+-record(opcua_variable_type, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -116,7 +116,7 @@
     is_abstract                 :: boolean()
 }).
 
--record(data_type, {
+-record(opcua_data_type, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -132,7 +132,7 @@
     data_type_definition        :: term()
 }).
 
--record(reference_type, {
+-record(opcua_reference_type, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -149,7 +149,7 @@
     inverse_name                :: localized_text()
 }).
 
--record(view, {
+-record(opcua_view, {
     node_id                     :: node_id(),
     node_class                  :: node_class(),
     browse_name                 :: binary(),
@@ -214,4 +214,4 @@
 -type permissions() :: [permission()].
 -type role_permission() :: #role_permission{}.
 -type role_permissions() :: [role_permission()].
--type references() :: [#reference{}].
+-type references() :: [#opcua_reference{}].
