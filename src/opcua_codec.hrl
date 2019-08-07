@@ -80,6 +80,13 @@
 }).
 
 -type node_id() :: #node_id{}.
+-type expanded_node_id() :: #expanded_node_id{}.
+-type qualified_name() :: #qualified_name{}.
+-type localized_text() :: #localized_text{}.
+-type extension_object() :: #extension_object{}.
+-type variant() :: #variant{}.
+-type data_value() :: #data_value{}.
+-type diagnostic_info() :: #diagnostic_info{}.
 -type node_spec() :: non_neg_integer() | atom() | binary() | node_id().
 -type opcua_spec() :: node_spec() | [node_spec()] | [{atom(), node_spec()}].
 -type opcua_encoding() :: binary.
