@@ -37,7 +37,10 @@ decode_type(#node_id{type = numeric, value = Num}, Data)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     decode_builtin(opcua_codec:builtin_type_name(Num), Data);
 decode_type(#node_id{} = NodeId, Data) ->
-    decode_schema(opcua_database:lookup_schema(NodeId), Data);
+    case opcua_database:lookup_schema(NodeId) of
+        undefined -> throw({bad_decoding_error, {schema_not_found, NodeId}});
+        Schema -> decode_schema(Schema, Data)
+    end;
 decode_type(NodeSpec, Data) ->
     decode_type(opcua_codec:node_id(NodeSpec), Data).
 
@@ -138,7 +141,7 @@ decode_extension_object(Data) ->
                                                       body = DecodedBody},
                     {ExtObj2, Data2}
             end;
-        {#extension_object{} = ExtObj2, _Data2} ->
+        {#extension_object{}, _Data2} ->
             throw(bad_data_encoding_unsupported)
     end.
 
@@ -239,7 +242,10 @@ encode_type(#node_id{type = numeric, value = Num}, Data)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     {encode_builtin(opcua_codec:builtin_type_name(Num), Data), undefined};
 encode_type(#node_id{} = NodeId, Data) ->
-    encode_schema(opcua_database:lookup_schema(NodeId), Data);
+    case opcua_database:lookup_schema(NodeId) of
+        undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
+        Schema -> encode_schema(Schema, Data)
+    end;
 encode_type(NodeSpec, Data) ->
     encode_type(opcua_codec:node_id(NodeSpec), Data).
 
@@ -354,7 +360,7 @@ encode_extension_object(?UNDEF_EXT_OBJ) ->
     [encode_builtin(node_id, ?UNDEF_NODE_ID), <<16#00>>];
 encode_extension_object(#extension_object{type_id = NodeSpec,
                                           encoding = byte_string,
-                                          body = Body} = ExtObj) ->
+                                          body = Body}) ->
     {EncNodeId, _} = opcua_database:lookup_encoding(NodeSpec, binary),
     {EncodedBody, _} = encode_type(NodeSpec, Body),
     NodeIdData = encode_builtin(node_id, EncNodeId),
