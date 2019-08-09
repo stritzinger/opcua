@@ -99,8 +99,9 @@ bound(info, {'DOWN', MonRef, process, _Pid, _Info},
      [{state_timeout, 600000, terminate}]};
 bound({call, From}, {request, Conn, Req}, Data) ->
     dispatch_request(Data, bound, From, Conn, Req, [fun validate_auth/2], #{
-        629 => {keep_state, fun attribute_read_command/3},
-        471 => {stop, normal, fun session_close_command/3}
+        471 => {stop, normal, fun session_close_command/3},
+        525 => {keep_state, fun view_browse_command/3},
+        629 => {keep_state, fun attribute_read_command/3}
     }, bad_request_not_allowed, []).
 
 
@@ -301,13 +302,11 @@ check_identity(ExtObj) ->
 %-- ATTRIBUTE SERVICE SET ------------------------------------------------------
 
 attribute_read_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
-    ?LOG_DEBUG("READ COMMAND REQUEST: ~p", [Req]),
     #{
         max_age := MaxAge,
-        % timestamp_to_return := TimestampsToReturn,
+        timestamps_to_return := TimestampsToReturn,
         nodes_to_read := NodesToRead
     } = Msg,
-    TimestampsToReturn = source,
 
     ReadOpts = #{
         max_age => parse_max_age(MaxAge),
@@ -335,7 +334,7 @@ attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
     case DataEncoding of
         #qualified_name{ns = 0, name = Name}
           when Name =:= <<"Default Binary">>; Name =:= undefined ->
-            Command = #read_attribute{
+            Command = #read_command{
                 attr = opcua_database_attributes:name(AttributeId),
                 range = opcua_util:parse_range(RangeStr),
                 opts = ReadOpts
@@ -345,7 +344,7 @@ attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
                     Status = opcua_database_status_codes:name(Reason, bad_internal_error),
                     Result = #data_value{status = Status},
                     attribute_read(Data, ReadOpts, Rest, [Result | Acc]);
-                [{ok, #data_value{} = Result}] ->
+                [#data_value{} = Result] ->
                     attribute_read(Data, ReadOpts, Rest, [Result | Acc])
             end;
         _ ->
@@ -357,3 +356,63 @@ parse_max_age(Age) when Age >= 0, Age < ?EPSILON -> newest;
 parse_max_age(Age) when Age >= ?MAX_INT32 -> cached;
 parse_max_age(Age) when Age >= 0 -> trunc(Age);
 parse_max_age(_Other) -> throw(bad_max_age_invalid).
+
+
+%-- VIEW SERVICE SET -----------------------------------------------------------
+
+view_browse_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
+    #{
+        requested_max_references_per_node := MaxRefs,
+        nodes_to_browse := NodesToBrowse
+    } = Msg,
+    BrowseOpts = #{max_refs => MaxRefs},
+    Results = view_browse(Data, BrowseOpts, NodesToBrowse),
+    ?assertEqual(length(NodesToBrowse), length(Results)),
+    Resp = opcua_connection:req2res(Conn, Req, 528, #{
+        results => Results,
+        diagnostic_infos => []
+    }),
+    {{reply, Resp}, Data}.
+
+view_browse(Data, BrowseOpts, NodesToBrowse) ->
+    view_browse(Data, BrowseOpts, NodesToBrowse, []).
+
+view_browse(_Data, _BrowseOpts, [], Acc) -> lists:reverse(Acc);
+view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
+    #{
+        node_id := NodeId,
+        reference_type_id := RefType,
+        include_subtypes := SubTypes,
+        browse_direction := Direction
+    } = BrowseSpec,
+    Command = #browse_command{
+        type = RefType,
+        subtypes = SubTypes,
+        direction = Direction,
+        opts = BrowseOpts
+    },
+    case opcua_registry:perform(NodeId, [Command]) of
+        [{error, Reason}] ->
+            Status = opcua_database_status_codes:name(Reason, bad_internal_error),
+            BrowseResult = #{
+                status_code => Status,
+                continuation_point => undefined,
+                references => []
+            },
+            view_browse(Data, BrowseOpts, Rest, [BrowseResult | Acc]);
+        [CommandResult] ->
+            BrowseResult = #{
+                status_code => maps:get(status, CommandResult, good),
+                continuation_point => undefined,
+                references => [#{
+                    reference_type_id => maps:get(type, Ref, ?UNDEF_NODE_ID),
+                    is_forward => maps:get(is_forward, Ref, true),
+                    node_id => maps:get(node_id, Ref),
+                    browse_name => maps:get(browse_name, Ref, #qualified_name{}),
+                    display_name => maps:get(display_name, Ref, #localized_text{}),
+                    node_class => maps:get(node_class, Ref, unspecified),
+                    type_definition => maps:get(type_definition, Ref, ?UNDEF_EXT_NODE_ID)
+                } || Ref <- maps:get(references, CommandResult, [])]
+            },
+            view_browse(Data, BrowseOpts, Rest, [BrowseResult | Acc])
+    end.

@@ -6,18 +6,18 @@
 
 -record(expanded_node_id, {
     node_id = #node_id{} :: node_id(),
-    namespace_uri :: binary(),
-    server_index :: non_neg_integer()
+    namespace_uri :: undefined | binary(),
+    server_index :: undefined | non_neg_integer()
 }).
 
 -record(qualified_name, {
     ns  = 0 :: non_neg_integer(),
-    name :: binary()
+    name :: undefined | binary()
 }).
 
 -record(localized_text, {
-    locale :: binary(),
-    text :: binary()
+    locale :: undefined | binary(),
+    text :: undefined | binary()
 }).
 
 -record(extension_object, {
@@ -28,7 +28,7 @@
 
 -record(data_value, {
     value :: term(),
-    status = good :: integer(),
+    status = good :: atom() | pos_integer(),
     source_timestamp = 0 :: non_neg_integer(),
     source_pico_seconds = 0 :: non_neg_integer(),
     server_timestamp = 0 :: non_neg_integer(),
@@ -103,6 +103,14 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-define(UNDEF_NODE_ID, #node_id{ns = 0, type = numeric, value = 0}).
+-define(UNDEF_EXT_NODE_ID,
+    #expanded_node_id{node_id = ?UNDEF_NODE_ID,
+                      namespace_uri = undefined,
+                      server_index = undefined}).
+-define(UNDEF_EXT_OBJ,
+    #extension_object{type_id = ?UNDEF_NODE_ID,
+                      body = undefined}).
 -define(IS_BUILTIN_TYPE_NAME(T),
     T =:= boolean;
     T =:= sbyte;

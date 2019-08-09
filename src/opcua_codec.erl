@@ -2,6 +2,8 @@
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-include_lib("kernel/include/logger.hrl").
+
 -include("opcua_codec.hrl").
 
 
@@ -9,6 +11,8 @@
 
 %% API Functions
 -export([node_id/1]).
+-export([pack_variant/2]).
+-export([unpack_variant/2]).
 -export([builtin_type_name/1]).
 -export([builtin_type_id/1]).
 
@@ -22,6 +26,30 @@ node_id(Name) when is_atom(Name) -> #node_id{type = string, value = Name};
 node_id(Name) when is_binary(Name) -> #node_id{type = string, value = Name};
 node_id({NS, Num}) when is_integer(NS), is_integer(Num), NS >= 0, Num > 0 ->
     #node_id{ns = NS, value = Num}.
+
+-spec pack_variant(node_spec(), term()) -> #variant{}.
+pack_variant(#node_id{ns = 0, type = numeric, value = Num}, Value)
+  when ?IS_BUILTIN_TYPE_ID(Num) ->
+    #variant{type = builtin_type_name(Num), value = Value};
+pack_variant(#node_id{ns = 0, type = string, value = Name}, Value)
+  when ?IS_BUILTIN_TYPE_NAME(Name) ->
+    #variant{type = Name, value = Value};
+pack_variant(#node_id{} = NodeId, Value) ->
+    case opcua_database:lookup_schema(NodeId) of
+        undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
+        #enum{fields = Fields} ->
+            [Idx] = [I || #field{name = N, value = I} <- Fields, Value =:= N],
+            #variant{type = int32, value = Idx};
+        _Other ->
+            ExtObj = #extension_object{type_id = NodeId, encoding = byte_string, body = Value},
+            #variant{type = extension_object, value = ExtObj}
+    end;
+pack_variant(NodeSpec, Value) ->
+    pack_variant(node_id(NodeSpec), Value).
+
+-spec unpack_variant(node_spec(), #variant{}) -> term().
+unpack_variant(_Type, _Value) ->
+    throw(bad_not_implemented).
 
 builtin_type_name( 1) -> boolean;
 builtin_type_name( 2) -> sbyte;
