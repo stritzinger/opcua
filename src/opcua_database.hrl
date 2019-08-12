@@ -5,13 +5,18 @@
     permissions                 :: permissions()
 }).
 
-%% this is probably never used but still
-%% left to sit here as an example for what
-%% a bare node looks like
+%% TODO: What about optional fields? E.g. display_name should be binary() | undefined?
+
+-record(opcua_node_id, {
+    ns                          :: non_neg_integer(),
+    type                        :: numeric | string | guid | opaque,
+    value                       :: non_neg_integer() | atom() | binary()
+}).
+
 -record(opcua_node, {
-    node_id                     :: node_id(),
+    node_id                     :: #opcua_node_id{},
     node_class                  :: node_class(),
-    browse_name                 :: binary(),
+    browse_name                 :: optional(binary()),
     display_name                :: binary(),
     description                 :: binary(),
     write_mask                  :: non_neg_integer(),
@@ -23,144 +28,56 @@
 }).
 
 -record(opcua_object, {
-    node_id                     :: node_id(),
-    node_class                  :: node_class(),
-    browse_name                 :: binary(),
-    display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
-    references                  :: references(),
     event_notifier              :: byte()
 }).
 
 -record(opcua_variable, {
-    node_id                     :: node_id(),
-    node_class                  :: node_class(),
-    browse_name                 :: binary(),
-    display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
-    references                  :: references(),
     value                       :: variant(),
     data_type                   :: node_id(),
     value_rank                  :: non_neg_integer(),
-    array_dimensions            :: [non_neg_integer()],
-    access_level                :: byte(),
-    user_access_level           :: byte(),
+    array_dimensions            :: optional([non_neg_integer()]),
+    access_level                :: optional(byte()),
+    user_access_level           :: optional(byte()),
     minimum_sampling_interval   :: float(),
     historizing                 :: boolean(),
-    access_level_ex             :: non_neg_integer()
+    access_level_ex             :: uint32()
 }).
 
 -record(opcua_method, {
-    node_id                     :: node_id(),
-    node_class                  :: node_class(),
-    browse_name                 :: binary(),
-    display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
-    references                  :: references(),
     executable                  :: boolean(),
     user_executable             :: boolean()
 }).
 
 -record(opcua_reference, {
     reference_type_id           :: node_id(),
-    is_inverse                  :: boolean(),
+    is_forward                  :: boolean(),
     target_id                   :: expanded_node_id()
 }).
 
 -record(opcua_object_type, {
-    node_id                     :: node_id(),
-    node_class                  :: node_class(),
-    browse_name                 :: binary(),
-    display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
-    references                  :: references(),
     is_abstract                 :: boolean()
 }).
 
 -record(opcua_variable_type, {
-    node_id                     :: node_id(),
-    node_class                  :: node_class(),
-    browse_name                 :: binary(),
-    display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
-    references                  :: references(),
     value                       :: variant(),
-    data_type                   :: node_id(),
-    value_rank                  :: non_neg_integer(),
-    array_dimensions            :: [non_neg_integer()],
+    data_type                   :: optional(node_id()),
+    value_rank                  :: optional(integer()),
+    array_dimensions            :: optional([non_neg_integer()]),
     is_abstract                 :: boolean()
 }).
 
 -record(opcua_data_type, {
-    node_id                     :: node_id(),
-    node_class                  :: node_class(),
-    browse_name                 :: binary(),
-    display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
-    references                  :: references(),
     is_abstract                 :: boolean(),
     data_type_definition        :: term()
 }).
 
 -record(opcua_reference_type, {
-    node_id                     :: node_id(),
-    node_class                  :: node_class(),
-    browse_name                 :: binary(),
-    display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
-    references                  :: references(),
     is_abstract                 :: boolean(),
     symmetric                   :: boolean(),
     inverse_name                :: localized_text()
 }).
 
 -record(opcua_view, {
-    node_id                     :: node_id(),
-    node_class                  :: node_class(),
-    browse_name                 :: binary(),
-    display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
-    references                  :: references(),
     contains_no_loops           :: boolean(),
     event_notifier              :: byte()
 }).
@@ -201,17 +118,20 @@
                             delete_node |
                             add_node.
 
--type node_class() ::       unspecified|
-                            object |
-                            variable |
-                            method |
-                            object_type |
-                            variable_type |
-                            reference_type |
-                            data_type |
-                            view.
+-type node_class() ::       #opcua_object{} |
+                            #opcua_variable{} |
+                            #opcua_method{} |
+                            #opcua_object_type{} |
+                            #opcua_variable_type{} |
+                            #opcua_reference_type{} |
+                            #opcua_data_type{} |
+                            #opcua_view{}.
 
 -type permissions() :: [permission()].
 -type role_permission() :: #role_permission{}.
 -type role_permissions() :: [role_permission()].
 -type references() :: [#opcua_reference{}].
+
+-type uint32() :: 0..4294967295.
+
+-type optional(Type) :: undefined | Type.
