@@ -1,34 +1,33 @@
-%%%-------------------------------------------------------------------
-%% @doc opcua top level supervisor.
-%% @end
-%%%-------------------------------------------------------------------
-
 -module(opcua_sup).
 
 -behaviour(supervisor).
 
+%%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% API Functions
 -export([start_link/0]).
 
+%% Behaviour supervisor callback functions
 -export([init/1]).
 
--define(SERVER, ?MODULE).
+
+%%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+
+%%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
-    SupFlags = #{strategy => one_for_all, intensity => 0, period => 1},
-    DatabaseSpec = #{
-        id => opcua_database,
-        start => {opcua_database, start_link, [#{}]}
-    },
-    RegistrySpec = #{
-        id => opcua_registry,
-        start => {opcua_registry, start_link, [#{}]}
-    },
-    SessionsSupSpec = #{
-        id => opcua_sessions_sup,
-        type => supervisor,
-        start => {opcua_sessions_sup, start_link, []}
-    },
-    {ok, {SupFlags, [DatabaseSpec, RegistrySpec, SessionsSupSpec]}}.
+    {ok, {#{strategy => one_for_all}, [
+        child(opcua_address_space, []),
+        child(opcua_database, [#{}]),
+        child(opcua_registry, [#{}]),
+        child(opcua_sessions_sup, [])
+    ]}}.
+
+
+%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+child(Module, Args) -> #{id => Module, start => {Module, start_link, Args}}.
