@@ -20,12 +20,9 @@
 
 -ignore_xref([{?MODULE, start_link, 0}]).
 
--compile([export_all]).
-
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 

@@ -4,7 +4,6 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 
@@ -20,7 +19,7 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec node_id(node_spec()) -> node_id().
+-spec node_id(node_spec()) -> opcua_node:node_id().
 node_id(#opcua_node_id{} = NodeId) -> NodeId;
 node_id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
 node_id(Name) when is_atom(Name) -> #opcua_node_id{type = string, value = Name};

@@ -1,5 +1,13 @@
+
+%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-include("opcua_node.hrl").
+
+
+%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 -record(expanded_node_id, {
-    node_id = #opcua_node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: opcua_node:node_id(),
     namespace_uri :: undefined | binary(),
     server_index :: undefined | non_neg_integer()
 }).
@@ -15,7 +23,7 @@
 }).
 
 -record(extension_object, {
-    type_id = #opcua_node_id{} :: node_id(),
+    type_id = #opcua_node_id{} :: opcua_node:node_id(),
     encoding :: xml | byte_string | undefined,
     body :: term()
 }).
@@ -45,35 +53,34 @@
 }).
 
 -record(structure, {
-    node_id = #opcua_node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: opcua_node:node_id(),
     with_options = false :: boolean(),
     fields = [] :: fields()
 }).
 
 -record(union, {
-    node_id = #opcua_node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: opcua_node:node_id(),
     fields = [] :: fields()
 }).
 
 -record(enum, {
-    node_id = #opcua_node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: opcua_node:node_id(),
     fields = [] :: fields()
 }).
 
 -record(builtin, {
-    node_id = #opcua_node_id{} :: node_id(),
-    builtin_node_id = #opcua_node_id{} :: node_id()
+    node_id = #opcua_node_id{} :: opcua_node:node_id(),
+    builtin_node_id = #opcua_node_id{} :: opcua_node:node_id()
 }).
 
 -record(field, {
     name :: atom(),
-    node_id = #opcua_node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: opcua_node:node_id(),
     value_rank = -1 :: value_rank(),
     is_optional = false :: boolean(),
     value :: integer()
 }).
 
--type node_id() :: #opcua_node_id{}.
 -type expanded_node_id() :: #expanded_node_id{}.
 -type qualified_name() :: #qualified_name{}.
 -type localized_text() :: #localized_text{}.
@@ -81,7 +88,7 @@
 -type variant() :: #variant{}.
 -type data_value() :: #data_value{}.
 -type diagnostic_info() :: #diagnostic_info{}.
--type node_spec() :: non_neg_integer() | atom() | binary() | node_id().
+-type node_spec() :: non_neg_integer() | atom() | binary() | opcua_node:node_id().
 -type opcua_spec() :: node_spec() | [node_spec()] | [{atom(), node_spec()}].
 -type opcua_encoding() :: binary.
 -type opcua_schema() :: term().

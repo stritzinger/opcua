@@ -8,7 +8,6 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
--include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 -include("opcua_protocol.hrl").
 -include("opcua_node_command.hrl").
@@ -40,8 +39,8 @@
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(data, {
-    session_id :: node_id(),
-    auth_token :: node_id(),
+    session_id :: opcua_node:node_id(),
+    auth_token :: opcua_node:node_id(),
     session_name :: undefined | binary(),
     endpoint_url :: undefined | binary(),
     client_certificate :: undefined | binary(),
