@@ -4,6 +4,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 
@@ -30,13 +31,13 @@ decode_type([{Key, _} | _] = Spec, Data) when is_atom(Key) ->
     decode_map(Spec, Data);
 decode_type(Spec, Data) when is_list(Spec) ->
     decode_list(Spec, Data);
-decode_type(#node_id{type = string, value = Name}, Data)
+decode_type(#opcua_node_id{type = string, value = Name}, Data)
   when ?IS_BUILTIN_TYPE_NAME(Name) ->
     decode_builtin(Name, Data);
-decode_type(#node_id{type = numeric, value = Num}, Data)
+decode_type(#opcua_node_id{type = numeric, value = Num}, Data)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     decode_builtin(opcua_codec:builtin_type_name(Num), Data);
-decode_type(#node_id{} = NodeId, Data) ->
+decode_type(#opcua_node_id{} = NodeId, Data) ->
     case opcua_database:lookup_schema(NodeId) of
         undefined -> throw({bad_decoding_error, {schema_not_found, NodeId}});
         Schema -> decode_schema(Schema, Data)
@@ -235,13 +236,13 @@ encode_type([{Key, _} | _] = Spec, Data) when is_atom(Key) ->
     encode_map(Spec, Data);
 encode_type(Spec, Data) when is_list(Spec) ->
     encode_list(Spec, Data);
-encode_type(#node_id{type = string, value = Name}, Data)
+encode_type(#opcua_node_id{type = string, value = Name}, Data)
   when ?IS_BUILTIN_TYPE_NAME(Name) ->
     {encode_builtin(Name, Data), undefined};
-encode_type(#node_id{type = numeric, value = Num}, Data)
+encode_type(#opcua_node_id{type = numeric, value = Num}, Data)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     {encode_builtin(opcua_codec:builtin_type_name(Num), Data), undefined};
-encode_type(#node_id{} = NodeId, Data) ->
+encode_type(#opcua_node_id{} = NodeId, Data) ->
     case opcua_database:lookup_schema(NodeId) of
         undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
         Schema -> encode_schema(Schema, Data)

@@ -1,5 +1,6 @@
 -module(opcua_codec_binary_builtin).
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 -export([encode/2, decode/2]).
@@ -70,22 +71,22 @@ decode_guid(<<D1:32/little-integer, D2:16/little-integer, D3:16/little-integer, 
     {<<D1:32/big-integer, D2:16/big-integer, D3:16/big-integer, D4:8/binary>>, T}.
 
 decode_node_id(16#00, <<Id:8/little-unsigned-integer, T/binary>>) ->
-    {#node_id{ns = 0, type = numeric, value = Id}, T};
+    {#opcua_node_id{ns = 0, type = numeric, value = Id}, T};
 decode_node_id(16#01, <<Ns:8/little-unsigned-integer,
             Id:16/little-unsigned-integer, T/binary>>) ->
-    {#node_id{ns = Ns, type = numeric, value = Id}, T};
+    {#opcua_node_id{ns = Ns, type = numeric, value = Id}, T};
 decode_node_id(16#02, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
     {Id, T} = decode(uint32, Bin),
-    {#node_id{ns = Ns, type = numeric, value = Id}, T};
+    {#opcua_node_id{ns = Ns, type = numeric, value = Id}, T};
 decode_node_id(16#03, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
     {Id, T} = decode(string, Bin),
-    {#node_id{ns = Ns, type = string, value = Id}, T};
+    {#opcua_node_id{ns = Ns, type = string, value = Id}, T};
 decode_node_id(16#04, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
     {Id, T} = decode(guid, Bin),
-    {#node_id{ns = Ns, type = guid, value = Id}, T};
+    {#opcua_node_id{ns = Ns, type = guid, value = Id}, T};
 decode_node_id(16#05, <<Ns:16/little-unsigned-integer, Bin/binary>>) ->
     {Id, T} = decode(string, Bin),
-    {#node_id{ns = Ns, type = opaque, value = Id}, T}.
+    {#opcua_node_id{ns = Ns, type = opaque, value = Id}, T}.
 
 decode_expanded_node_id(Mask, Bin) ->
     {NodeId, T} = decode_node_id(Mask rem 16#40, Bin),
@@ -149,28 +150,28 @@ to_record({RecordName, RecordFields}, Proplist) ->
 encode_guid(<<D1:32/big-integer, D2:16/big-integer, D3:16/big-integer, D4:8/binary>>) ->
     <<D1:32/little-integer, D2:16/little-integer, D3:16/little-integer, D4:8/binary>>.
 
-encode_node_id(#node_id{ns = 0, type = numeric, value = Id}) when Id < 256 ->
+encode_node_id(#opcua_node_id{ns = 0, type = numeric, value = Id}) when Id < 256 ->
     <<16#00:8, Id:8/little-unsigned-integer>>;
-encode_node_id(#node_id{ns = Ns, type = numeric, value = Id}) when Id < 65536 ->
+encode_node_id(#opcua_node_id{ns = Ns, type = numeric, value = Id}) when Id < 65536 ->
     <<16#01:8, Ns:8/little-unsigned-integer, Id:16/little-unsigned-integer>>;
-encode_node_id(#node_id{ns = Ns, type = numeric, value = Id}) when Id < 4294967296 ->
+encode_node_id(#opcua_node_id{ns = Ns, type = numeric, value = Id}) when Id < 4294967296 ->
     BinId = encode(uint32, Id),
     [<<16#02:8, Ns:16/little-unsigned-integer>>, BinId];
-encode_node_id(#node_id{ns = Ns, type = string, value = Id}) ->
+encode_node_id(#opcua_node_id{ns = Ns, type = string, value = Id}) ->
     BinId = encode(string, Id),
     [<<16#03:8, Ns:16/little-unsigned-integer>>, BinId];
-encode_node_id(#node_id{ns = Ns, type = guid, value = Id}) ->
+encode_node_id(#opcua_node_id{ns = Ns, type = guid, value = Id}) ->
     BinId = encode(guid, Id),
     [<<16#04:8, Ns:16/little-unsigned-integer>>, BinId];
-encode_node_id(#node_id{ns = Ns, type = opaque, value = Id}) ->
+encode_node_id(#opcua_node_id{ns = Ns, type = opaque, value = Id}) ->
     BinId = encode(string, Id),
     [<<16#05:8, Ns:16/little-unsigned-integer>>, BinId];
 encode_node_id(NodeSpec) ->
     encode_node_id(opcua_codec:node_id(NodeSpec)).
 
-encode_expanded_node_id(#node_id{} = NodeId) ->
+encode_expanded_node_id(#opcua_node_id{} = NodeId) ->
     encode_expanded_node_id(#expanded_node_id{node_id = NodeId});
-encode_expanded_node_id(#expanded_node_id{node_id = #node_id{ns = NS} = NodeId,
+encode_expanded_node_id(#expanded_node_id{node_id = #opcua_node_id{ns = NS} = NodeId,
                                           namespace_uri = NamespaceUri,
                                           server_index = ServerIndex}) ->
     {NamespaceUriFlag, BinNamespaceUri, NS2}
@@ -183,7 +184,7 @@ encode_expanded_node_id(#expanded_node_id{node_id = #node_id{ns = NS} = NodeId,
               undefined -> {0, <<>>};
               _ -> {16#40, encode(uint32, ServerIndex)}
           end,
-    <<Mask:8, Rest/binary>> = encode_node_id(NodeId#node_id{ns = NS2}),
+    <<Mask:8, Rest/binary>> = encode_node_id(NodeId#opcua_node_id{ns = NS2}),
     [<<(Mask + NamespaceUriFlag + ServerIndexFlag):8>>, Rest,
      BinNamespaceUri, BinServerIndex];
 encode_expanded_node_id(#expanded_node_id{node_id = NodeSpec} = ExtNodeId) ->

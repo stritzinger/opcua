@@ -1,5 +1,3 @@
--include("opcua_codec.hrl").
-
 -record(role_permission, {
     role_id                     :: node_id(),
     permissions                 :: permissions()
@@ -8,9 +6,9 @@
 %% TODO: What about optional fields? E.g. display_name should be binary() | undefined?
 
 -record(opcua_node_id, {
-    ns                          :: non_neg_integer(),
-    type                        :: numeric | string | guid | opaque,
-    value                       :: non_neg_integer() | atom() | binary()
+    ns = 0                      :: non_neg_integer(),
+    type = numeric              :: numeric | string | guid | opaque,
+    value = 0                   :: non_neg_integer() | atom() | binary()
 }).
 
 -record(opcua_node, {

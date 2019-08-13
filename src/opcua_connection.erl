@@ -2,6 +2,7 @@
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-include("opcua_database.hrl").
 -include("opcua_protocol.hrl").
 -include("opcua_codec.hrl").
 

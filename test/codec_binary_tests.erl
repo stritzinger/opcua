@@ -1,6 +1,7 @@
 -module(codec_binary_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 t_test_() ->
@@ -52,10 +53,10 @@ assert_codec(NodeId, ToBeEncoded, EncodedComp) ->
     ?assertEqual(ToBeEncoded, DecodedComp).
 
 open_secure_channel_request() ->
-    NodeId = #node_id{value = 444},
+    NodeId = #opcua_node_id{value = 444},
     ToBeEncoded = #{
         request_header => #{
-            authentication_token => #node_id{value = 0},
+            authentication_token => #opcua_node_id{value = 0},
             timestamp => 132061913263422630,
             request_handle => 1,
             return_diagnostics => 0,
@@ -72,10 +73,11 @@ open_secure_channel_request() ->
     Encoded = "0000a6bc6c449c2dd5010100000000000000ffff"
               "ffffe80300000000000000000000000000010000"
               "000000000080ee3600",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 open_secure_channel_response() ->
-    NodeId = #node_id{value = 447},
+    NodeId = #opcua_node_id{value = 447},
     ToBeEncoded = #{
         response_header => #{
             timestamp => 132061913263430080,
@@ -97,10 +99,11 @@ open_secure_channel_response() ->
     Encoded = "c0d96c449c2dd501010000000000000000000000"
               "0000000000000000060000000e00000052d96c44"
               "9c2dd50180ee360000000000",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 create_session_request() ->
-    NodeId = #node_id{value = 459},
+    NodeId = #opcua_node_id{value = 459},
     ToBeEncoded = #{
         client_certificate => undefined,
         client_description => #{
@@ -121,7 +124,7 @@ create_session_request() ->
         request_header => #{
             additional_header => #extension_object{},
             audit_entry_id => undefined,
-            authentication_token => #node_id{},
+            authentication_token => #opcua_node_id{},
             request_handle => 2,
             return_diagnostics => 0,
             timeout_hint => 1000,
@@ -144,12 +147,13 @@ create_session_request() ->
               "1af025dabacbfdcfaa4891d0cd9fe09a3addb2e0"
               "94db4048dcffffffff0000000040774b41000000"
               "00",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 create_session_response() ->
-    NodeId = #node_id{value = 462},
+    NodeId = #opcua_node_id{value = 462},
     ToBeEncoded = #{
-        authentication_token => #node_id{value = 1001},
+        authentication_token => #opcua_node_id{value = 1001},
         max_request_message_size => 65536,
         response_header => #{
             additional_header => #extension_object{},
@@ -211,7 +215,7 @@ create_session_response() ->
             signature => <<>>
         },
         server_software_certificates => [],
-        session_id => #node_id{value = 11}
+        session_id => #opcua_node_id{value = 11}
     },
     Encoded = "a0216d449c2dd501020000000000000000000000"
               "000000000200000b000000020000e90300000000"
@@ -243,10 +247,11 @@ create_session_response() ->
               "687474703a2f2f7777772e77332e6f72672f3230"
               "30302f30392f786d6c64736967237273612d7368"
               "61310000000000000100",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 activate_session_request() ->
-    NodeId = #node_id{value = 465},
+    NodeId = #opcua_node_id{value = 465},
     ToBeEncoded = #{
         client_signature => #{
             algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
@@ -257,14 +262,14 @@ activate_session_request() ->
         request_header => #{
             additional_header => #extension_object{},
             audit_entry_id => undefined,
-            authentication_token => #node_id{value = 1001},
+            authentication_token => #opcua_node_id{value = 1001},
             request_handle => 3,
             return_diagnostics => 0,
             timeout_hint => 1000,
             timestamp => 132061913263467530
         },
         user_identity_token => #extension_object{
-                                type_id = #node_id{value = 319},
+                                type_id = #opcua_node_id{value = 319},
                                 encoding = byte_string,
                                 body = #{policy_id => <<"anonymous">>}
                                },
@@ -280,10 +285,11 @@ activate_session_request() ->
               "00000000000000000100000002000000656e0100"
               "4101010d00000009000000616e6f6e796d6f7573"
               "ffffffffffffffff",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 activate_session_response() ->
-    NodeId = #node_id{value = 468},
+    NodeId = #opcua_node_id{value = 468},
     ToBeEncoded = #{
         diagnostic_infos => [],
         response_header => #{
@@ -304,10 +310,11 @@ activate_session_response() ->
               "00000000200000008cc1b4736f99ed415e0c8c73"
               "96ff156b65ac17a2fbefa7867d0cd84225ec0ddb"
               "0000000000000000",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 read_request() ->
-    NodeId = #node_id{value = 629},
+    NodeId = #opcua_node_id{value = 629},
     ToBeEncoded = #{
         max_age => 0.0,
         nodes_to_read => [
@@ -315,31 +322,31 @@ read_request() ->
                 attribute_id => 4,
                 data_encoding => #qualified_name{},
                 index_range => undefined,
-                node_id => #node_id{value = 84}
+                node_id => #opcua_node_id{value = 84}
             },
             #{
                 attribute_id => 3,
                 data_encoding => #qualified_name{},
                 index_range => undefined,
-                node_id => #node_id{value = 84}
+                node_id => #opcua_node_id{value = 84}
             },
             #{
                 attribute_id => 1,
                 data_encoding => #qualified_name{},
                 index_range => undefined,
-                node_id => #node_id{value = 84}
+                node_id => #opcua_node_id{value = 84}
             },
             #{
                 attribute_id => 2,
                 data_encoding => #qualified_name{},
                 index_range => undefined,
-                node_id => #node_id{value = 84}
+                node_id => #opcua_node_id{value = 84}
             }
         ],
         request_header => #{
             additional_header => #extension_object{},
             audit_entry_id => undefined,
-            authentication_token => #node_id{value = 1001},
+            authentication_token => #opcua_node_id{value = 1001},
             request_handle => 4,
             return_diagnostics => 0,
             timeout_hint => 1000,
@@ -353,10 +360,11 @@ read_request() ->
               "0000ffffffff005403000000ffffffff0000ffff"
               "ffff005401000000ffffffff0000ffffffff0054"
               "02000000ffffffff0000ffffffff",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 read_response() ->
-    NodeId = #node_id{value = 632},
+    NodeId = #opcua_node_id{value = 632},
     ToBeEncoded = #{
         diagnostic_infos => [],
         response_header => #{
@@ -373,7 +381,7 @@ read_response() ->
             #data_value{value = #variant{type = qualified_name,
                                          value = #qualified_name{name = <<"Root">>}}},
             #data_value{value = #variant{type = node_id,
-                                         value = #node_id{value = 84}}},
+                                         value = #opcua_node_id{value = 84}}},
             #data_value{value = #variant{type = int32,
                                          value = 1}}
         ]
@@ -383,23 +391,24 @@ read_response() ->
               "0000000314000004000000526f6f740000000003"
               "1102000054000000000000000306010000000000"
               "000000000000",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 browse_request() ->
-    NodeId = #node_id{value = 525},
+    NodeId = #opcua_node_id{value = 525},
     ToBeEncoded = #{
         nodes_to_browse => [#{
             browse_direction => forward,
             include_subtypes => true,
             node_class_mask => 0,
-            node_id => #node_id{value = 84},
-            reference_type_id => #node_id{value = 33},
+            node_id => #opcua_node_id{value = 84},
+            reference_type_id => #opcua_node_id{value = 33},
             result_mask => 63
         }],
         request_header => #{
             additional_header => #extension_object{},
             audit_entry_id => undefined,
-            authentication_token => #node_id{value = 1001},
+            authentication_token => #opcua_node_id{value = 1001},
             request_handle => 5,
             return_diagnostics => 0,
             timeout_hint => 1000,
@@ -408,7 +417,7 @@ browse_request() ->
         requested_max_references_per_node => 0,
         view => #{
             timestamp => 0,
-            view_id => #node_id{},
+            view_id => #opcua_node_id{},
             view_version => 0
         }
     },
@@ -416,10 +425,11 @@ browse_request() ->
               "000000ffffffffe8030000000000000000000000"
               "0000000000000000000000000100000000540000"
               "0000002101000000003f000000",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
 
 browse_response() ->
-    NodeId = #node_id{value = 528},
+    NodeId = #opcua_node_id{value = 528},
     ToBeEncoded = #{
         diagnostic_infos => [],
         response_header => #{
@@ -438,27 +448,27 @@ browse_response() ->
                     display_name => #localized_text{text = <<"Objects">>},
                     is_forward => true,
                     node_class => object,
-                    node_id => #expanded_node_id{node_id = #node_id{value = 85}},
-                    reference_type_id => #node_id{value = 35},
-                    type_definition => #expanded_node_id{node_id = #node_id{value = 61}}
+                    node_id => #expanded_node_id{node_id = #opcua_node_id{value = 85}},
+                    reference_type_id => #opcua_node_id{value = 35},
+                    type_definition => #expanded_node_id{node_id = #opcua_node_id{value = 61}}
                 },
                 #{
                     browse_name => #qualified_name{name = <<"Types">>},
                     display_name => #localized_text{text = <<"Types">>},
                     is_forward => true,
                     node_class => object,
-                    node_id => #expanded_node_id{node_id = #node_id{value = 86}},
-                    reference_type_id => #node_id{value = 35},
-                    type_definition => #expanded_node_id{node_id = #node_id{value = 61}}
+                    node_id => #expanded_node_id{node_id = #opcua_node_id{value = 86}},
+                    reference_type_id => #opcua_node_id{value = 35},
+                    type_definition => #expanded_node_id{node_id = #opcua_node_id{value = 61}}
                 },
                 #{
                     browse_name => #qualified_name{name = <<"Views">>},
                     display_name => #localized_text{text = <<"Views">>},
                     is_forward => true,
                     node_class => object,
-                    node_id => #expanded_node_id{node_id = #node_id{value = 87}},
-                    reference_type_id => #node_id{value = 35},
-                    type_definition => #expanded_node_id{node_id = #node_id{value = 61}}
+                    node_id => #expanded_node_id{node_id = #opcua_node_id{value = 87}},
+                    reference_type_id => #opcua_node_id{value = 35},
+                    type_definition => #expanded_node_id{node_id = #opcua_node_id{value = 61}}
                 }
             ],
             status_code => good
@@ -474,4 +484,5 @@ browse_response() ->
               "0023000000010200005700000000000500000056"
               "6965777302050000005669657773010000000200"
               "003d00000000000000",
-    assert_codec(NodeId, ToBeEncoded, Encoded).
+    assert_codec(NodeId, ToBeEncoded, Encoded),
+    ok.
