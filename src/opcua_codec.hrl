@@ -1,11 +1,5 @@
--record(node_id, {
-    ns = 0 :: non_neg_integer(),
-    type = numeric :: numeric | string | guid | opaque,
-    value = 0 :: non_neg_integer() | atom() | binary()
-}).
-
 -record(expanded_node_id, {
-    node_id = #node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: node_id(),
     namespace_uri :: undefined | binary(),
     server_index :: undefined | non_neg_integer()
 }).
@@ -21,7 +15,7 @@
 }).
 
 -record(extension_object, {
-    type_id = #node_id{} :: node_id(),
+    type_id = #opcua_node_id{} :: node_id(),
     encoding :: xml | byte_string | undefined,
     body :: term()
 }).
@@ -51,35 +45,35 @@
 }).
 
 -record(structure, {
-    node_id = #node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: node_id(),
     with_options = false :: boolean(),
     fields = [] :: fields()
 }).
 
 -record(union, {
-    node_id = #node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: node_id(),
     fields = [] :: fields()
 }).
 
 -record(enum, {
-    node_id = #node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: node_id(),
     fields = [] :: fields()
 }).
 
 -record(builtin, {
-    node_id = #node_id{} :: node_id(),
-    builtin_node_id = #node_id{} :: node_id()
+    node_id = #opcua_node_id{} :: node_id(),
+    builtin_node_id = #opcua_node_id{} :: node_id()
 }).
 
 -record(field, {
     name :: atom(),
-    node_id = #node_id{} :: node_id(),
+    node_id = #opcua_node_id{} :: node_id(),
     value_rank = -1 :: value_rank(),
     is_optional = false :: boolean(),
     value :: integer()
 }).
 
--type node_id() :: #node_id{}.
+-type node_id() :: #opcua_node_id{}.
 -type expanded_node_id() :: #expanded_node_id{}.
 -type qualified_name() :: #qualified_name{}.
 -type localized_text() :: #localized_text{}.
@@ -103,7 +97,7 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(UNDEF_NODE_ID, #node_id{ns = 0, type = numeric, value = 0}).
+-define(UNDEF_NODE_ID, #opcua_node_id{ns = 0, type = numeric, value = 0}).
 -define(UNDEF_EXT_NODE_ID,
     #expanded_node_id{node_id = ?UNDEF_NODE_ID,
                       namespace_uri = undefined,

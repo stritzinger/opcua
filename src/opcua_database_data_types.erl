@@ -5,6 +5,7 @@
 %% event handler for sax parser
 -export([parse/3]).
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 -define(DB_DATA_TYPES, db_data_types).
@@ -19,9 +20,9 @@ setup(File) ->
     _Tid = ets:new(?DB_DATA_TYPES, [named_table]),
     xmerl_sax_parser:file(File, [{event_fun, fun parse/3}]).
 
-example(#node_id{value = Id}) when ?IS_BUILTIN_TYPE_ID(Id) ->
+example(#opcua_node_id{value = Id}) when ?IS_BUILTIN_TYPE_ID(Id) ->
     opcua_codec:builtin_type_name(Id);
-example(NodeId = #node_id{}) ->
+example(NodeId = #opcua_node_id{}) ->
     example(lookup(NodeId));
 example(#structure{fields = Fields}) ->
     lists:foldl(fun(#field{name=Name, node_id=NodeId, value_rank=N}, Map) when N==-1 ->
@@ -33,7 +34,7 @@ example(#enum{fields = [#field{name=Name}|_]}) ->
     Name; %% just take the first element as example
 example(#union{fields = [#field{name=Name, node_id = NodeId}|_]}) ->
     #{Name => example(NodeId)}; %% just take the first element as example
-example(#builtin{builtin_node_id = #node_id{value = Id}}) ->
+example(#builtin{builtin_node_id = #opcua_node_id{value = Id}}) ->
     opcua_codec:builtin_type_name(Id);
 example(Id) ->
     example(opcua_codec:node_id(Id)).
@@ -67,7 +68,7 @@ parse({startElement, _, "Field", _, Attributes}, _Loc, DataTypeMap) ->
                       value = Value},
     NewFields = maps:get(fields, DataTypeMap) ++ [NewField],
     maps:put(fields, NewFields, DataTypeMap);
-parse({endElement, _, "UADataType", _}, _Loc, #{node_id := #node_id{value =Id}})
+parse({endElement, _, "UADataType", _}, _Loc, #{node_id := #opcua_node_id{value =Id}})
   when ?IS_BUILTIN_TYPE_ID(Id) -> ok;
 parse({endElement, _, "UADataType", _}, _Loc, DataTypeMap = #{node_id := NodeId, name := Name}) ->
     {RootNodeId, Fields} = resolve_inheritance(DataTypeMap),
@@ -76,13 +77,13 @@ parse({endElement, _, "UADataType", _}, _Loc, DataTypeMap = #{node_id := NodeId,
 parse(_Event, _Loc, State) ->
     State.
 
-resolve_type(#node_id{value = 22}, Map = #{node_id := NodeId}, Fields) ->
+resolve_type(#opcua_node_id{value = 22}, Map = #{node_id := NodeId}, Fields) ->
     #structure{node_id = NodeId, with_options = maps:get(is_option_set, Map, false), fields = Fields};
-resolve_type(#node_id{value = 29}, #{node_id := NodeId}, Fields) ->
+resolve_type(#opcua_node_id{value = 29}, #{node_id := NodeId}, Fields) ->
     #enum{node_id = NodeId, fields = Fields};
-resolve_type(#node_id{value = 12756}, #{node_id := NodeId}, Fields) ->
+resolve_type(#opcua_node_id{value = 12756}, #{node_id := NodeId}, Fields) ->
     #union{node_id = NodeId, fields = Fields};
-resolve_type(BuiltinNodeId = #node_id{value = Id}, #{node_id := NodeId}, _Fields)
+resolve_type(BuiltinNodeId = #opcua_node_id{value = Id}, #{node_id := NodeId}, _Fields)
   when ?IS_BUILTIN_TYPE_ID(Id) ->
     #builtin{node_id = NodeId, builtin_node_id = BuiltinNodeId}.
 
@@ -90,23 +91,23 @@ resolve_inheritance(#{parent_node_id := ParentNodeId, fields := Fields}) ->
     {RootNodeId, NewFields} = resolve_inheritance1(ParentNodeId),
     {RootNodeId, NewFields ++ Fields}.
 
-resolve_inheritance1(NodeId = #node_id{value = Id})
+resolve_inheritance1(NodeId = #opcua_node_id{value = Id})
   when Id=:=29;Id=:=12756 ->
     {NodeId, []};
-resolve_inheritance1(NodeId = #node_id{value = Id}) 
+resolve_inheritance1(NodeId = #opcua_node_id{value = Id}) 
   when ?IS_BUILTIN_TYPE_ID(Id) ->
     {NodeId, []};
 resolve_inheritance1(NodeId) ->
     DataType = lookup(NodeId),
     case DataType of
-        #structure{fields = Fields} -> {#node_id{value = 22}, Fields};
-        #enum{fields = Fields} -> {#node_id{value = 29}, Fields};
-        #union{fields = Fields} -> {#node_id{value = 12756}, Fields};
+        #structure{fields = Fields} -> {#opcua_node_id{value = 22}, Fields};
+        #enum{fields = Fields} -> {#opcua_node_id{value = 29}, Fields};
+        #union{fields = Fields} -> {#opcua_node_id{value = 12756}, Fields};
         #builtin{builtin_node_id = BuiltinNodeId} -> {BuiltinNodeId, []}
     end.
 
-store_data_type(NodeId = #node_id{value = Id}, Name, DataType) ->
-    StringNodeId = #node_id{type = string, value = Name},
+store_data_type(NodeId = #opcua_node_id{value = Id}, Name, DataType) ->
+    StringNodeId = #opcua_node_id{type = string, value = Name},
     KeyValuePairs = [{StringNodeId, DataType}, {NodeId, DataType},
                      {{0, Name}, DataType}, {{0, Id}, DataType}],
     ets:insert(?DB_DATA_TYPES, KeyValuePairs).
