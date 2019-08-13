@@ -14,6 +14,7 @@ t_test_() ->
       fun create_session_request/0,
       fun create_session_response/0,
       fun activate_session_request/0,
+      fun activate_session_request2/0,
       fun activate_session_response/0,
       fun read_request/0,
       fun read_response/0,
@@ -287,6 +288,47 @@ activate_session_request() ->
               "ffffffffffffffff",
     assert_codec(NodeId, ToBeEncoded, Encoded),
     ok.
+
+activate_session_request2() ->
+    NodeId = #opcua_node_id{value = 465},
+    ToBeEncoded = #{
+        request_header => #{
+            additional_header => #extension_object{},
+            audit_entry_id => undefined,
+            authentication_token =>
+                #opcua_node_id{type = opaque,
+                         value = <<146,98,106,42,4,39,212,89,251,151,210,95,27,133,
+                                   43,87,120,238,177,107,111,74,77,158,226,200,170,
+                                   228,93,144,255,30>>},
+                request_handle => 0,
+                return_diagnostics => 0,
+                timeout_hint => 60000,
+                timestamp => 132101111289102600
+        },
+        client_signature => #{
+            algorithm => undefined,
+            signature => undefined
+        },
+        client_software_certificates => [],
+        locale_ids => [<<"en">>],
+        user_identity_token =>
+            #extension_object{
+                type_id = #opcua_node_id{value = 319},
+                encoding = byte_string,
+                body = #{policy_id => <<"anonymous">>}
+            },
+        user_token_signature => #{
+            algorithm => undefined,
+            signature => undefined
+        }
+    },
+    Encoded = "0500002000000092626A2A0427D459FB9"
+              "7D25F1B852B5778EEB16B6F4A4D9EE2C8AAE45D90"
+              "FF1E0841D2C44251D5010000000000000000FFFFF"
+              "FFF60EA0000000000FFFFFFFFFFFFFFFFFFFFFFFF"
+              "0100000002000000656E01004101010D000000090"
+              "00000616E6F6E796D6F7573FFFFFFFFFFFFFFFF",
+    assert_codec(NodeId, ToBeEncoded, Encoded).
 
 activate_session_response() ->
     NodeId = #opcua_node_id{value = 468},

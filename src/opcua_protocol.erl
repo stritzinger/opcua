@@ -343,6 +343,7 @@ handle_chunk(State, #uacp_chunk{state = undefined, message_type = MsgType,
                                 chunk_type = final, body = Body}) ->
     Message = decode_basic_payload(MsgType, Body),
     Request = #uacp_message{type = MsgType, payload = Message},
+    ?LOG_DEBUG("Handling request ~p", [Request]),
     handle_request(State, Request);
 handle_chunk(State, #uacp_chunk{state = locked} = Chunk) ->
     #uacp_chunk{message_type = MsgType, channel_id = ChannelId} = Chunk,
@@ -384,6 +385,7 @@ handle_open_chunk(State, #uacp_chunk{security = SecPolicy} = Chunk) ->
                         node_id = NodeId,
                         payload = Payload
                     },
+                    ?LOG_DEBUG("Handling request ~p", [Request]),
                     handle_request(State3, Request)
             end
     end.
@@ -404,6 +406,7 @@ handle_close_chunk(State, Chunk) ->
                 node_id = NodeId,
                 payload = Payload
             },
+            ?LOG_DEBUG("Handling request ~p", [Request]),
             handle_request(State2, Request)
     end.
 
@@ -413,7 +416,9 @@ handle_message_chunk(State, Chunk) ->
         {ok, Chunk2, State2} ->
             case inflight_request_update(State2, Chunk2) of
                 {ok, State3} -> {ok, State3};
-                {ok, Request, State3} -> handle_request(State3, Request)
+                {ok, Request, State3} ->
+                    ?LOG_DEBUG("Handling request ~p", [Request]),
+                    handle_request(State3, Request)
 
             end
     end.
@@ -557,23 +562,33 @@ handle_request(State, #uacp_message{type = channel_close} = Request) ->
         {error, _Reason, _State2} = Error -> Error;
         {ok, Resp, State2} -> handle_response(State2, Resp)
     end;
-handle_request(#state{conn = Conn, sess = undefined} = State,
+
+handle_request(#state{conn = Conn, sess = Sess} = State,
                #uacp_message{type = channel_message} = Request) ->
-    case opcua_session_manager:handle_request(Conn, Request) of
-        {error, Reason} -> {error, Reason, State};
-        {created, Resp, _SessPid} -> handle_response(State, Resp);
+    #uacp_message{node_id = NodeSpec} = Request,
+    %TODO: figure a way to no hardcode the ids...
+    NodeId = opcua_database:lookup_id(NodeSpec),
+    Request2 = Request#uacp_message{node_id = NodeId},
+    Result = case {Sess, NodeId} of
+        {_, #opcua_node_id{value = 426}} -> %% GetEndpoints
+            opcua_discovery:handle_request(Conn, Request2);
+        {undefined, _} ->
+            opcua_session_manager:handle_request(Conn, Request2);
+        {Session, _} ->
+            opcua_session:handle_request(Conn, Request2, Session)
+    end,
+    case Result of
+        {error, Reason} ->
+            {error, Reason, State};
+        {created, Resp, _SessPid} ->
+            handle_response(State, Resp);
         {bound, Resp, SessPid} ->
-            handle_response(State#state{sess = SessPid}, Resp)
-    end;
-handle_request(#state{conn = Conn, sess = Session} = State,
-               #uacp_message{type = channel_message} = Request) ->
-    case opcua_session:handle_request(Conn, Request, Session) of
-        {error, Reason} -> {error, Reason, State};
-        {closed, Resp} -> handle_response(State#state{sess = undefined}, Resp);
-        {reply, Resp} -> handle_response(State, Resp)
+            handle_response(State#state{sess = SessPid}, Resp);
+        {closed, Resp} ->
+            handle_response(State#state{sess = undefined}, Resp);
+        {reply, Resp} ->
+            handle_response(State, Resp)
     end.
-
-
 
 handle_response(State, #uacp_message{type = MsgType} = Response)
   when MsgType =:= acknowledge; MsgType =:= error ->

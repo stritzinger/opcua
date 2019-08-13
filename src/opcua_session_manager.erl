@@ -51,14 +51,10 @@
 start_link(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Opts, []).
 
-handle_request(Conn, #uacp_message{node_id = NodeSpec} = Req) ->
-    case opcua_database:lookup_id(NodeSpec) of
-        #opcua_node_id{value = 459} -> %% CreateSessionRequest
-            gen_server:call(?SERVER, {create_session, Conn, Req});
-        _Other ->
-            gen_server:call(?SERVER, {forward_request, Conn, Req})
-    end.
-
+handle_request(Conn, #uacp_message{node_id = #opcua_node_id{value = 459}} = Req) ->
+    gen_server:call(?SERVER, {create_session, Conn, Req});
+handle_request(Conn, #uacp_message{} = Req) ->
+    gen_server:call(?SERVER, {forward_request, Conn, Req}).
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
