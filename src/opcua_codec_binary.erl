@@ -39,7 +39,7 @@ decode_type(#opcua_node_id{type = numeric, value = Num}, Data)
     decode_builtin(opcua_codec:builtin_type_name(Num), Data);
 decode_type(#opcua_node_id{} = NodeId, Data) ->
     case opcua_database:lookup_schema(NodeId) of
-        undefined -> error({bad_decoding_error, {schema_not_found, NodeId}});
+        undefined -> throw({bad_decoding_error, {schema_not_found, NodeId}});
         Schema -> decode_schema(Schema, Data)
     end;
 decode_type(NodeSpec, Data) ->
@@ -144,7 +144,7 @@ decode_extension_object(Data) ->
                     {ExtObj2, Data2}
             end;
         {#extension_object{}, _Data2} ->
-            error(bad_data_encoding_unsupported)
+            throw(bad_data_encoding_unsupported)
     end.
 
 decode_extension_object(16#00, TypeId, T) ->
@@ -156,14 +156,14 @@ decode_extension_object(16#02, TypeId, T) ->
     {Body, T1} = decode_builtin(xml, T),
     {#extension_object{type_id = TypeId, encoding = xml, body = Body}, T1};
 decode_extension_object(_, _, _) ->
-    error(bad_decoding_error).
+    throw(bad_decoding_error).
 
 decode_variant(<<0:6, Bin/binary>>) ->
     {undefined, Bin};
 decode_variant(<<DimFlag:1/bits, ArrayFlag:1/bits, TypeId:6/little-unsigned-integer, Bin/binary>>) ->
     decode_variant(TypeId, DimFlag, ArrayFlag, Bin);
 decode_variant(_) ->
-    error(bad_decoding_error).
+    throw(bad_decoding_error).
 
 decode_variant(TypeId, <<0:1>>, <<0:1>>, Bin) ->
     TypeName = opcua_codec:builtin_type_name(TypeId),
@@ -216,7 +216,7 @@ decode_data_value(<<0:2, Mask:6/bits, Bin/binary>>) ->
     RecordInfo = {data_value, record_info(fields, data_value)},
     decode_masked(RecordInfo, Mask, Types, Bin);
 decode_data_value(_) ->
-    error(bad_decoding_error).
+    throw(bad_decoding_error).
 
 decode_masked(RecordInfo, Mask, Fields, Bin) ->
     BooleanMask = lists:reverse([X == 1 || <<X:1>> <= Mask]),
@@ -245,7 +245,7 @@ encode_type(#opcua_node_id{type = numeric, value = Num}, Data)
     {encode_builtin(opcua_codec:builtin_type_name(Num), Data), undefined};
 encode_type(#opcua_node_id{} = NodeId, Data) ->
     case opcua_database:lookup_schema(NodeId) of
-        undefined -> error({bad_encoding_error, {schema_not_found, NodeId}});
+        undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
         Schema -> encode_schema(Schema, Data)
     end;
 encode_type(NodeSpec, Data) ->
@@ -258,7 +258,7 @@ encode_map([], Data, Acc) ->
     {lists:reverse(Acc), Data};
 encode_map([{Key, Spec} | Rest], Data, Acc) ->
     case maps:take(Key, Data) of
-        error -> error(bad_encoding_error);
+        error -> throw(bad_encoding_error);
         {Value, Data2} ->
             {Result, _} = encode_type(Spec, Value),
             encode_map(Rest, Data2, [Result | Acc])
@@ -370,8 +370,8 @@ encode_extension_object(#extension_object{type_id = NodeSpec,
     BodyData = encode_builtin(byte_string, EncodedBody),
     FlagData = <<16#01>>,
     [NodeIdData, FlagData, BodyData];
-encode_extension_object(#extension_object{} = Obj) ->
-    error({bad_data_encoding_unsupported, Obj}).
+encode_extension_object(#extension_object{}) ->
+    throw(bad_data_encoding_unsupported).
 
 encode_variant(#variant{type = Type, value = MultiArray})
   when is_list(MultiArray) ->
