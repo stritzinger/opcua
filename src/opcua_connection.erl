@@ -18,19 +18,21 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 req2res(#uacp_connection{},
-        #uacp_message{type = T, request_id = ReqId}, NodeId, Payload) ->
-    FinalPayload = case maps:is_key(response_header, Payload) of
-        true -> Payload;
+        #uacp_message{type = T, request_id = ReqId, payload = ReqPayload},
+        NodeId, ResPayload) ->
+    FinalPayload = case maps:is_key(response_header, ResPayload) of
+        true -> ResPayload;
         false ->
+            #{request_header := #{request_handle := ReqHandle}} = ReqPayload,
             Header = #{
                 timestamp => opcua_util:date_time(),
-                request_handle => ReqId,
+                request_handle => ReqHandle,
                 service_result => 0,
                 service_diagnostics => #diagnostic_info{},
                 string_table => [],
                 additional_header => #extension_object{}
             },
-            Payload#{response_header => Header}
+            ResPayload#{response_header => Header}
     end,
     #uacp_message{type = T, request_id = ReqId,
                   node_id = NodeId, payload = FinalPayload}.
