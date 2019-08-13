@@ -23,15 +23,15 @@
 -type read_result() :: #data_value{}.
 
 -record(browse_command, {
-    type :: undefined | node_id(),
+    type :: undefined | opcua_node:node_id(),
     subtypes = true :: boolean(),
     direction = forward :: forward | inverse | both,
     opts = #{} :: browse_options()
 }).
 
 -type reference_description() :: #{
-    node_id := node_id(),
-    reference_type_id => node_id(),
+    node_id := opcua_node:node_id(),
+    reference_type_id => opcua_node:node_id(),
     is_forward => boolean(),
     browse_name => #qualified_name{},
     display_name => #localized_text{},

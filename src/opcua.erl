@@ -13,6 +13,17 @@
 -define(REF, opcua).
 
 
+%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-type uint32() :: 0..4294967295.
+-type optional(Type) :: undefined | Type.
+
+-export_type([
+    uint32/0,
+    optional/1
+]).
+
+
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_listener() ->

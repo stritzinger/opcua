@@ -1,6 +1,5 @@
 -module(opcua_codec_binary_builtin).
 
--include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 -export([encode/2, decode/2]).

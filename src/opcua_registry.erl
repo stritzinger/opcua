@@ -1,13 +1,10 @@
 -module(opcua_registry).
 
--compile([export_all]).
-
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -include_lib("kernel/include/logger.hrl").
 
--include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 -include("opcua_protocol.hrl").
 -include("opcua_node_command.hrl").

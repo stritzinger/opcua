@@ -16,7 +16,6 @@
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--include_lib("opcua_database.hrl").
 -include_lib("opcua_codec.hrl").
 
 

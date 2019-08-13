@@ -4,7 +4,6 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 

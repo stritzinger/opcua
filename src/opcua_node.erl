@@ -3,7 +3,7 @@
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--include("opcua_database.hrl").
+-include("opcua_node.hrl").
 -include("opcua_codec.hrl").
 
 
@@ -12,6 +12,83 @@
 -export([class/1]).
 -export([attribute/2]).
 -export([attribute_type/2]).
+
+
+%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-type reference_type() ::   references |
+                            hierarchical_references |
+                            non_hierarchical_references |
+                            has_event_source |
+                            has_child |
+                            organizes |
+                            has_notifier |
+                            aggregates |
+                            has_subtype |
+                            has_property |
+                            has_component |
+                            has_ordered_component |
+                            generates_event |
+                            always_generates_event |
+                            has_encoding |
+                            has_modelling_rule |
+                            has_type_definition.
+
+-type permission() ::       browse |
+                            read_role_permissions |
+                            write_attribute |
+                            write_role_permissions |
+                            write_historizing |
+                            read |
+                            write |
+                            read_history |
+                            insert_history |
+                            modify_history |
+                            delete_history |
+                            receive_events |
+                            call |
+                            add_reference |
+                            remove_reference |
+                            delete_node |
+                            add_node.
+
+-type node_class() ::       object |
+                            variable |
+                            method |
+                            object_type |
+                            variable_type |
+                            reference_type |
+                            data_type |
+                            view.
+
+-type node_class_rec() ::   #opcua_object{} |
+                            #opcua_variable{} |
+                            #opcua_method{} |
+                            #opcua_object_type{} |
+                            #opcua_variable_type{} |
+                            #opcua_reference_type{} |
+                            #opcua_data_type{} |
+                            #opcua_view{}.
+
+-type node_id() :: #opcua_node_id{}.
+-type permissions() :: [permission()].
+-type role_permission() :: #role_permission{}.
+-type role_permissions() :: [role_permission()].
+-type ref() :: #opcua_reference{}.
+-type refs() :: [ref()].
+
+-export_type([
+    node_id/0,
+    reference_type/0,
+    permission/0,
+    permissions/0,
+    role_permission/0,
+    role_permissions/0,
+    node_class/0,
+    node_class_rec/0,
+    ref/0,
+    refs/0
+]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
