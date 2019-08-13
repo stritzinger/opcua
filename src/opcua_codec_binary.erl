@@ -101,6 +101,7 @@ decode_field(#field{node_id = NodeId, value_rank = N}, Data) when N >= 1 ->
     decode_field_array(NodeId, Dims, Data1, []).
 
 %% TODO: check the order, specs are somewhat unclear
+decode_field_array(_NodeId, [-1], Data, _Acc) -> {[], Data};
 decode_field_array(NodeId, [Dim], Data, _Acc) ->
     decode_list([NodeId || _ <- lists:seq(1, Dim)], Data);
 decode_field_array(NodeId, [1|Dims], Data, Acc) ->
