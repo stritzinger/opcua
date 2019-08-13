@@ -1,6 +1,7 @@
 -module(codec_schema_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 t_test_() ->
@@ -28,55 +29,55 @@ assert_codec(NodeId, ToBeEncoded) ->
 
 structure() ->
     InnerField = #structure{
-                   node_id = #node_id{type = numeric, value = 100},
+                   node_id = #opcua_node_id{type = numeric, value = 100},
                    with_options = false,
                    fields = [#field{
                                name = some_boolean,
-                               node_id = #node_id{type = numeric, value = 1},
+                               node_id = #opcua_node_id{type = numeric, value = 1},
                                value_rank = -1,
                                is_optional = false,
                                value = undefined}]},
     Structure = #structure{
-                   node_id = #node_id{type = numeric, value = 101},
+                   node_id = #opcua_node_id{type = numeric, value = 101},
                    with_options = false,
                    fields = [#field{
                                name = some_integer,
-                               node_id = #node_id{type = string, value = int32},
+                               node_id = #opcua_node_id{type = string, value = int32},
                                value_rank = -1,
                                is_optional = false,
                                value = undefined},
                              #field{
                                name = inner_field,
-                               node_id = #node_id{type = numeric, value = 100},
+                               node_id = #opcua_node_id{type = numeric, value = 100},
                                value_rank = -1,
                                is_optional = false,
                                value = undefined}]},
     meck:expect(opcua_database, lookup_schema,
-        fun(#node_id{value = 101}) -> Structure;
-           (#node_id{value = 100}) -> InnerField end),
-    NodeId = #node_id{type = numeric, value = 101},
+        fun(#opcua_node_id{value = 101}) -> Structure;
+           (#opcua_node_id{value = 100}) -> InnerField end),
+    NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = #{some_integer => 1, inner_field => #{some_boolean => true}},
     assert_codec(NodeId, ToBeEncoded).
 
 structure_with_options() ->
     Structure = #structure{
-                   node_id = #node_id{type = numeric, value = 101},
+                   node_id = #opcua_node_id{type = numeric, value = 101},
                    with_options = true,
                    fields = [#field{
                                name = some_integer,
-                               node_id = #node_id{type = string, value = int32},
+                               node_id = #opcua_node_id{type = string, value = int32},
                                value_rank = -1,
                                is_optional = false,
                                value = undefined},
                              #field{
                                name = some_string,
-                               node_id = #node_id{type = numeric, value = 12},
+                               node_id = #opcua_node_id{type = numeric, value = 12},
                                value_rank = -1,
                                is_optional = true,
                                value = 1}]},
     meck:expect(opcua_database, lookup_schema,
-        fun(#node_id{value = 101}) -> Structure end),
-    NodeId = #node_id{type = numeric, value = 101},
+        fun(#opcua_node_id{value = 101}) -> Structure end),
+    NodeId = #opcua_node_id{type = numeric, value = 101},
 
     %% check WITHOUT optional field
     ToBeEncodedWithoutOptions = #{some_integer => 1},
@@ -88,7 +89,7 @@ structure_with_options() ->
 
 enum() ->
     Enum = #enum{
-               node_id = #node_id{type = numeric, value = 101},
+               node_id = #opcua_node_id{type = numeric, value = 101},
                fields = [#field{
                            name = field_1,
                            value = 1},
@@ -96,38 +97,38 @@ enum() ->
                            name = field_2,
                            value = 2}]},
     meck:expect(opcua_database, lookup_schema,
-        fun(#node_id{value = 101}) -> Enum end),
-    NodeId = #node_id{type = numeric, value = 101},
+        fun(#opcua_node_id{value = 101}) -> Enum end),
+    NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = field_2,
     assert_codec(NodeId, ToBeEncoded).
 
 union() ->
     Union = #union{
-                node_id = #node_id{type = numeric, value = 101},
+                node_id = #opcua_node_id{type = numeric, value = 101},
                 fields = [#field{
                             name = some_integer,
-                            node_id = #node_id{type = string, value = int32},
+                            node_id = #opcua_node_id{type = string, value = int32},
                             value_rank = -1,
                             is_optional = true,
                             value = 1},
                           #field{
                             name = some_string,
-                            node_id = #node_id{type = numeric, value = 12},
+                            node_id = #opcua_node_id{type = numeric, value = 12},
                             value_rank = -1,
                             is_optional = true,
                             value = 2}]},
     meck:expect(opcua_database, lookup_schema,
-        fun(#node_id{value = 101}) -> Union end),
-    NodeId = #node_id{type = numeric, value = 101},
+        fun(#opcua_node_id{value = 101}) -> Union end),
+    NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = #{some_string => <<"Hello!">>},
     assert_codec(NodeId, ToBeEncoded).
 
 builtin() ->
     Builtin = #builtin{
-                node_id = #node_id{type = numeric, value = 101},
-                builtin_node_id = #node_id{type = numeric, value = 6}},
+                node_id = #opcua_node_id{type = numeric, value = 101},
+                builtin_node_id = #opcua_node_id{type = numeric, value = 6}},
     meck:expect(opcua_database, lookup_schema,
-        fun(#node_id{value = 101}) -> Builtin end),
-    NodeId = #node_id{type = numeric, value = 101},
+        fun(#opcua_node_id{value = 101}) -> Builtin end),
+    NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = 123,
     assert_codec(NodeId, ToBeEncoded).

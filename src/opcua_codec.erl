@@ -4,6 +4,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 
@@ -20,21 +21,21 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec node_id(node_spec()) -> node_id().
-node_id(#node_id{} = NodeId) -> NodeId;
-node_id(Num) when is_integer(Num), Num >= 0 -> #node_id{value = Num};
-node_id(Name) when is_atom(Name) -> #node_id{type = string, value = Name};
-node_id(Name) when is_binary(Name) -> #node_id{type = string, value = Name};
+node_id(#opcua_node_id{} = NodeId) -> NodeId;
+node_id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
+node_id(Name) when is_atom(Name) -> #opcua_node_id{type = string, value = Name};
+node_id(Name) when is_binary(Name) -> #opcua_node_id{type = string, value = Name};
 node_id({NS, Num}) when is_integer(NS), is_integer(Num), NS >= 0, Num > 0 ->
-    #node_id{ns = NS, value = Num}.
+    #opcua_node_id{ns = NS, value = Num}.
 
 -spec pack_variant(node_spec(), term()) -> #variant{}.
-pack_variant(#node_id{ns = 0, type = numeric, value = Num}, Value)
+pack_variant(#opcua_node_id{ns = 0, type = numeric, value = Num}, Value)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     #variant{type = builtin_type_name(Num), value = Value};
-pack_variant(#node_id{ns = 0, type = string, value = Name}, Value)
+pack_variant(#opcua_node_id{ns = 0, type = string, value = Name}, Value)
   when ?IS_BUILTIN_TYPE_NAME(Name) ->
     #variant{type = Name, value = Value};
-pack_variant(#node_id{} = NodeId, Value) ->
+pack_variant(#opcua_node_id{} = NodeId, Value) ->
     case opcua_database:lookup_schema(NodeId) of
         undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
         #enum{fields = Fields} ->

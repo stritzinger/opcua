@@ -2,6 +2,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include("../src/opcua_database.hrl").
+-include("../src/opcua_codec.hrl").
 
 -import(opcua_address_space, [add_nodes/1, get_node/1]).
 

@@ -7,6 +7,7 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 -include("opcua_protocol.hrl").
 
@@ -75,7 +76,7 @@ unlock(_Chunk, _State) ->
 -spec open(opcua_protocol:connection(), opcua_protocol:message(), state())
     -> {ok, opcua_protocol:message(), state()} | {error, term()}.
 open(Conn, #uacp_message{type = channel_open,
-                         node_id = #node_id{ns = 0, value = 444},
+                         node_id = #opcua_node_id{ns = 0, value = 444},
                          payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel opened: ~p", [Msg]),
     #state{channel_id = ChannelId, token_id = TokenId} = State,
@@ -137,7 +138,7 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
 -spec close(opcua_protocol:connection(), opcua_protocol:message(), state())
     -> {ok, opcua_protocol:message(), state()} | {error, term()}.
 close(Conn, #uacp_message{type = channel_close,
-                          node_id = #node_id{ns = 0, value = 450},
+                          node_id = #opcua_node_id{ns = 0, value = 450},
                           payload = Msg} = Req, State) ->
     ?LOG_DEBUG("Secure channel closed: ~p", [Msg]),
     Resp = opcua_connection:req2res(Conn, Req, 453, #{}),
