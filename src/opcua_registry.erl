@@ -1,5 +1,7 @@
 -module(opcua_registry).
 
+-compile([export_all]).
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -55,9 +57,10 @@ release_secure_channel(ChannelId) ->
     gen_server:call(?SERVER, {release_secure_channel, ChannelId}).
 
 perform(NodeSpec, Commands) ->
-    case opcua_database:lookup_id(NodeSpec) of
-        #opcua_node_id{ns = 0, type = numeric, value = NodeNum} ->
-            [model_perform(NodeNum, C) || C <- Commands]
+    case opcua_address_space:get_node(opcua_database:lookup_id(NodeSpec)) of
+        undefined -> {error, bad_node_id_unknown};
+        #opcua_node{} = Node ->
+            [static_perform(Node, C) || C <- Commands]
     end.
 
 
@@ -66,6 +69,7 @@ perform(NodeSpec, Commands) ->
 init(Opts) ->
     ?LOG_DEBUG("OPCUA registry process starting with options: ~p", [Opts]),
     NextSecureChannelId = crypto:bytes_to_integer(crypto:strong_rand_bytes(4)),
+    setup_static_nodes(),
     {ok, #state{next_secure_channel_id = NextSecureChannelId}}.
 
 handle_call({allocate_secure_channel, _Pid}, _From, State) ->
@@ -104,68 +108,76 @@ next_secure_channel_id(#state{next_secure_channel_id = ?MAX_SECURE_CHANNEL_ID} =
 next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
     {Id, State#state{next_secure_channel_id = Id + 1}}.
 
-
-%-- HARDCODED MODEL ------------------------------------------------------------
-
-model_perform(NodeNum, #browse_command{type = #opcua_node_id{type = numeric, ns = 0, value = RefNum}} = Command) ->
-    #browse_command{subtypes = SubTypes, direction = Direction} = Command,
-    ?LOG_DEBUG("Browsing node ~w's ~w ~w references, subtypes: ~w...",
-               [NodeNum, RefNum, Direction, SubTypes]),
-    Result = case model_reference(NodeNum, RefNum, Direction, SubTypes) of
-        {error, Reason} -> #{status => Reason, references => []};
-        {ok, Refs} -> #{status => good, references => post_process_refs(Refs)}
+static_perform(Node, #browse_command{type = BaseId, direction = Dir, subtypes = false}) ->
+    ?LOG_DEBUG("Browsing node ~w's ~w ~w references...",
+               [(Node#opcua_node.node_id)#opcua_node_id.value, BaseId#opcua_node_id.value, Dir]),
+    #opcua_node{references = AllRefs} = Node,
+    IsForward = Dir =:= forward orelse Dir =:= both,
+    ResRefs = [post_process_ref(R)
+               || R = #opcua_reference{reference_type_id = I,
+                                       is_forward = F} <- AllRefs,
+                  I =:= BaseId, F =:= IsForward],
+    ?LOG_DEBUG("    -> ~p", [ResRefs]),
+    #{status => good, references => ResRefs};
+static_perform(Node, #browse_command{type = BaseId, direction = Dir, subtypes = true}) ->
+    ?LOG_DEBUG("Browsing node ~w's ~w and subtypes ~w references...",
+               [(Node#opcua_node.node_id)#opcua_node_id.value, BaseId#opcua_node_id.value, Dir]),
+    #opcua_node{references = AllRefs} = Node,
+    IsForward = Dir =:= forward orelse Dir =:= both,
+    ResRefs = [post_process_ref(R)
+               || R = #opcua_reference{reference_type_id = I,
+                                       is_forward = F} <- AllRefs,
+                  opcua_address_space:is_subtype(I, BaseId), F =:= IsForward],
+    ?LOG_DEBUG("    -> ~p", [ResRefs]),
+    #{status => good, references => ResRefs};
+static_perform(Node, #read_command{attr = Attr, range = undefined} = _Command) ->
+    ?LOG_DEBUG("Reading node ~w's attribute ~w...",
+               [(Node#opcua_node.node_id)#opcua_node_id.value, Attr]),
+    Result = try {opcua_node:attribute_type(Attr, Node),
+                  opcua_node:attribute(Attr, Node)} of
+        {AttrType, AttrValue} ->
+            Value = opcua_codec:pack_variant(AttrType, AttrValue),
+            #data_value{value = Value}
+    catch
+        _:Reason ->
+            ?LOG_ERROR("Error while reading attribute ~w from node ~w: ~p",
+                       [Attr, (Node#opcua_node.node_id)#opcua_node_id.value, Reason]),
+            #data_value{status = bad_attribute_id_invalid}
     end,
     ?LOG_DEBUG("    -> ~p", [Result]),
     Result;
-model_perform(NodeNum, #read_command{attr = Attr, range = Range}) ->
-    ?LOG_DEBUG("Reading node ~w's attribute ~w [~w]...",
-               [NodeNum, Attr, Range]),
-    DataValue = case model_attribute(NodeNum, Attr, Range) of
-        {error, Reason} -> #data_value{status = Reason};
-        {TypeSpec, Value} ->
-            #data_value{value = opcua_codec:pack_variant(TypeSpec, Value)}
-    end,
-    ?LOG_DEBUG("    -> ~p", [DataValue]),
-    DataValue.
+static_perform(_Node, _Command) ->
+    {error, bad_not_implemented}.
 
-post_process_refs(Refs) ->
-    [post_process_ref(R) || R <- Refs].
-
-post_process_ref(#{node_id := NodeId} = Ref) ->
+post_process_ref(Ref) ->
+    #opcua_reference{
+        reference_type_id = RefId,
+        target_id = TargetId
+    } = Ref,
+    TargetNode = opcua_address_space:get_node(TargetId),
+    BaseObj = #{reference_type_id => RefId},
+    Fields = [node_id, browse_name, display_name, node_class],
     lists:foldl(fun(Key, Map) ->
-        case model_attribute(NodeId, Key, undefined) of
-            {error, _Reason} -> Map;
-            {_, Value} -> Map#{Key => Value}
-        end
-    end, Ref, [browse_name, display_name, node_class]).
+            Map#{Key => opcua_node:attribute(Key, TargetNode)}
+    end, BaseObj, Fields).
 
-model_attribute(NodeNum, node_id, _) -> {node_id, #opcua_node_id{value = NodeNum}};
-model_attribute(84, display_name, _) -> {localized_text, #localized_text{text = <<"Root">>}};
-model_attribute(84, browse_name, _) -> {qualified_name, #qualified_name{name = <<"Root">>}};
-model_attribute(84, node_class, _) -> {257, object};
-model_attribute(84, _, _) -> {error, bad_attribute_id_invalid};
-model_attribute(85, display_name, _) -> {localized_text, #localized_text{text = <<"Objects">>}};
-model_attribute(85, browse_name, _) -> {qualified_name, #qualified_name{name = <<"Objects">>}};
-model_attribute(85, node_class, _) -> {257, object};
-model_attribute(85, _, _) -> {error, bad_attribute_id_invalid};
-model_attribute(50000, display_name, _) -> {localized_text, #localized_text{text = <<"Test Folder 1">>}};
-model_attribute(50000, browse_name, _) -> {qualified_name, #qualified_name{name = <<"TestFolder1">>}};
-model_attribute(50000, node_class, _) -> {257, object};
-model_attribute(50000, _, _) -> {error, bad_attribute_id_invalid};
-model_attribute(50001, display_name, _) -> {localized_text, #localized_text{text = <<"Test Folder 2">>}};
-model_attribute(50001, browse_name, _) -> {qualified_name, #qualified_name{name = <<"TestFolder2">>}};
-model_attribute(50001, node_class, _) -> {257, object};
-model_attribute(50001, _, _) -> {error, bad_attribute_id_invalid};
-model_attribute(_, _, _) -> {error, bad_node_id_unknown}.
 
-model_reference(84, T, forward, true) when T =:= 33; T =:= 31 ->
-    {ok, [#{reference_type_id => T, node_id => 85}]};
-model_reference(84, _, _, _) ->
-    {ok, []};
-model_reference(85, T, forward, true) when T =:= 33; T =:= 31 ->
-    {ok, [#{reference_type_id => T, node_id => 50000},
-          #{reference_type_id => T, node_id => 50001}]};
-model_reference(85, _, _, _) ->
-    {ok, []};
-model_reference(_, _, _, _) ->
-    {error, bad_node_id_unknown}.
+%-- HARDCODED MODEL ------------------------------------------------------------
+
+setup_static_nodes() ->
+    A = #opcua_node{
+        node_id = ?NNID(50000),
+        browse_name = <<"Stritzinger">>,
+        display_name = <<"Stritzinger">>,
+        node_class = #opcua_object{},
+        references = [
+        ]
+    },
+    R2A = #opcua_reference{
+        reference_type_id = ?NNID(35),
+        is_forward = true,
+        target_id = ?NNID(50000)
+    },
+    opcua_address_space:add_nodes([A]),
+    opcua_address_space:add_references([{?NNID(84), R2A}]),
+    ok.

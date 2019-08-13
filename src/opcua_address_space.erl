@@ -10,6 +10,7 @@
 -export([add_nodes/1]).
 -export([add_references/1]).
 -export([get_node/1]).
+-export([is_subtype/2]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -18,6 +19,8 @@
 -export([handle_info/2]).
 
 -ignore_xref([{?MODULE, start_link, 0}]).
+
+-compile([export_all]).
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -38,8 +41,12 @@ add_references(References) ->
     gen_server:call(?MODULE, {add_references, References}).
 
 get_node(NodeId) ->
-    {NodeId, Node} = digraph:vertex(persistent_term:get(?MODULE), NodeId),
-    Node.
+    case digraph:vertex(persistent_term:get(?MODULE), NodeId) of
+        {NodeId, Node} -> Node;
+        _ -> undefined
+    end.
+
+is_subtype(A, B) -> maps:is_key(B, supertypes_map(A)).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -64,3 +71,20 @@ handle_info(Info, _State) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+expand(ExpFun, Values) ->
+    expand(ExpFun, Values, #{}).
+
+expand(_ExpFun, [], Acc) -> Acc;
+expand(ExpFun, [V | Rest], Acc) ->
+    expand(ExpFun, Rest, expand(ExpFun, ExpFun(V), Acc#{V => true})).
+
+
+supertypes_map(NodeId) ->
+    expand(fun(Id) ->
+        #opcua_node{references = Refs} = opcua_address_space:get_node(Id),
+        [SubId || #opcua_reference{
+            reference_type_id = ?NNID(45), %
+            is_forward = false,
+            target_id = SubId} <- Refs]
+    end, [NodeId]).

@@ -1,3 +1,9 @@
+
+-define(NID_NS(NS), #opcua_node_id{ns = NS}).
+-define(NNID(Num), #opcua_node_id{ns = 0, type = numeric, value = Num}).
+-define(XID_(NID), #expanded_node_id{
+    node_id = NID, namespace_uri = undefined, server_index = undefined}).
+
 -record(role_permission, {
     role_id                     :: node_id(),
     permissions                 :: permissions()
@@ -16,12 +22,12 @@
     node_class                  :: node_class(),
     browse_name                 :: optional(binary()),
     display_name                :: binary(),
-    description                 :: binary(),
-    write_mask                  :: non_neg_integer(),
-    user_write_mask             :: non_neg_integer(),
-    role_permissions            :: role_permission(),
-    user_role_permissions       :: role_permissions(),
-    access_restrictions         :: non_neg_integer(),
+    description                 :: optional(binary()),
+    write_mask                  :: optional(non_neg_integer()),
+    user_write_mask             :: optional(non_neg_integer()),
+    role_permissions            :: optional(role_permission()),
+    user_role_permissions       :: optional(role_permissions()),
+    access_restrictions         :: optional(non_neg_integer()),
     references                  :: references()
 }).
 
