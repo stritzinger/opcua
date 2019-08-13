@@ -5,6 +5,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 -include("opcua_protocol.hrl").
 -include("opcua_node_command.hrl").
@@ -55,7 +56,7 @@ release_secure_channel(ChannelId) ->
 
 perform(NodeSpec, Commands) ->
     case opcua_database:lookup_id(NodeSpec) of
-        #node_id{ns = 0, type = numeric, value = NodeNum} ->
+        #opcua_node_id{ns = 0, type = numeric, value = NodeNum} ->
             [model_perform(NodeNum, C) || C <- Commands]
     end.
 
@@ -106,7 +107,7 @@ next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
 
 %-- HARDCODED MODEL ------------------------------------------------------------
 
-model_perform(NodeNum, #browse_command{type = #node_id{type = numeric, ns = 0, value = RefNum}} = Command) ->
+model_perform(NodeNum, #browse_command{type = #opcua_node_id{type = numeric, ns = 0, value = RefNum}} = Command) ->
     #browse_command{subtypes = SubTypes, direction = Direction} = Command,
     ?LOG_DEBUG("Browsing node ~w's ~w ~w references, subtypes: ~w...",
                [NodeNum, RefNum, Direction, SubTypes]),
@@ -138,7 +139,7 @@ post_process_ref(#{node_id := NodeId} = Ref) ->
         end
     end, Ref, [browse_name, display_name, node_class]).
 
-model_attribute(NodeNum, node_id, _) -> {node_id, #node_id{value = NodeNum}};
+model_attribute(NodeNum, node_id, _) -> {node_id, #opcua_node_id{value = NodeNum}};
 model_attribute(84, display_name, _) -> {localized_text, #localized_text{text = <<"Root">>}};
 model_attribute(84, browse_name, _) -> {qualified_name, #qualified_name{name = <<"Root">>}};
 model_attribute(84, node_class, _) -> {257, object};

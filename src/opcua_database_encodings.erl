@@ -5,6 +5,7 @@
 %% event handler for sax parser
 -export([parse/3]).
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 -define(DB_ENCODINGS, db_encodings).

@@ -5,6 +5,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 
 
@@ -44,14 +45,14 @@ lookup_schema(NodeSpec) ->
 -spec lookup_id(node_spec()) -> node_id().
 lookup_id(NodeSpec) ->
     case opcua_codec:node_id(NodeSpec) of
-        #node_id{type = numeric} = NodeId -> NodeId;
+        #opcua_node_id{type = numeric} = NodeId -> NodeId;
         _ -> error(not_implemented)
     end.
 
 %% The returned node id is canonical, meaning it is always numeric.
 -spec lookup_encoding(node_spec(), opcua_encoding())
     -> {node_id(), undefined | opcua_encoding()}.
-lookup_encoding(NodeId = #node_id{}, Encoding) ->
+lookup_encoding(NodeId = #opcua_node_id{}, Encoding) ->
     opcua_database_encodings:lookup(NodeId, Encoding);
 lookup_encoding(NodeSpec, Encoding) ->
     lookup_encoding(lookup_id(NodeSpec), Encoding).
@@ -59,7 +60,7 @@ lookup_encoding(NodeSpec, Encoding) ->
 %% The returned node id is canonical, meaning it is always numeric.
 -spec resolve_encoding(node_spec())
     -> {node_id(), undefined | opcua_encoding()}.
-resolve_encoding(NodeId = #node_id{}) ->
+resolve_encoding(NodeId = #opcua_node_id{}) ->
     opcua_database_encodings:resolve(NodeId);
 resolve_encoding(NodeSpec) ->
     resolve_encoding(lookup_id(NodeSpec)).

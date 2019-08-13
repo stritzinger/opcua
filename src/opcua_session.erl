@@ -8,6 +8,7 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 -include("opcua_protocol.hrl").
 -include("opcua_node_command.hrl").
@@ -113,7 +114,7 @@ dispatch_request(Data, State, From, Conn, Req, Validators, HandlerMap, Reason, E
             {keep_state, Data, [{reply, From, Error} | Extra]};
         ok ->
             #uacp_message{node_id = NodeSpec} = Req,
-            #node_id{value = Num} = opcua_database:lookup_id(NodeSpec),
+            #opcua_node_id{value = Num} = opcua_database:lookup_id(NodeSpec),
             case maps:find(Num, HandlerMap) of
                 error ->
                     ?LOG_ERROR("Unexpected request ~w in state ~w: ~p",
@@ -291,7 +292,7 @@ session_close_command(Data, Conn, #uacp_message{payload = _Msg} = Req) ->
 check_identity(ExtObj) ->
     #extension_object{type_id = NodeSpec, body = Body} = ExtObj,
     case opcua_database:lookup_id(NodeSpec) of
-        #node_id{value = 319} -> %% AnonymousIdentityToken
+        #opcua_node_id{value = 319} -> %% AnonymousIdentityToken
             #{policy_id := PolicyId} = Body,
             {ok, PolicyId};
         _ ->

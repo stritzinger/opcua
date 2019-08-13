@@ -6,6 +6,7 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
+-include("opcua_database.hrl").
 -include("opcua_codec.hrl").
 -include("opcua_protocol.hrl").
 
@@ -52,7 +53,7 @@ start_link(Opts) ->
 
 handle_request(Conn, #uacp_message{node_id = NodeSpec} = Req) ->
     case opcua_database:lookup_id(NodeSpec) of
-        #node_id{value = 459} -> %% CreateSessionRequest
+        #opcua_node_id{value = 459} -> %% CreateSessionRequest
             gen_server:call(?SERVER, {create_session, Conn, Req});
         _Other ->
             gen_server:call(?SERVER, {forward_request, Conn, Req})
@@ -100,10 +101,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 generate_session_auth_token() ->
-    #node_id{type = opaque, value = crypto:strong_rand_bytes(32)}.
+    #opcua_node_id{type = opaque, value = crypto:strong_rand_bytes(32)}.
 
 next_session_node_id(#state{next_session_id = Id} = State) ->
-    {#node_id{ns = 232, value = Id}, State#state{next_session_id = Id + 1}}.
+    {#opcua_node_id{ns = 232, value = Id}, State#state{next_session_id = Id + 1}}.
 
 create_session(State, Conn, Req) ->
     %TODO: Probably check the request header...
