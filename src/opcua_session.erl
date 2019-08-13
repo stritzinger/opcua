@@ -215,7 +215,7 @@ session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         revised_session_timeout => RequestedSessionTimeout,
         server_nonce => ServerNonce,
         server_certificate => undefined,
-        server_endpoints => [
+        server_endpoints => [ %% Duplicated in opcua_discovery
             #{
                 endpoint_url => EndpointURL,
                 server => #{
@@ -250,7 +250,7 @@ session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
             algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
             signature => undefined
         },
-        max_request_message_size => 0
+        max_request_message_size => 65536
     }),
     {{created, Resp}, Data2}.
 
