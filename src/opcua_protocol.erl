@@ -12,8 +12,8 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
--include("opcua_protocol.hrl").
--include("opcua_codec.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -44,16 +44,16 @@
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(inflight_request, {
-    message_type :: message_type(),
-    request_id :: request_id(),
+    message_type :: opcua:message_type(),
+    request_id :: opcua:request_id(),
     chunk_count :: pos_integer(),
     total_size :: pos_integer(),
     reversed_data :: [iodata()]
 }).
 
 -record(inflight_response, {
-    message_type :: message_type(),
-    request_id :: undefined | request_id(),
+    message_type :: opcua:message_type(),
+    request_id :: undefined | opcua:request_id(),
     data :: iodata()
 }).
 
@@ -79,59 +79,11 @@
     temp_token_id :: undefined | pos_integer(),
     curr_sec :: term(),
     temp_sec :: term(),
-    conn :: undefined | connection(),
+    conn :: undefined | opcua:connection(),
     sess :: undefined | pid()
 }).
 
 -type state() :: #state{}.
--type message_type() :: hello | acknowledge | reverse_hello | error
-                      | channel_open | channel_close | channel_message.
--type chunk_type() :: final | intermediate | aborted.
--type token_id() :: pos_integer().
--type channel_id() :: pos_integer().
--type sequence_num() :: pos_integer().
--type request_id() :: pos_integer().
--type security_policy() :: #uacp_security_policy{}.
--type chunk() :: #uacp_chunk{}.
--type message() :: #uacp_message{}.
--type connection() :: #uacp_connection{}.
-
--type hello_payload() :: #{
-    ver := non_neg_integer(),
-    max_res_chunk_size := non_neg_integer(),
-    max_req_chunk_size := non_neg_integer(),
-    max_msg_size := non_neg_integer(),
-    max_chunk_count := non_neg_integer(),
-    endpoint_url := undefined | binary()
-}.
-
--type acknowledge_payload() :: #{
-    ver := non_neg_integer(),
-    max_res_chunk_size := non_neg_integer(),
-    max_req_chunk_size := non_neg_integer(),
-    max_msg_size := non_neg_integer(),
-    max_chunk_count := non_neg_integer()
-}.
-
--type error_payload() :: #{
-    error := non_neg_integer(),
-    reason := undefined | binary()
-}.
-
--export_type([
-    message_type/0,
-    chunk_type/0,
-    token_id/0,
-    channel_id/0,
-    sequence_num/0,
-    request_id/0,
-    security_policy/0,
-    chunk/0,
-    message/0,
-    hello_payload/0,
-    acknowledge_payload/0,
-    error_payload/0
-]).
 
 
 %%% BEHAVIOUR ranch_protocol CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -152,9 +104,9 @@ req2res(#uacp_message{type = T, request_id = ReqId}, NodeId, Payload) ->
                 timestamp => opcua_util:date_time(),
                 request_handle => ReqId,
                 service_result => 0,
-                service_diagnostics => #diagnostic_info{},
+                service_diagnostics => #opcua_diagnostic_info{},
                 string_table => [],
-                additional_header => #extension_object{}
+                additional_header => #opcua_extension_object{}
             },
             Payload#{response_header => Header}
     end,

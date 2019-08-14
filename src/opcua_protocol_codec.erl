@@ -9,8 +9,8 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
--include("opcua_codec.hrl").
--include("opcua_protocol.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -59,30 +59,28 @@
 ]).
 
 
-%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--type chunk() :: opcua_protocol:chunk().
-
-
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec decode_chunks(iodata()) -> {[chunk()], iodata()}.
+-spec decode_chunks(iodata()) -> {[opcua:chunk()], iodata()}.
 decode_chunks(Data) -> decode_chunks(iolist_to_binary(Data), []).
 
--spec prepare_chunks(chunk() | [chunk()]) -> chunk() | [chunk()].
+-spec prepare_chunks(opcua:chunk() | [opcua:chunk()])
+    -> opcua:chunk() | [opcua:chunk()].
 prepare_chunks(#uacp_chunk{} = Chunk) -> prepare_chunk(Chunk);
 prepare_chunks(Chunks) -> [prepare_chunk(C) || C <- Chunks].
 
--spec freeze_chunks(chunk() | [chunk()]) -> chunk() | [chunk()].
+-spec freeze_chunks(opcua:chunk() | [opcua:chunk()])
+    -> opcua:chunk() | [opcua:chunk()].
 freeze_chunks(#uacp_chunk{} = Chunk) -> freeze_chunk(Chunk);
 freeze_chunks(Chunks) -> [freeze_chunk(C) || C <- Chunks].
 
--spec encode_chunks(chunk() | [chunk()]) -> chunk() | [chunk()].
+-spec encode_chunks(opcua:chunk() | [opcua:chunk()])
+    -> opcua:chunk() | [opcua:chunk()].
 encode_chunks(#uacp_chunk{} = Chunk) -> encode_chunk(Chunk);
 encode_chunks(Chunks) -> [encode_chunk(C) || C <- Chunks].
 
 
--spec decode_hello(iodata()) -> opcua_protocol:hello_payload().
+-spec decode_hello(iodata()) -> opcua:hello_payload().
 decode_hello(Data) ->
     case opcua_codec_binary:decode(?HEL_SPEC, iolist_to_binary(Data)) of
         {Result, <<>>} -> Result;
@@ -91,7 +89,7 @@ decode_hello(Data) ->
             throw(bad_decoding_error)
     end.
 
--spec encode_acknowledge(opcua_protocol:acknowledge_payload()) -> iodata().
+-spec encode_acknowledge(opcua:acknowledge_payload()) -> iodata().
 encode_acknowledge(Map) ->
     case opcua_codec_binary:encode(?ACK_SPEC, Map) of
         {Result, Extra} when Extra =:= #{} -> Result;
@@ -100,7 +98,7 @@ encode_acknowledge(Map) ->
             throw(bad_encoding_error)
     end.
 
--spec decode_error(iodata()) -> opcua_protocol:error_payload().
+-spec decode_error(iodata()) -> opcua:error_payload().
 decode_error(Data) ->
     case opcua_codec_binary:decode(?ERR_SPEC, iolist_to_binary(Data)) of
         {Result, <<>>} -> Result;
@@ -109,7 +107,7 @@ decode_error(Data) ->
             throw(bad_decoding_error)
     end.
 
--spec encode_error(opcua_protocol:error_payload()) -> iodata().
+-spec encode_error(opcua:error_payload()) -> iodata().
 encode_error(Data) ->
     case opcua_codec_binary:encode(?ERR_SPEC, Data) of
         {Result, Extra} when Extra =:= #{} -> Result;
