@@ -55,15 +55,8 @@ get_references(OriginId) ->
 get_references(OriginId, Opts) ->
     Graph = persistent_term:get(?MODULE),
     FilterFun = make_reference_filter(OriginId, Opts),
-    MakeRefFun = fun({_, From, To, Type}) ->
-        #opcua_reference{
-            target_id = To,
-            reference_type_id = Type,
-            is_forward = From =:= OriginId
-        }
-    end,
     Edges = [digraph:edge(Graph, I) || I <- digraph:edges(Graph, OriginId)],
-    [MakeRefFun(E) || E <- Edges, FilterFun(E)].
+    [edge_to_ref(OriginId, E) || E <- Edges, FilterFun(E)].
 
 %% @doc Returns if the given OPCUA type node id is a subtype of the second
 %% given OPCUA type node id.
@@ -116,6 +109,13 @@ supertypes(TypeNodeId) ->
             is_forward = false,
             target_id = SubId} <- Refs]
     end, [TypeNodeId]).
+
+edge_to_ref(OriginId, {_, From, To, Type}) ->
+    #opcua_reference{
+        target_id = To,
+        reference_type_id = Type,
+        is_forward = From =:= OriginId
+    }.
 
 make_reference_filter(OriginId, Opts) ->
     Subtypes = proplists:is_defined(include_subtypes, Opts),
