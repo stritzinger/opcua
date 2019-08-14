@@ -6,18 +6,15 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
+
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
 -export([setup/1]).
 -export([parse/1]).
-
-
-%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--include_lib("opcua_database.hrl").
--include_lib("opcua_codec.hrl").
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

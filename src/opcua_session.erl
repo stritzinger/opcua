@@ -8,10 +8,8 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
--include("opcua_database.hrl").
--include("opcua_codec.hrl").
--include("opcua_protocol.hrl").
--include("opcua_node_command.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -40,8 +38,8 @@
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(data, {
-    session_id :: node_id(),
-    auth_token :: node_id(),
+    session_id :: opcua:node_id(),
+    auth_token :: opcua:node_id(),
     session_name :: undefined | binary(),
     endpoint_url :: undefined | binary(),
     client_certificate :: undefined | binary(),
@@ -290,7 +288,7 @@ session_close_command(Data, Conn, #uacp_message{payload = _Msg} = Req) ->
     {{reply, Resp}, Data2}.
 
 check_identity(ExtObj) ->
-    #extension_object{type_id = NodeSpec, body = Body} = ExtObj,
+    #opcua_extension_object{type_id = NodeSpec, body = Body} = ExtObj,
     case opcua_database:lookup_id(NodeSpec) of
         #opcua_node_id{value = 319} -> %% AnonymousIdentityToken
             #{policy_id := PolicyId} = Body,
@@ -333,9 +331,9 @@ attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
         data_encoding := DataEncoding
     } = ReadId,
     case DataEncoding of
-        #qualified_name{ns = 0, name = Name}
+        #opcua_qualified_name{ns = 0, name = Name}
           when Name =:= <<"Default Binary">>; Name =:= undefined ->
-            Command = #read_command{
+            Command = #opcua_read_command{
                 attr = opcua_database_attributes:name(AttributeId),
                 range = opcua_util:parse_range(RangeStr),
                 opts = ReadOpts
@@ -343,13 +341,13 @@ attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
             case opcua_registry:perform(NodeId, [Command]) of
                 [{error, Reason}] ->
                     Status = opcua_database_status_codes:name(Reason, bad_internal_error),
-                    Result = #data_value{status = Status},
+                    Result = #opcua_data_value{status = Status},
                     attribute_read(Data, ReadOpts, Rest, [Result | Acc]);
-                [#data_value{} = Result] ->
+                [#opcua_data_value{} = Result] ->
                     attribute_read(Data, ReadOpts, Rest, [Result | Acc])
             end;
         _ ->
-            Result = #data_value{status = bad_data_encoding_unsupported},
+            Result = #opcua_data_value{status = bad_data_encoding_unsupported},
             attribute_read(Data, ReadOpts, Rest, [Result | Acc])
     end.
 
@@ -386,7 +384,7 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
         include_subtypes := SubTypes,
         browse_direction := Direction
     } = BrowseSpec,
-    Command = #browse_command{
+    Command = #opcua_browse_command{
         type = RefType,
         subtypes = SubTypes,
         direction = Direction,
@@ -409,8 +407,8 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
                     reference_type_id => maps:get(type, Ref, ?UNDEF_NODE_ID),
                     is_forward => maps:get(is_forward, Ref, true),
                     node_id => maps:get(node_id, Ref),
-                    browse_name => maps:get(browse_name, Ref, #qualified_name{}),
-                    display_name => maps:get(display_name, Ref, #localized_text{}),
+                    browse_name => maps:get(browse_name, Ref, #opcua_qualified_name{}),
+                    display_name => maps:get(display_name, Ref, #opcua_localized_text{}),
                     node_class => maps:get(node_class, Ref, unspecified),
                     type_definition => maps:get(type_definition, Ref, ?UNDEF_EXT_NODE_ID)
                 } || Ref <- maps:get(references, CommandResult, [])]

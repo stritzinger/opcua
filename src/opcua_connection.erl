@@ -2,9 +2,8 @@
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--include("opcua_database.hrl").
--include("opcua_protocol.hrl").
--include("opcua_codec.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -28,9 +27,9 @@ req2res(#uacp_connection{},
                 timestamp => opcua_util:date_time(),
                 request_handle => ReqHandle,
                 service_result => 0,
-                service_diagnostics => #diagnostic_info{},
+                service_diagnostics => #opcua_diagnostic_info{},
                 string_table => [],
-                additional_header => #extension_object{}
+                additional_header => #opcua_extension_object{}
             },
             ResPayload#{response_header => Header}
     end,
