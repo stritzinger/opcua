@@ -7,8 +7,8 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
--include("opcua_codec.hrl").
--include("opcua_protocol.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -34,8 +34,8 @@
 
 -record(state, {
     channel_id :: pos_integer(),
-    client_policy :: undefined | opcua_protocol:security_policy(),
-    server_policy :: undefined | opcua_protocol:security_policy(),
+    client_policy :: undefined | opcua:security_policy(),
+    server_policy :: undefined | opcua:security_policy(),
     token_id :: pos_integer(),
     last_client_seq :: undefined | non_neg_integer(),
     last_server_seq :: undefined | non_neg_integer()
@@ -48,9 +48,9 @@
 
 -spec init(ChannelId, SecurityPolicy, undefined | state())
     -> {ok, TokenId, state()}
-  when ChannelId :: opcua_protocol:channel_id(),
-       SecurityPolicy :: opcua_protocol:security_policy(),
-       TokenId :: opcua_protocol:token_id().
+  when ChannelId :: opcua:channel_id(),
+       SecurityPolicy :: opcua:security_policy(),
+       TokenId :: opcua:token_id().
 init(ChannelId, #uacp_security_policy{policy_url = ?POLICY_NONE} = Policy, undefined) ->
     TokenId = generate_token_id([0]),
     State = #state{channel_id = ChannelId, client_policy = Policy, token_id = TokenId},
@@ -63,8 +63,8 @@ init(ChannelId, #uacp_security_policy{policy_url = ?POLICY_NONE} = Policy,
 init(_ChannelId, _SecurityPolicy, _ParentState) ->
     {error, bad_security_policy_rejected}.
 
--spec unlock(opcua_protocol:chunk(), state())
-    -> {ok, opcua_protocol:chunk(), state()} | {error, term()}.
+-spec unlock(opcua:chunk(), state())
+    -> {ok, opcua:chunk(), state()} | {error, term()}.
 unlock(#uacp_chunk{security = Security} = Chunk,
        #state{client_policy = ClientPolicy, token_id = TokenId} = State)
   when Security =:= ClientPolicy; Security =:= TokenId ->
@@ -72,8 +72,8 @@ unlock(#uacp_chunk{security = Security} = Chunk,
 unlock(_Chunk, _State) ->
     {error, bad_security_checks_failed}.
 
--spec open(opcua_protocol:connection(), opcua_protocol:message(), state())
-    -> {ok, opcua_protocol:message(), state()} | {error, term()}.
+-spec open(opcua:connection(), opcua:message(), state())
+    -> {ok, opcua:message(), state()} | {error, term()}.
 open(Conn, #uacp_message{type = channel_open,
                          node_id = #opcua_node_id{ns = 0, value = 444},
                          payload = Msg} = Req, State) ->
@@ -93,20 +93,20 @@ open(Conn, #uacp_message{type = channel_open,
     ?LOG_DEBUG("Open Secure channel response: ~p", [Resp]),
     {ok, Resp, State#state{server_policy = ServerPolicy}}.
 
--spec setup_asym(opcua_protocol:chunk(), state())
-    -> {ok, opcua_protocol:chunk(), state()} | {error, term()}.
+-spec setup_asym(opcua:chunk(), state())
+    -> {ok, opcua:chunk(), state()} | {error, term()}.
 setup_asym(#uacp_chunk{state = undefined, security = undefined} = Chunk,
            #state{server_policy = ServerPolicy} = State) ->
     {ok, Chunk#uacp_chunk{state = unlocked, security = ServerPolicy}, State}.
 
--spec setup_sym(opcua_protocol:chunk(), state())
-    -> {ok, opcua_protocol:chunk(), state()} | {error, term()}.
+-spec setup_sym(opcua:chunk(), state())
+    -> {ok, opcua:chunk(), state()} | {error, term()}.
 setup_sym(#uacp_chunk{state = undefined, security = undefined} = Chunk,
          #state{token_id = TokenId} = State) ->
     {ok, Chunk#uacp_chunk{state = unlocked, security = TokenId}, State}.
 
--spec prepare(opcua_protocol:chunk(), state())
-    -> {ok, opcua_protocol:chunk(), state()} | {error, term()}.
+-spec prepare(opcua:chunk(), state())
+    -> {ok, opcua:chunk(), state()} | {error, term()}.
 prepare(#uacp_chunk{state = unlocked, security = Security, header_size = HSize,
                     unlocked_size = USize, request_id = ReqId, body = Body} = Chunk,
         #state{server_policy = ServerPolicy, token_id = TokenId} = State)
@@ -121,8 +121,8 @@ prepare(#uacp_chunk{state = unlocked, security = Security, header_size = HSize,
     },
     {ok, Chunk2, State2}.
 
--spec lock(opcua_protocol:chunk(), state())
-    -> {ok, opcua_protocol:chunk(), state()} | {error, term()}.
+-spec lock(opcua:chunk(), state())
+    -> {ok, opcua:chunk(), state()} | {error, term()}.
 lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
                  request_id = ReqId, body = Body} = Chunk,
      #state{server_policy = Policy, token_id = TokenId} = State)
@@ -134,8 +134,8 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
         body = [SeqHeader, Body]
     }, State}.
 
--spec close(opcua_protocol:connection(), opcua_protocol:message(), state())
-    -> {ok, opcua_protocol:message(), state()} | {error, term()}.
+-spec close(opcua:connection(), opcua:message(), state())
+    -> {ok, opcua:message(), state()} | {error, term()}.
 close(Conn, #uacp_message{type = channel_close,
                           node_id = #opcua_node_id{ns = 0, value = 450},
                           payload = Msg} = Req, State) ->

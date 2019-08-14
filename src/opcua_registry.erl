@@ -5,9 +5,8 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--include("opcua_codec.hrl").
--include("opcua_protocol.hrl").
--include("opcua_node_command.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -105,7 +104,7 @@ next_secure_channel_id(#state{next_secure_channel_id = ?MAX_SECURE_CHANNEL_ID} =
 next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
     {Id, State#state{next_secure_channel_id = Id + 1}}.
 
-static_perform(Node, #browse_command{type = BaseId, direction = Dir, subtypes = false}) ->
+static_perform(Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = false}) ->
     ?LOG_DEBUG("Browsing node ~w's ~w ~w references...",
                [(Node#opcua_node.node_id)#opcua_node_id.value, BaseId#opcua_node_id.value, Dir]),
     #opcua_node{references = AllRefs} = Node,
@@ -116,7 +115,7 @@ static_perform(Node, #browse_command{type = BaseId, direction = Dir, subtypes = 
                   I =:= BaseId, F =:= IsForward],
     ?LOG_DEBUG("    -> ~p", [ResRefs]),
     #{status => good, references => ResRefs};
-static_perform(Node, #browse_command{type = BaseId, direction = Dir, subtypes = true}) ->
+static_perform(Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = true}) ->
     ?LOG_DEBUG("Browsing node ~w's ~w and subtypes ~w references...",
                [(Node#opcua_node.node_id)#opcua_node_id.value, BaseId#opcua_node_id.value, Dir]),
     #opcua_node{references = AllRefs} = Node,
@@ -127,19 +126,19 @@ static_perform(Node, #browse_command{type = BaseId, direction = Dir, subtypes = 
                   opcua_address_space:is_subtype(I, BaseId), F =:= IsForward],
     ?LOG_DEBUG("    -> ~p", [ResRefs]),
     #{status => good, references => ResRefs};
-static_perform(Node, #read_command{attr = Attr, range = undefined} = _Command) ->
+static_perform(Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
     ?LOG_DEBUG("Reading node ~w's attribute ~w...",
                [(Node#opcua_node.node_id)#opcua_node_id.value, Attr]),
     Result = try {opcua_node:attribute_type(Attr, Node),
                   opcua_node:attribute(Attr, Node)} of
         {AttrType, AttrValue} ->
             Value = opcua_codec:pack_variant(AttrType, AttrValue),
-            #data_value{value = Value}
+            #opcua_data_value{value = Value}
     catch
         _:Reason ->
             ?LOG_ERROR("Error while reading attribute ~w from node ~w: ~p",
                        [Attr, (Node#opcua_node.node_id)#opcua_node_id.value, Reason]),
-            #data_value{status = bad_attribute_id_invalid}
+            #opcua_data_value{status = Reason}
     end,
     ?LOG_DEBUG("    -> ~p", [Result]),
     Result;
