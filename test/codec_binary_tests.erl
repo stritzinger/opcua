@@ -1,8 +1,9 @@
 -module(codec_binary_tests).
 
 -include_lib("eunit/include/eunit.hrl").
--include("opcua_database.hrl").
--include("opcua_codec.hrl").
+
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 t_test_() ->
     {setup,
@@ -63,7 +64,7 @@ open_secure_channel_request() ->
             return_diagnostics => 0,
             audit_entry_id => undefined,
             timeout_hint => 1000,
-            additional_header => #extension_object{}
+            additional_header => #opcua_extension_object{}
         },
         client_protocol_version => 0,
         request_type => issue,
@@ -84,9 +85,9 @@ open_secure_channel_response() ->
             timestamp => 132061913263430080,
             request_handle => 1,
             service_result => good,
-            service_diagnostics => #diagnostic_info{},
+            service_diagnostics => #opcua_diagnostic_info{},
             string_table => [],
-            additional_header => #extension_object{}
+            additional_header => #opcua_extension_object{}
         },
         server_protocol_version => 0,
         security_token => #{
@@ -108,7 +109,7 @@ create_session_request() ->
     ToBeEncoded = #{
         client_certificate => undefined,
         client_description => #{
-            application_name => #localized_text{text = <<"Pure Python Client">>},
+            application_name => #opcua_localized_text{text = <<"Pure Python Client">>},
             application_type => client,
             application_uri => <<"urn:freeopcua:client">>,
             discovery_profile_uri => undefined,
@@ -123,7 +124,7 @@ create_session_request() ->
         endpoint_url => <<"opc.tcp://localhost:4840">>,
         max_response_message_size => 0,
         request_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             audit_entry_id => undefined,
             authentication_token => #opcua_node_id{},
             request_handle => 2,
@@ -157,9 +158,9 @@ create_session_response() ->
         authentication_token => #opcua_node_id{value = 1001},
         max_request_message_size => 65536,
         response_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             request_handle => 2,
-            service_diagnostics => #diagnostic_info{},
+            service_diagnostics => #opcua_diagnostic_info{},
             service_result => good,
             string_table => [],
             timestamp => 132061913263448480
@@ -172,7 +173,7 @@ create_session_response() ->
             security_mode => none,
             security_policy_uri => <<"http://opcfoundation.org/UA/SecurityPolicy#None">>,
             server => #{
-                application_name => #localized_text{text = <<"FreeOpcUa Python Server">>},
+                application_name => #opcua_localized_text{text = <<"FreeOpcUa Python Server">>},
                 application_type => client_and_server,
                 application_uri => <<"urn:freeopcua:python:server">>,
                 discovery_profile_uri => undefined,
@@ -261,7 +262,7 @@ activate_session_request() ->
         client_software_certificates => [],
         locale_ids => [<<"en">>],
         request_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             audit_entry_id => undefined,
             authentication_token => #opcua_node_id{value = 1001},
             request_handle => 3,
@@ -269,7 +270,7 @@ activate_session_request() ->
             timeout_hint => 1000,
             timestamp => 132061913263467530
         },
-        user_identity_token => #extension_object{
+        user_identity_token => #opcua_extension_object{
                                 type_id = #opcua_node_id{value = 319},
                                 encoding = byte_string,
                                 body = #{policy_id => <<"anonymous">>}
@@ -293,7 +294,7 @@ activate_session_request2() ->
     NodeId = #opcua_node_id{value = 465},
     ToBeEncoded = #{
         request_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             audit_entry_id => undefined,
             authentication_token =>
                 #opcua_node_id{type = opaque,
@@ -312,7 +313,7 @@ activate_session_request2() ->
         client_software_certificates => [],
         locale_ids => [<<"en">>],
         user_identity_token =>
-            #extension_object{
+            #opcua_extension_object{
                 type_id = #opcua_node_id{value = 319},
                 encoding = byte_string,
                 body = #{policy_id => <<"anonymous">>}
@@ -335,9 +336,9 @@ activate_session_response() ->
     ToBeEncoded = #{
         diagnostic_infos => [],
         response_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             request_handle => 3,
-            service_diagnostics => #diagnostic_info{},
+            service_diagnostics => #opcua_diagnostic_info{},
             service_result => good,
             string_table => [],
             timestamp => 132061913263475920
@@ -362,31 +363,31 @@ read_request() ->
         nodes_to_read => [
             #{
                 attribute_id => 4,
-                data_encoding => #qualified_name{},
+                data_encoding => #opcua_qualified_name{},
                 index_range => undefined,
                 node_id => #opcua_node_id{value = 84}
             },
             #{
                 attribute_id => 3,
-                data_encoding => #qualified_name{},
+                data_encoding => #opcua_qualified_name{},
                 index_range => undefined,
                 node_id => #opcua_node_id{value = 84}
             },
             #{
                 attribute_id => 1,
-                data_encoding => #qualified_name{},
+                data_encoding => #opcua_qualified_name{},
                 index_range => undefined,
                 node_id => #opcua_node_id{value = 84}
             },
             #{
                 attribute_id => 2,
-                data_encoding => #qualified_name{},
+                data_encoding => #opcua_qualified_name{},
                 index_range => undefined,
                 node_id => #opcua_node_id{value = 84}
             }
         ],
         request_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             audit_entry_id => undefined,
             authentication_token => #opcua_node_id{value = 1001},
             request_handle => 4,
@@ -410,21 +411,21 @@ read_response() ->
     ToBeEncoded = #{
         diagnostic_infos => [],
         response_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             request_handle => 4,
-            service_diagnostics => #diagnostic_info{},
+            service_diagnostics => #opcua_diagnostic_info{},
             service_result => good,
             string_table => [],
             timestamp => 132061913263494150
         },
         results => [
-            #data_value{value = #variant{type = localized_text,
-                                         value = #localized_text{text = <<"Root">>}}},
-            #data_value{value = #variant{type = qualified_name,
-                                         value = #qualified_name{name = <<"Root">>}}},
-            #data_value{value = #variant{type = node_id,
+            #opcua_data_value{value = #opcua_variant{type = localized_text,
+                                         value = #opcua_localized_text{text = <<"Root">>}}},
+            #opcua_data_value{value = #opcua_variant{type = qualified_name,
+                                         value = #opcua_qualified_name{name = <<"Root">>}}},
+            #opcua_data_value{value = #opcua_variant{type = node_id,
                                          value = #opcua_node_id{value = 84}}},
-            #data_value{value = #variant{type = int32,
+            #opcua_data_value{value = #opcua_variant{type = int32,
                                          value = 1}}
         ]
     },
@@ -448,7 +449,7 @@ browse_request() ->
             result_mask => 63
         }],
         request_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             audit_entry_id => undefined,
             authentication_token => #opcua_node_id{value = 1001},
             request_handle => 5,
@@ -475,9 +476,9 @@ browse_response() ->
     ToBeEncoded = #{
         diagnostic_infos => [],
         response_header => #{
-            additional_header => #extension_object{},
+            additional_header => #opcua_extension_object{},
             request_handle => 5,
-            service_diagnostics => #diagnostic_info{},
+            service_diagnostics => #opcua_diagnostic_info{},
             service_result => good,
             string_table => [],
             timestamp => 132061913263644760
@@ -486,31 +487,31 @@ browse_response() ->
             continuation_point => undefined,
             references => [
                 #{
-                    browse_name => #qualified_name{name = <<"Objects">>},
-                    display_name => #localized_text{text = <<"Objects">>},
+                    browse_name => #opcua_qualified_name{name = <<"Objects">>},
+                    display_name => #opcua_localized_text{text = <<"Objects">>},
                     is_forward => true,
                     node_class => object,
-                    node_id => #expanded_node_id{node_id = #opcua_node_id{value = 85}},
+                    node_id => #opcua_expanded_node_id{node_id = #opcua_node_id{value = 85}},
                     reference_type_id => #opcua_node_id{value = 35},
-                    type_definition => #expanded_node_id{node_id = #opcua_node_id{value = 61}}
+                    type_definition => #opcua_expanded_node_id{node_id = #opcua_node_id{value = 61}}
                 },
                 #{
-                    browse_name => #qualified_name{name = <<"Types">>},
-                    display_name => #localized_text{text = <<"Types">>},
+                    browse_name => #opcua_qualified_name{name = <<"Types">>},
+                    display_name => #opcua_localized_text{text = <<"Types">>},
                     is_forward => true,
                     node_class => object,
-                    node_id => #expanded_node_id{node_id = #opcua_node_id{value = 86}},
+                    node_id => #opcua_expanded_node_id{node_id = #opcua_node_id{value = 86}},
                     reference_type_id => #opcua_node_id{value = 35},
-                    type_definition => #expanded_node_id{node_id = #opcua_node_id{value = 61}}
+                    type_definition => #opcua_expanded_node_id{node_id = #opcua_node_id{value = 61}}
                 },
                 #{
-                    browse_name => #qualified_name{name = <<"Views">>},
-                    display_name => #localized_text{text = <<"Views">>},
+                    browse_name => #opcua_qualified_name{name = <<"Views">>},
+                    display_name => #opcua_localized_text{text = <<"Views">>},
                     is_forward => true,
                     node_class => object,
-                    node_id => #expanded_node_id{node_id = #opcua_node_id{value = 87}},
+                    node_id => #opcua_expanded_node_id{node_id = #opcua_node_id{value = 87}},
                     reference_type_id => #opcua_node_id{value = 35},
-                    type_definition => #expanded_node_id{node_id = #opcua_node_id{value = 61}}
+                    type_definition => #opcua_expanded_node_id{node_id = #opcua_node_id{value = 61}}
                 }
             ],
             status_code => good

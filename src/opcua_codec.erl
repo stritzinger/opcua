@@ -4,8 +4,8 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--include("opcua_database.hrl").
--include("opcua_codec.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -20,7 +20,7 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec node_id(node_spec()) -> node_id().
+-spec node_id(opcua:node_spec()) -> opcua:node_id().
 node_id(#opcua_node_id{} = NodeId) -> NodeId;
 node_id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
 node_id(Name) when is_atom(Name) -> #opcua_node_id{type = string, value = Name};
@@ -28,27 +28,27 @@ node_id(Name) when is_binary(Name) -> #opcua_node_id{type = string, value = Name
 node_id({NS, Num}) when is_integer(NS), is_integer(Num), NS >= 0, Num > 0 ->
     #opcua_node_id{ns = NS, value = Num}.
 
--spec pack_variant(node_spec(), term()) -> #variant{}.
+-spec pack_variant(opcua:node_spec(), term()) -> opcua:variant().
 pack_variant(#opcua_node_id{ns = 0, type = numeric, value = Num}, Value)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
-    #variant{type = builtin_type_name(Num), value = Value};
+    #opcua_variant{type = builtin_type_name(Num), value = Value};
 pack_variant(#opcua_node_id{ns = 0, type = string, value = Name}, Value)
   when ?IS_BUILTIN_TYPE_NAME(Name) ->
-    #variant{type = Name, value = Value};
+    #opcua_variant{type = Name, value = Value};
 pack_variant(#opcua_node_id{} = NodeId, Value) ->
     case opcua_database:lookup_schema(NodeId) of
         undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
-        #enum{fields = Fields} ->
-            [Idx] = [I || #field{name = N, value = I} <- Fields, Value =:= N],
-            #variant{type = int32, value = Idx};
+        #opcua_enum{fields = Fields} ->
+            [Idx] = [I || #opcua_field{name = N, value = I} <- Fields, Value =:= N],
+            #opcua_variant{type = int32, value = Idx};
         _Other ->
-            ExtObj = #extension_object{type_id = NodeId, encoding = byte_string, body = Value},
-            #variant{type = extension_object, value = ExtObj}
+            ExtObj = #opcua_extension_object{type_id = NodeId, encoding = byte_string, body = Value},
+            #opcua_variant{type = extension_object, value = ExtObj}
     end;
 pack_variant(NodeSpec, Value) ->
     pack_variant(node_id(NodeSpec), Value).
 
--spec unpack_variant(node_spec(), #variant{}) -> term().
+-spec unpack_variant(opcua:node_spec(), opcua:variant()) -> term().
 unpack_variant(_Type, _Value) ->
     throw(bad_not_implemented).
 

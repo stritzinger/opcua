@@ -10,6 +10,7 @@
 -export([add_nodes/1]).
 -export([add_references/1]).
 -export([get_node/1]).
+-export([is_subtype/2]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -22,8 +23,12 @@
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--include("opcua_database.hrl").
--include("opcua_codec.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
+
+%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-type expand_fun() :: fun((term()) -> [term()]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -38,8 +43,15 @@ add_references(References) ->
     gen_server:call(?MODULE, {add_references, References}).
 
 get_node(NodeId) ->
-    {NodeId, Node} = digraph:vertex(persistent_term:get(?MODULE), NodeId),
-    Node.
+    case digraph:vertex(persistent_term:get(?MODULE), NodeId) of
+        {NodeId, Node} -> Node;
+        _ -> undefined
+    end.
+
+%% @doc Returns if the given OPCUA type node id is a subtype of the second
+%% given OPCUA type node id.
+-spec is_subtype(opcua:node_id(), opcua:node_id()) -> boolean().
+is_subtype(TypeId, SuperTypeId) -> maps:is_key(SuperTypeId, supertypes(TypeId)).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -64,3 +76,26 @@ handle_info(Info, _State) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Call given function for all given values expanding the value to a new set
+%% of value until there is nothing more to expand.
+-spec expand(expand_fun(), [term()]) -> [term()].
+expand(ExpFun, Values) ->
+    expand(ExpFun, Values, #{}).
+
+expand(_ExpFun, [], Acc) -> Acc;
+expand(ExpFun, [V | Rest], Acc) ->
+    expand(ExpFun, Rest, expand(ExpFun, ExpFun(V), Acc#{V => true})).
+
+
+%% Returns a map where the leys are the node id of all the OPCUA supertypes
+%% of the given type id, including the given type id.
+-spec supertypes(opcua:node_id()) -> #{opcua:node_id() => true}.
+supertypes(TypeNodeId) ->
+    expand(fun(Id) ->
+        #opcua_node{references = Refs} = opcua_address_space:get_node(Id),
+        [SubId || #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_SUBTYPE),
+            is_forward = false,
+            target_id = SubId} <- Refs]
+    end, [TypeNodeId]).

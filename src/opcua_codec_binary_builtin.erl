@@ -1,11 +1,9 @@
 -module(opcua_codec_binary_builtin).
 
--include("opcua_database.hrl").
--include("opcua_codec.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 -export([encode/2, decode/2]).
--export([decode_masked/4]).
--export([encode_masked/1]).
 
 decode(boolean, <<0, T/binary>>) -> {false, T};
 decode(boolean, <<_Bin:1/binary, T/binary>>) -> {true, T};
@@ -95,9 +93,9 @@ decode_expanded_node_id(Mask, Bin) ->
     Types = [{namespace_uri, string, undefined},
              {server_index, uint32, undefined}],
     BooleanMask = [NamespaceUriFlag, ServerIndexFlag],
-    RecordInfo = {expanded_node_id, record_info(fields, expanded_node_id)},
+    RecordInfo = {opcua_expanded_node_id, record_info(fields, opcua_expanded_node_id)},
     {ExpandedNodeId, T1} = decode_masked(RecordInfo, BooleanMask, Types, T),
-    {ExpandedNodeId#expanded_node_id{node_id = NodeId}, T1}.
+    {ExpandedNodeId#opcua_expanded_node_id{node_id = NodeId}, T1}.
 
 decode_diagnostic_info(<<0:1, Mask:7/bits>>, Bin) ->
     Types = [{symbolic_id, int32, undefined},
@@ -107,17 +105,17 @@ decode_diagnostic_info(<<0:1, Mask:7/bits>>, Bin) ->
              {additional_info, string, undefined},
              {inner_status_code, status_code, undefined},
              {inner_diagnostic_info, diagnostic_info, undefined}],
-    RecordInfo = {diagnostic_info, record_info(fields, diagnostic_info)},
+    RecordInfo = {opcua_diagnostic_info, record_info(fields, opcua_diagnostic_info)},
     decode_masked(RecordInfo, Mask, Types, Bin).
 
 decode_qualified_name(Bin) ->
     {[NamespaceIndex, Name], T}  = decode_multi([uint16, string], Bin),
-    {#qualified_name{ns = NamespaceIndex, name = Name}, T}.
+    {#opcua_qualified_name{ns = NamespaceIndex, name = Name}, T}.
 
 decode_localized_text(<<0:6, Mask:2/bits>>, Bin) ->
     Types = [{locale, string, undefined},
              {text, string, undefined}],
-    RecordInfo = {localized_text, record_info(fields, localized_text)},
+    RecordInfo = {opcua_localized_text, record_info(fields, opcua_localized_text)},
     decode_masked(RecordInfo, Mask, Types, Bin).
 
 decode_multi(TypeList, Bin) ->
@@ -170,8 +168,8 @@ encode_node_id(NodeSpec) ->
     encode_node_id(opcua_codec:node_id(NodeSpec)).
 
 encode_expanded_node_id(#opcua_node_id{} = NodeId) ->
-    encode_expanded_node_id(#expanded_node_id{node_id = NodeId});
-encode_expanded_node_id(#expanded_node_id{node_id = #opcua_node_id{ns = NS} = NodeId,
+    encode_expanded_node_id(#opcua_expanded_node_id{node_id = NodeId});
+encode_expanded_node_id(#opcua_expanded_node_id{node_id = #opcua_node_id{ns = NS} = NodeId,
                                           namespace_uri = NamespaceUri,
                                           server_index = ServerIndex}) ->
     {NamespaceUriFlag, BinNamespaceUri, NS2}
@@ -187,28 +185,28 @@ encode_expanded_node_id(#expanded_node_id{node_id = #opcua_node_id{ns = NS} = No
     <<Mask:8, Rest/binary>> = encode_node_id(NodeId#opcua_node_id{ns = NS2}),
     [<<(Mask + NamespaceUriFlag + ServerIndexFlag):8>>, Rest,
      BinNamespaceUri, BinServerIndex];
-encode_expanded_node_id(#expanded_node_id{node_id = NodeSpec} = ExtNodeId) ->
+encode_expanded_node_id(#opcua_expanded_node_id{node_id = NodeSpec} = ExtNodeId) ->
     NodeId = opcua_codec:node_id(NodeSpec),
-    encode_expanded_node_id(ExtNodeId#expanded_node_id{node_id = NodeId});
+    encode_expanded_node_id(ExtNodeId#opcua_expanded_node_id{node_id = NodeId});
 encode_expanded_node_id(NodeSpec) ->
     encode_expanded_node_id(opcua_codec:node_id(NodeSpec)).
 
-encode_diagnostic_info(DI = #diagnostic_info{}) ->
-    Types = [{int32, DI#diagnostic_info.symbolic_id},
-             {int32, DI#diagnostic_info.namespace_uri},
-             {int32, DI#diagnostic_info.locale},
-             {int32, DI#diagnostic_info.localized_text},
-             {string, DI#diagnostic_info.additional_info},
-             {status_code, DI#diagnostic_info.inner_status_code},
-             {diagnostic_info, DI#diagnostic_info.inner_diagnostic_info}],
+encode_diagnostic_info(DI = #opcua_diagnostic_info{}) ->
+    Types = [{int32, DI#opcua_diagnostic_info.symbolic_id},
+             {int32, DI#opcua_diagnostic_info.namespace_uri},
+             {int32, DI#opcua_diagnostic_info.locale},
+             {int32, DI#opcua_diagnostic_info.localized_text},
+             {string, DI#opcua_diagnostic_info.additional_info},
+             {status_code, DI#opcua_diagnostic_info.inner_status_code},
+             {diagnostic_info, DI#opcua_diagnostic_info.inner_diagnostic_info}],
     encode_masked(Types).
 
-encode_qualified_name(#qualified_name{ns = NamespaceIndex, name = Name}) ->
+encode_qualified_name(#opcua_qualified_name{ns = NamespaceIndex, name = Name}) ->
     encode_multi([{uint16, NamespaceIndex}, {string, Name}]).
 
 encode_localized_text(LocalizedText) when is_binary(LocalizedText) ->
-    encode_localized_text(#localized_text{locale = undefined, text = LocalizedText});
-encode_localized_text(#localized_text{locale = Locale, text = Text}) ->
+    encode_localized_text(#opcua_localized_text{locale = undefined, text = LocalizedText});
+encode_localized_text(#opcua_localized_text{locale = Locale, text = Text}) ->
     Types = [{string, Locale}, {string, Text}],
     encode_masked(Types).
 
