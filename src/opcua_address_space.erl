@@ -10,6 +10,7 @@
 -export([add_nodes/1]).
 -export([add_references/1]).
 -export([get_node/1]).
+-export([get_references/1, get_references/2]).
 -export([is_subtype/2]).
 
 %% Behaviour gen_server callback functions
@@ -47,6 +48,22 @@ get_node(NodeId) ->
         {NodeId, Node} -> Node;
         _ -> undefined
     end.
+
+get_references(OriginId) ->
+    get_references(OriginId, []).
+
+get_references(OriginId, Opts) ->
+    Graph = persistent_term:get(?MODULE),
+    FilterFun = make_reference_filter(OriginId, Opts),
+    MakeRefFun = fun({_, From, To, Type}) ->
+        #opcua_reference{
+            target_id = To,
+            reference_type_id = Type,
+            is_forward = From =:= OriginId
+        }
+    end,
+    Edges = [digraph:edge(Graph, I) || I <- digraph:edges(Graph, OriginId)],
+    [MakeRefFun(E) || E <- Edges, FilterFun(E)].
 
 %% @doc Returns if the given OPCUA type node id is a subtype of the second
 %% given OPCUA type node id.
@@ -99,3 +116,28 @@ supertypes(TypeNodeId) ->
             is_forward = false,
             target_id = SubId} <- Refs]
     end, [TypeNodeId]).
+
+make_reference_filter(OriginId, Opts) ->
+    Subtypes = proplists:is_defined(include_subtypes, Opts),
+    RefTypeId = proplists:get_value(type, Opts),
+    Direction = proplists:get_value(direction, Opts),
+    case {RefTypeId, Subtypes, Direction} of
+        {undefined, _, forward} ->
+            fun({_, I, _, _}) -> I =:= OriginId end;
+        {undefined, _, inverse} ->
+            fun({_, _, I, _}) -> I =:= OriginId end;
+        {undefined, _, _} ->
+            fun({_, _, _, _}) -> true end;
+        {Id, false, forward} ->
+            fun({_, I, _, T}) -> I =:= OriginId andalso T =:= Id end;
+        {Id, false, inverse} ->
+            fun({_, _, I, T}) -> I =:= OriginId andalso T =:= Id end;
+        {Id, false, _} ->
+            fun({_, _, _, T}) -> T =:= Id end;
+        {Id, true, forward} ->
+            fun({_, I, _, T}) -> I =:= OriginId andalso is_subtype(T, Id) end;
+        {Id, true, inverse} ->
+            fun({_, _, I, T}) -> I =:= OriginId andalso is_subtype(T, Id) end;
+        {Id, true, _} ->
+            fun({_, _, _, T}) -> is_subtype(T, Id) end
+    end.
