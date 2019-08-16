@@ -32,6 +32,8 @@ attribute(node_class, Node) ->
     class(Node);
 attribute(browse_name, #opcua_node{node_id = ?NID_NS(NS), browse_name = V}) ->
     #opcua_qualified_name{ns = NS, name = V};
+attribute(display_name, #opcua_node{display_name = undefined, browse_name = V}) ->
+    #opcua_localized_text{text = V};
 attribute(display_name, #opcua_node{display_name = V}) ->
     #opcua_localized_text{text = V};
 attribute(description, #opcua_node{description = V}) ->

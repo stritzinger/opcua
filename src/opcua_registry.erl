@@ -104,26 +104,17 @@ next_secure_channel_id(#state{next_secure_channel_id = ?MAX_SECURE_CHANNEL_ID} =
 next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
     {Id, State#state{next_secure_channel_id = Id + 1}}.
 
-static_perform(Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = false}) ->
-    ?LOG_DEBUG("Browsing node ~w's ~w ~w references...",
-               [(Node#opcua_node.node_id)#opcua_node_id.value, BaseId#opcua_node_id.value, Dir]),
-    #opcua_node{references = AllRefs} = Node,
-    IsForward = Dir =:= forward orelse Dir =:= both,
-    ResRefs = [post_process_ref(R)
-               || R = #opcua_reference{reference_type_id = I,
-                                       is_forward = F} <- AllRefs,
-                  I =:= BaseId, F =:= IsForward],
-    ?LOG_DEBUG("    -> ~p", [ResRefs]),
-    #{status => good, references => ResRefs};
-static_perform(Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = true}) ->
-    ?LOG_DEBUG("Browsing node ~w's ~w and subtypes ~w references...",
-               [(Node#opcua_node.node_id)#opcua_node_id.value, BaseId#opcua_node_id.value, Dir]),
-    #opcua_node{references = AllRefs} = Node,
-    IsForward = Dir =:= forward orelse Dir =:= both,
-    ResRefs = [post_process_ref(R)
-               || R = #opcua_reference{reference_type_id = I,
-                                       is_forward = F} <- AllRefs,
-                  opcua_address_space:is_subtype(I, BaseId), F =:= IsForward],
+static_perform(Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = SubTypes}) ->
+    #opcua_node{node_id = NodeId} = Node,
+    ?LOG_DEBUG("Browsing node ~w's ~w and ~w references; with subtypes: ~w...",
+               [NodeId#opcua_node_id.value, BaseId#opcua_node_id.value, Dir, SubTypes]),
+    BaseOpts = [{type, BaseId}, {direction, Dir}],
+    Opts = case SubTypes of
+        true -> [include_subtypes | BaseOpts];
+        false -> BaseOpts
+    end,
+    Refs = opcua_address_space:get_references(NodeId, Opts),
+    ResRefs = [post_process_ref(R) || R <- Refs],
     ?LOG_DEBUG("    -> ~p", [ResRefs]),
     #{status => good, references => ResRefs};
 static_perform(Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
@@ -161,19 +152,40 @@ post_process_ref(Ref) ->
 %-- HARDCODED MODEL ------------------------------------------------------------
 
 setup_static_nodes() ->
-    A = #opcua_node{
-        node_id = ?NNID(50000),
-        browse_name = <<"Stritzinger">>,
-        display_name = <<"Stritzinger">>,
-        node_class = #opcua_object{},
-        references = [
-        ]
-    },
-    R2A = #opcua_reference{
-        reference_type_id = ?NNID(35),
-        is_forward = true,
-        target_id = ?NNID(50000)
-    },
-    opcua_address_space:add_nodes([A]),
-    opcua_address_space:add_references([{?NNID(84), R2A}]),
+    Nodes = [
+        #opcua_node{
+            node_id = ?NNID(50000),
+            browse_name = <<"Stritzinger">>,
+            node_class = #opcua_object{}
+        },
+        #opcua_node{
+            node_id = ?NNID(50001),
+            browse_name = <<"Grisp">>,
+            node_class = #opcua_object{}
+        },
+        #opcua_node{
+            node_id = ?NNID(50002),
+            browse_name = <<"Sensors">>,
+            node_class = #opcua_object{}
+        }
+    ],
+    Refs = [
+        {?NNID(85), #opcua_reference{
+            reference_type_id = ?NNID(?REF_ORGANIZES),
+            is_forward = true,
+            target_id = ?NNID(50000)
+        }},
+        {?NNID(50000), #opcua_reference{
+            reference_type_id = ?NNID(?REF_ORGANIZES),
+            is_forward = true,
+            target_id = ?NNID(50001)
+        }},
+        {?NNID(50001), #opcua_reference{
+            reference_type_id = ?NNID(?REF_ORGANIZES),
+            is_forward = true,
+            target_id = ?NNID(50002)
+        }}
+    ],
+    opcua_address_space:add_nodes(Nodes),
+    opcua_address_space:add_references(Refs),
     ok.
