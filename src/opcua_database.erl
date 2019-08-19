@@ -104,6 +104,7 @@ load_nodesets() ->
     NodeSetFilePath = filename:join([NodeSetDir, NodeSetFileName]),
     opcua_database_data_types:setup(NodeSetFilePath),
     opcua_database_encodings:setup(NodeSetFilePath),
+    erlang:garbage_collect(),
     opcua_database_nodes:setup(NodeSetDir),
     ok.
 
