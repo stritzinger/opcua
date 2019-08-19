@@ -53,10 +53,11 @@ release_secure_channel(ChannelId) ->
     gen_server:call(?SERVER, {release_secure_channel, ChannelId}).
 
 perform(NodeSpec, Commands) ->
-    case opcua_address_space:get_node(opcua_database:lookup_id(NodeSpec)) of
-        undefined -> {error, bad_node_id_unknown};
-        #opcua_node{} = Node ->
-            [static_perform(Node, C) || C <- Commands]
+    case get_node(opcua_database:lookup_id(NodeSpec)) of
+        undefined ->
+            [{error, bad_node_id_unknown} || _ <- Commands];
+        {Mode, #opcua_node{} = Node} ->
+            [static_perform(Mode, Node, C) || C <- Commands]
     end.
 
 
@@ -98,13 +99,52 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+get_resolver_node(NodeId) ->
+    case application:get_env(opcua, resolver) of
+        undefined -> undefined;
+        {ok, Mod} -> Mod:get_node(NodeId)
+    end.
+
+get_resolver_refs(NodeId, Opts) ->
+    case application:get_env(opcua, resolver) of
+        undefined -> [];
+        {ok, Mod} -> Mod:get_references(NodeId, opts_to_map(Opts))
+    end.
+
+opts_to_map(Opts) ->
+    OptMap = case proplists:get_value(type, Opts) of
+        undefined -> #{
+            direction => proplists:get_value(direction, Opts, forward)
+        };
+        TypeNodeId -> #{
+                type => TypeNodeId,
+                include_subtypes => proplists:is_defined(include_subtypes, Opts),
+                direction => proplists:get_value(direction, Opts, forward)
+            }
+    end.
+
+get_node(NodeId) ->
+    case get_resolver_node(NodeId) of
+        undefined ->
+            case opcua_address_space:get_node(NodeId) of
+                undefined -> undefined;
+                #opcua_node{} = Node -> {static, Node}
+            end;
+        #opcua_node{} = Node -> {dynamic, Node}
+    end.
+
+get_references(static, NodeId, Opts) ->
+    opcua_address_space:get_references(NodeId, Opts);
+get_references(dynamic, NodeId, Opts) ->
+    get_resolver_refs(NodeId, Opts).
+
 next_secure_channel_id(#state{next_secure_channel_id = ?MAX_SECURE_CHANNEL_ID} = State) ->
     {1, State#state{next_secure_channel_id = 2}};
 
 next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
     {Id, State#state{next_secure_channel_id = Id + 1}}.
 
-static_perform(Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = SubTypes}) ->
+static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = SubTypes}) ->
     #opcua_node{node_id = NodeId} = Node,
     ?LOG_DEBUG("Browsing node ~w's ~w and ~w references; with subtypes: ~w...",
                [NodeId#opcua_node_id.value, BaseId#opcua_node_id.value, Dir, SubTypes]),
@@ -113,11 +153,11 @@ static_perform(Node, #opcua_browse_command{type = BaseId, direction = Dir, subty
         true -> [include_subtypes | BaseOpts];
         false -> BaseOpts
     end,
-    Refs = opcua_address_space:get_references(NodeId, Opts),
+    Refs = get_references(Mode, NodeId, Opts),
     ResRefs = [post_process_ref(R) || R <- Refs],
     ?LOG_DEBUG("    -> ~p", [ResRefs]),
     #{status => good, references => ResRefs};
-static_perform(Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
+static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
     ?LOG_DEBUG("Reading node ~w's attribute ~w...",
                [(Node#opcua_node.node_id)#opcua_node_id.value, Attr]),
     Result = try {opcua_node:attribute_type(Attr, Node),
@@ -133,7 +173,7 @@ static_perform(Node, #opcua_read_command{attr = Attr, range = undefined} = _Comm
     end,
     ?LOG_DEBUG("    -> ~p", [Result]),
     Result;
-static_perform(_Node, _Command) ->
+static_perform(_Mode, _Node, _Command) ->
     {error, bad_not_implemented}.
 
 post_process_ref(Ref) ->
@@ -141,8 +181,17 @@ post_process_ref(Ref) ->
         reference_type_id = RefId,
         target_id = TargetId
     } = Ref,
-    TargetNode = opcua_address_space:get_node(TargetId),
-    BaseObj = #{reference_type_id => RefId},
+    {TargetMode, TargetNode} = get_node(TargetId),
+    RefOpts = [forward, {type, ?NNID(?REF_HAS_TYPE_DEFINITION)}, include_subtypes],
+    TargetRefs = get_references(TargetMode, TargetId, RefOpts),
+    TypeDef = case TargetRefs of
+        [] -> ?UNDEF_EXT_NODE_ID;
+        [#opcua_reference{target_id = TypeId} | _] -> ?XID(TypeId)
+    end,
+    BaseObj = #{
+        type => RefId,
+        type_definition => TypeDef
+    },
     Fields = [node_id, browse_name, display_name, node_class],
     lists:foldl(fun(Key, Map) ->
             Map#{Key => opcua_node:attribute(Key, TargetNode)}
@@ -152,40 +201,11 @@ post_process_ref(Ref) ->
 %-- HARDCODED MODEL ------------------------------------------------------------
 
 setup_static_nodes() ->
-    Nodes = [
-        #opcua_node{
-            node_id = ?NNID(50000),
-            browse_name = <<"Stritzinger">>,
-            node_class = #opcua_object{}
-        },
-        #opcua_node{
-            node_id = ?NNID(50001),
-            browse_name = <<"Grisp">>,
-            node_class = #opcua_object{}
-        },
-        #opcua_node{
-            node_id = ?NNID(50002),
-            browse_name = <<"Sensors">>,
-            node_class = #opcua_object{}
-        }
-    ],
-    Refs = [
-        {?NNID(85), #opcua_reference{
-            reference_type_id = ?NNID(?REF_ORGANIZES),
-            is_forward = true,
-            target_id = ?NNID(50000)
-        }},
-        {?NNID(50000), #opcua_reference{
-            reference_type_id = ?NNID(?REF_ORGANIZES),
-            is_forward = true,
-            target_id = ?NNID(50001)
-        }},
-        {?NNID(50001), #opcua_reference{
-            reference_type_id = ?NNID(?REF_ORGANIZES),
-            is_forward = true,
-            target_id = ?NNID(50002)
-        }}
-    ],
-    opcua_address_space:add_nodes(Nodes),
-    opcua_address_space:add_references(Refs),
-    ok.
+    case application:get_env(opcua, resolver) of
+        undefined -> ok;
+        {ok, Mod} ->
+            {ok, Nodes, Refs} = Mod:init(),
+            opcua_address_space:add_nodes(Nodes),
+            opcua_address_space:add_references(Refs),
+            ok
+    end.
