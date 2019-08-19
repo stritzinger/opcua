@@ -23,6 +23,8 @@
 -spec node_id(opcua:node_spec()) -> opcua:node_id().
 node_id(#opcua_node_id{} = NodeId) -> NodeId;
 node_id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
+node_id(Name) when is_atom(Name), ?IS_BUILTIN_TYPE_NAME(Name) ->
+    #opcua_node_id{value = builtin_type_id(Name)};
 node_id(Name) when is_atom(Name) -> #opcua_node_id{type = string, value = Name};
 node_id(Name) when is_binary(Name) -> #opcua_node_id{type = string, value = Name};
 node_id({NS, Num}) when is_integer(NS), is_integer(Num), NS >= 0, Num > 0 ->

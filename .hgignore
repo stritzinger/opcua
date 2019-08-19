@@ -3,3 +3,7 @@ syntax: glob
 
 _build
 *.lock
+.rebar3
+.tool-versions
+ebin/*
+

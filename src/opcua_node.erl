@@ -45,9 +45,9 @@ attribute(description, #opcua_node{description = V}) ->
 % attribute(access_restrictions, #opcua_node{access_restrictions = V}) -> V;
 % %% Object Node Class Attributes
 % attribute(event_notifier, #opcua_node{node_class = #opcua_object{event_notifier = V}}) -> V;
-% %% Variable Node Class Attributes
-% attribute(value, #opcua_node{node_class = #opcua_variable{value = V}}) -> V;
-% attribute(data_type, #opcua_node{node_class = #opcua_variable{data_type = V}}) -> V;
+%% Variable Node Class Attributes
+attribute(value, #opcua_node{node_class = #opcua_variable{value = V}}) -> V;
+attribute(data_type, #opcua_node{node_class = #opcua_variable{data_type = V}}) -> V;
 % attribute(value_rank, #opcua_node{node_class = #opcua_variable{value_rank = V}}) -> V;
 % attribute(array_dimensions, #opcua_node{node_class = #opcua_variable{array_dimensions = V}}) -> V;
 % attribute(access_level, #opcua_node{node_class = #opcua_variable{access_level = V}}) -> V;
@@ -91,8 +91,8 @@ attribute_type(description, _Node) -> localized_text;
 % attribute_type(inverse_name, _Node) -> boolean;
 % attribute_type(contains_no_loops, _Node) -> boolean;
 % attribute_type(event_notifier, _Node) -> byte_string;
-% attribute_type(value, _Node) -> variant;
-% attribute_type(data_type, _Node) -> int32;
+attribute_type(value, #opcua_node{node_class = #opcua_variable{data_type = T}}) -> T;
+attribute_type(data_type, _Node) -> node_id;
 % attribute_type(value_rank, _Node) -> int32;
 % attribute_type(array_dimensions, _Node) -> int32;
 % attribute_type(access_level, _Node) -> undefined;
