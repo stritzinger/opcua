@@ -6,7 +6,7 @@
 -include_lib("kernel/include/logger.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
--include("opcua.hrl").
+-include_lib("opcua/include/opcua.hrl").
 -include("opcua_internal.hrl").
 
 
@@ -18,6 +18,9 @@
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Number of bytes to use as binary term size header
+-define(SIZE_HEADER, 32).
 
 -define(IS_NODE(Name),
     Name =:= <<"UAObject">>;
@@ -34,15 +37,13 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 setup(Dir) ->
-    Nodes = load_nodes(Dir),
-    References = load_references(Dir),
-    opcua_address_space:add_nodes(Nodes),
-    opcua_address_space:add_references(References).
+    load_nodes(Dir),
+    load_references(Dir).
 
 parse(File) ->
     {XML, []} = xmerl_scan:file(File, [{space, normalize}]),
-    Nodes = parse_node_set(xml_to_simple(XML)),
-    References = extract_references(Nodes),
+    FullNodes = parse_node_set(xml_to_simple(XML)),
+    {Nodes, References} = extract_references(FullNodes),
     Root = filename:rootname(File),
     write_nodes(Nodes, Root),
     write_references(References, Root),
@@ -228,39 +229,62 @@ xml_attrs_to_map(Attrs) ->
         #xmlAttribute{name = Name, value = Value} <- Attrs
     ]).
 
-extract_references(Nodes) ->
-    lists:flatten(extract_references(Nodes, [])).
+extract_references(FullNodes) ->
+    {Nodes, References} = lists:mapfoldl(fun extract_references/2, [], FullNodes),
+    {Nodes, lists:flatten(References)}.
 
-extract_references([#opcua_node{node_id = NodeId, references = NR}|Nodes], Refs) ->
-    All = [resolve_reference({NodeId, R}) || R <- NR],
-    extract_references(Nodes, [All|Refs]);
-extract_references([], Refs) ->
-    Refs.
+extract_references(#opcua_node{node_id = ID, references = NR} = Node, Refs) ->
+    All = [resolve_reference({ID, R}) || R <- NR],
+    {Node#opcua_node{references = []}, [All|Refs]}.
 
 resolve_reference({Source, #opcua_reference{is_forward = false, target_id = Target} = Reference}) ->
     {Target, Reference#opcua_reference{target_id = Source, is_forward = true}};
 resolve_reference(Ref) ->
     Ref.
 
-load_nodes(Dir) -> load_terms(filename:join(Dir, "**/*.nodes.term")).
+load_nodes(Dir) ->
+    load_all_terms(filename:join(Dir, "**/*.nodes.bterm"), fun(Node) ->
+        opcua_address_space:add_nodes([Node])
+    end).
 
-load_references(Dir) -> load_terms(filename:join(Dir, "**/*.references.term")).
+load_references(Dir) ->
+    load_all_terms(filename:join(Dir, "**/*.references.bterm"), fun(Reference) ->
+        opcua_address_space:add_references([Reference])
+    end).
 
-load_terms(Pattern) ->
-    [T ||
-        F <- filelib:wildcard(Pattern),
-        {ok, Terms} <- [file:consult(F)],
-        T <- Terms
-    ].
+load_all_terms(Pattern, Fun) ->
+    [load_terms(F, Fun) || F <- filelib:wildcard(Pattern)].
 
-write_nodes(Nodes, Root) -> write_terms(Nodes, Root ++ ".nodes.term").
+load_terms(Filename, Fun) ->
+    ?LOG_DEBUG("Loading nodes from ~s", [Filename]),
+    {ok, File} = file:open(Filename, [binary, read_ahead]),
+    try
+        load_terms(File, Fun, file:read(File, 4))
+    after
+        ok = file:close(File)
+    end.
 
-write_references(Nodes, Root) -> write_terms(Nodes, Root ++ ".references.term").
+load_terms(File, Fun, {ok, <<Size:?SIZE_HEADER>>}) ->
+    {ok, Bin} = file:read(File, Size),
+    Fun(binary_to_term(Bin)),
+    load_terms(File, Fun, file:read(File, 4));
+load_terms(_File, _Fun, eof) ->
+    ok.
+
+write_nodes(Nodes, Root) ->
+    write_terms(Nodes, Root ++ ".nodes.bterm").
+
+write_references(Nodes, Root) ->
+    write_terms(Nodes, Root ++ ".references.bterm").
 
 write_terms(Terms, Filename) ->
     {ok, File} = file:open(Filename, [write]),
     try
-        [ok = file:write(File, io_lib:format("~p.~n", [T])) || T <- Terms]
+        [write_term(File, T) || T <- Terms]
     after
         ok = file:close(File)
     end.
+
+write_term(File, Term) ->
+    Bin = term_to_binary(Term),
+    file:write(File, [<<(byte_size(Bin)):?SIZE_HEADER>>, Bin]).
