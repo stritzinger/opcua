@@ -5,14 +5,17 @@
 
 -define(NID_NS(NS), #opcua_node_id{ns = NS}).
 -define(NNID(Num), #opcua_node_id{ns = 0, type = numeric, value = Num}).
+-define(XID(NID), #opcua_expanded_node_id{node_id = NID}).
 
 -define(UNDEF_NODE_ID, #opcua_node_id{ns = 0, type = numeric, value = 0}).
 
 
-%-- OPCUA Standard Numericalk Node Id ------------------------------------------
+%-- OPCUA Standard Node Id Numbers ---------------------------------------------
 
--define(REF_ORGANIZES,          35).
--define(REF_HAS_SUBTYPE,        45).
+-define(REF_ORGANIZES,              35).
+-define(REF_HAS_SUBTYPE,            45).
+-define(REF_HAS_TYPE_DEFINITION,    40).
+-define(REF_HAS_PROPERTY,           46).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -70,7 +73,7 @@
     node_id                     :: opcua:node_id(),
     node_class                  :: opcua:node_class_rec(),
     browse_name                 :: opcua:optional(binary()),
-    display_name                :: binary(),
+    display_name                :: opcua:optional(binary()),
     description                 :: opcua:optional(binary()),
     write_mask                  :: opcua:optional(non_neg_integer()),
     user_write_mask             :: opcua:optional(non_neg_integer()),
