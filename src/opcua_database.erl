@@ -5,7 +5,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--include_lib("opcua/include/opcua.hrl").
+-include("opcua.hrl").
 -include("opcua_internal.hrl").
 
 
