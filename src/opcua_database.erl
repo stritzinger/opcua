@@ -5,7 +5,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--include("opcua.hrl").
+-include_lib("opcua/include/opcua.hrl").
 -include("opcua_internal.hrl").
 
 
@@ -103,8 +103,8 @@ load_nodesets() ->
     NodeSetFileName = "Opc.Ua.NodeSet2.Services.xml",
     NodeSetFilePath = filename:join([NodeSetDir, NodeSetFileName]),
     opcua_database_data_types:setup(NodeSetFilePath),
-    opcua_database_encodings:setup(NodeSetFilePath),
     erlang:garbage_collect(),
+    opcua_database_encodings:setup(),
     opcua_database_nodes:setup(NodeSetDir),
     ok.
 

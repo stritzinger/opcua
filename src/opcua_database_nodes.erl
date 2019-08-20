@@ -38,15 +38,18 @@
 
 setup(Dir) ->
     load_nodes(Dir),
-    load_references(Dir).
+    load_references(Dir),
+    load_encodings(Dir).
 
 parse(File) ->
     {XML, []} = xmerl_scan:file(File, [{space, normalize}]),
-    FullNodes = parse_node_set(xml_to_simple(XML)),
-    {Nodes, References} = extract_references(FullNodes),
     Root = filename:rootname(File),
-    write_nodes(Nodes, Root),
-    write_references(References, Root),
+    Nodes = parse_node_set(xml_to_simple(XML)),
+    References = extract_references(Nodes),
+    Encodings = extract_encodings(Nodes),
+    write_terms(Encodings, Root, "encodings"),
+    write_terms([N#opcua_node{references = []} || N <- Nodes], Root, "nodes"),
+    write_terms(References, Root, "references"),
     ok.
 
 
@@ -229,30 +232,53 @@ xml_attrs_to_map(Attrs) ->
         #xmlAttribute{name = Name, value = Value} <- Attrs
     ]).
 
-extract_references(FullNodes) ->
-    {Nodes, References} = lists:mapfoldl(fun extract_references/2, [], FullNodes),
-    {Nodes, lists:flatten(References)}.
+extract_references(Nodes) ->
+    [resolve_reference(N#opcua_node.node_id, R) ||
+        N <- Nodes,
+        R <- N#opcua_node.references
+    ].
 
-extract_references(#opcua_node{node_id = ID, references = NR} = Node, Refs) ->
-    All = [resolve_reference({ID, R}) || R <- NR],
-    {Node#opcua_node{references = []}, [All|Refs]}.
+resolve_reference(Source, #opcua_reference{is_forward = false} = Reference) ->
+    {
+        Reference#opcua_reference.target_id,
+        Reference#opcua_reference{target_id = Source, is_forward = true}
+    };
+resolve_reference(Source, Ref) ->
+    {
+        Source,
+        Ref
+    }.
 
-resolve_reference({Source, #opcua_reference{is_forward = false, target_id = Target} = Reference}) ->
-    {Target, Reference#opcua_reference{target_id = Source, is_forward = true}};
-resolve_reference(Ref) ->
-    Ref.
+extract_encodings(Nodes) ->
+    [{NodeId, {TargetNodeId, binary}} ||
+        #opcua_node{
+            node_id = NodeId,
+            browse_name = <<"Default Binary">>,
+            references = References
+        } <- Nodes,
+        #opcua_reference{
+            reference_type_id = #opcua_node_id{value = 38},
+            target_id = TargetNodeId
+        } <- References
+    ].
 
 load_nodes(Dir) ->
-    load_all_terms(filename:join(Dir, "**/*.nodes.bterm"), fun(Node) ->
+    load_all_terms(Dir, "nodes", fun(Node) ->
         opcua_address_space:add_nodes([Node])
     end).
 
 load_references(Dir) ->
-    load_all_terms(filename:join(Dir, "**/*.references.bterm"), fun(Reference) ->
+    load_all_terms(Dir, "references", fun(Reference) ->
         opcua_address_space:add_references([Reference])
     end).
 
-load_all_terms(Pattern, Fun) ->
+load_encodings(Dir) ->
+    load_all_terms(Dir, "encodings", fun({NodeId, {TargetNodeId, Encoding}}) ->
+        opcua_database_encodings:store_encoding(NodeId, TargetNodeId, Encoding)
+    end).
+
+load_all_terms(Dir, Type, Fun) ->
+    Pattern = filename:join(Dir, "**/*." ++ Type ++ ".bterm"),
     [load_terms(F, Fun) || F <- filelib:wildcard(Pattern)].
 
 load_terms(Filename, Fun) ->
@@ -271,14 +297,8 @@ load_terms(File, Fun, {ok, <<Size:?SIZE_HEADER>>}) ->
 load_terms(_File, _Fun, eof) ->
     ok.
 
-write_nodes(Nodes, Root) ->
-    write_terms(Nodes, Root ++ ".nodes.bterm").
-
-write_references(Nodes, Root) ->
-    write_terms(Nodes, Root ++ ".references.bterm").
-
-write_terms(Terms, Filename) ->
-    {ok, File} = file:open(Filename, [write]),
+write_terms(Terms, Root, Ext) ->
+    {ok, File} = file:open(Root ++ "." ++ Ext ++ ".bterm", [write]),
     try
         [write_term(File, T) || T <- Terms]
     after
