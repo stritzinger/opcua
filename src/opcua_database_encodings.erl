@@ -7,7 +7,7 @@
 -export([resolve/1]).
 -export([lookup/2]).
 -export([setup/0]).
--export([store_encoding/3]).
+-export([store/3]).
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -33,7 +33,7 @@ lookup(NodeId, Encoding) ->
 
 setup() -> ets:new(?MODULE, [named_table]).
 
-store_encoding(NodeId, TargetNodeId, Encoding) ->
+store(NodeId, TargetNodeId, Encoding) ->
     ets:insert(?MODULE, [
         {NodeId, {TargetNodeId, Encoding}},
         {{TargetNodeId, Encoding}, NodeId}

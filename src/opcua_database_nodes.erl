@@ -19,9 +19,6 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Number of bytes to use as binary term size header
--define(SIZE_HEADER, 32).
-
 -define(IS_NODE(Name),
     Name =:= <<"UAObject">>;
     Name =:= <<"UAVariable">>;
@@ -37,8 +34,12 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 setup(Dir) ->
+    opcua_database_encodings:setup(),
+    ?LOG_INFO("Loading OPCUA nodes..."),
     load_nodes(Dir),
+    ?LOG_INFO("Loading OPCUA references..."),
     load_references(Dir),
+    ?LOG_INFO("Loading OPCUA encoding specifications..."),
     load_encodings(Dir).
 
 parse(File) ->
@@ -47,9 +48,13 @@ parse(File) ->
     Nodes = parse_node_set(xml_to_simple(XML)),
     References = extract_references(Nodes),
     Encodings = extract_encodings(Nodes),
-    write_terms(Encodings, Root, "encodings"),
-    write_terms([N#opcua_node{references = []} || N <- Nodes], Root, "nodes"),
-    write_terms(References, Root, "references"),
+    ?LOG_INFO("Saving OPCUA encoding specifications..."),
+    opcua_util_bterm:save(Root, "encodings", Encodings),
+    ?LOG_INFO("Saving OPCUA nodes..."),
+    CleanNodes = [N#opcua_node{references = []} || N <- Nodes],
+    opcua_util_bterm:save(Root, "nodes", CleanNodes),
+    ?LOG_INFO("Saving OPCUA references..."),
+    opcua_util_bterm:save(Root, "references", References),
     ok.
 
 
@@ -263,48 +268,19 @@ extract_encodings(Nodes) ->
     ].
 
 load_nodes(Dir) ->
-    load_all_terms(Dir, "nodes", fun(Node) ->
+    opcua_util_bterm:fold(Dir, "nodes", fun(Node, _) ->
         opcua_address_space:add_nodes([Node])
-    end).
-
-load_references(Dir) ->
-    load_all_terms(Dir, "references", fun(Reference) ->
-        opcua_address_space:add_references([Reference])
-    end).
-
-load_encodings(Dir) ->
-    load_all_terms(Dir, "encodings", fun({NodeId, {TargetNodeId, Encoding}}) ->
-        opcua_database_encodings:store_encoding(NodeId, TargetNodeId, Encoding)
-    end).
-
-load_all_terms(Dir, Type, Fun) ->
-    Pattern = filename:join(Dir, "**/*." ++ Type ++ ".bterm"),
-    [load_terms(F, Fun) || F <- filelib:wildcard(Pattern)].
-
-load_terms(Filename, Fun) ->
-    ?LOG_DEBUG("Loading nodes from ~s", [Filename]),
-    {ok, File} = file:open(Filename, [binary, read_ahead]),
-    try
-        load_terms(File, Fun, file:read(File, 4))
-    after
-        ok = file:close(File)
-    end.
-
-load_terms(File, Fun, {ok, <<Size:?SIZE_HEADER>>}) ->
-    {ok, Bin} = file:read(File, Size),
-    Fun(binary_to_term(Bin)),
-    load_terms(File, Fun, file:read(File, 4));
-load_terms(_File, _Fun, eof) ->
+    end, undefined),
     ok.
 
-write_terms(Terms, Root, Ext) ->
-    {ok, File} = file:open(Root ++ "." ++ Ext ++ ".bterm", [write]),
-    try
-        [write_term(File, T) || T <- Terms]
-    after
-        ok = file:close(File)
-    end.
+load_references(Dir) ->
+    opcua_util_bterm:fold(Dir, "references", fun(Reference, _) ->
+        opcua_address_space:add_references([Reference])
+    end, undefined),
+    ok.
 
-write_term(File, Term) ->
-    Bin = term_to_binary(Term),
-    file:write(File, [<<(byte_size(Bin)):?SIZE_HEADER>>, Bin]).
+load_encodings(Dir) ->
+    opcua_util_bterm:fold(Dir, "encodings", fun({NodeId, {TargetNodeId, Encoding}}, _) ->
+        opcua_database_encodings:store(NodeId, TargetNodeId, Encoding)
+    end, undefined),
+    ok.
