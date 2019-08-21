@@ -112,7 +112,7 @@ get_resolver_refs(NodeId, Opts) ->
     end.
 
 opts_to_map(Opts) ->
-    OptMap = case proplists:get_value(type, Opts) of
+    case proplists:get_value(type, Opts) of
         undefined -> #{
             direction => proplists:get_value(direction, Opts, forward)
         };
