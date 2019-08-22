@@ -60,7 +60,7 @@ encode(expanded_node_id, ExpandedNodeId) -> encode_expanded_node_id(ExpandedNode
 encode(diagnostic_info, DiagnosticInfo) -> encode_diagnostic_info(DiagnosticInfo);
 encode(qualified_name, QualifiedName) -> encode_qualified_name(QualifiedName);
 encode(localized_text, LocalizedText) -> encode_localized_text(LocalizedText);
-encode(_Type, _Value) -> throw(bad_encoding_error).
+encode(Type, Value) -> throw({bad_encoding_error, Type, Value}).
 
 
 %% internal

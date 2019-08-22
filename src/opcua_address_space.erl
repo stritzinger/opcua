@@ -24,6 +24,8 @@
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-include_lib("kernel/include/logger.hrl").
+
 -include("opcua.hrl").
 -include("opcua_internal.hrl").
 
@@ -50,7 +52,7 @@ get_node(NodeId) ->
     end.
 
 get_references(OriginId) ->
-    get_references(OriginId, []).
+    get_references(OriginId, #{}).
 
 get_references(OriginId, Opts) ->
     Graph = persistent_term:get(?MODULE),
@@ -61,7 +63,9 @@ get_references(OriginId, Opts) ->
 %% @doc Returns if the given OPCUA type node id is a subtype of the second
 %% given OPCUA type node id.
 -spec is_subtype(opcua:node_id(), opcua:node_id()) -> boolean().
-is_subtype(TypeId, SuperTypeId) -> maps:is_key(SuperTypeId, supertypes(TypeId)).
+is_subtype(TypeId, TypeId) -> true;
+is_subtype(TypeId, SuperTypeId) ->
+    maps:is_key(TypeId, subtypes(SuperTypeId)).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -87,40 +91,40 @@ handle_info(Info, _State) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% Call given function for all given values expanding the value to a new set
-%% of value until there is nothing more to expand.
--spec expand(expand_fun(), [term()]) -> [term()].
-expand(ExpFun, Values) ->
-    expand(ExpFun, Values, #{}).
+%% Returns a map where the keys are the node id of all the OPCUA subtypes
+%% of the given type id.
+subtypes(TypenodeId) -> subtypes(TypenodeId, #{}).
 
-expand(_ExpFun, [], Acc) -> Acc;
-expand(ExpFun, [V | Rest], Acc) ->
-    expand(ExpFun, Rest, expand(ExpFun, ExpFun(V), Acc#{V => true})).
+subtypes(TypeNodeId, Acc) ->
+    RefOpts = #{
+        type => ?NNID(?REF_HAS_SUBTYPE),
+        direction => forward,
+        include_subtypes => false
+    },
+    lists:foldl(fun(#opcua_reference{target_id = Id}, Map) ->
+        case maps:is_key(Id, Map) of
+            false -> subtypes(Id, Map#{Id => true});
+            true -> Map
+        end
+    end, Acc, get_references(TypeNodeId, RefOpts)).
 
-
-%% Returns a map where the leys are the node id of all the OPCUA supertypes
-%% of the given type id, including the given type id.
--spec supertypes(opcua:node_id()) -> #{opcua:node_id() => true}.
-supertypes(TypeNodeId) ->
-    expand(fun(Id) ->
-        #opcua_node{references = Refs} = opcua_address_space:get_node(Id),
-        [SubId || #opcua_reference{
-            reference_type_id = ?NNID(?REF_HAS_SUBTYPE),
-            is_forward = false,
-            target_id = SubId} <- Refs]
-    end, [TypeNodeId]).
-
-edge_to_ref(OriginId, {_, From, To, Type}) ->
+edge_to_ref(OriginId, {_, From, OriginId, Type}) ->
+    #opcua_reference{
+        target_id = From,
+        reference_type_id = Type,
+        is_forward = false
+    };
+edge_to_ref(OriginId, {_, OriginId, To, Type}) ->
     #opcua_reference{
         target_id = To,
         reference_type_id = Type,
-        is_forward = From =:= OriginId
+        is_forward = true
     }.
 
 make_reference_filter(OriginId, Opts) ->
-    Subtypes = proplists:is_defined(include_subtypes, Opts),
-    RefTypeId = proplists:get_value(type, Opts),
-    Direction = proplists:get_value(direction, Opts),
+    Subtypes = maps:get(include_subtypes, Opts, false),
+    RefTypeId = maps:get(type, Opts, undefined),
+    Direction = maps:get(direction, Opts, forward),
     case {RefTypeId, Subtypes, Direction} of
         {undefined, _, forward} ->
             fun({_, I, _, _}) -> I =:= OriginId end;
@@ -135,9 +139,12 @@ make_reference_filter(OriginId, Opts) ->
         {Id, false, _} ->
             fun({_, _, _, T}) -> T =:= Id end;
         {Id, true, forward} ->
-            fun({_, I, _, T}) -> I =:= OriginId andalso is_subtype(T, Id) end;
+            RefTypes = (subtypes(Id))#{Id => true},
+            fun({_, I, _, T}) -> I =:= OriginId andalso maps:is_key(T, RefTypes) end;
         {Id, true, inverse} ->
-            fun({_, _, I, T}) -> I =:= OriginId andalso is_subtype(T, Id) end;
+            RefTypes = (subtypes(Id))#{Id => true},
+            fun({_, _, I, T}) -> I =:= OriginId andalso maps:is_key(T, RefTypes) end;
         {Id, true, _} ->
-            fun({_, _, _, T}) -> is_subtype(T, Id) end
+            RefTypes = (subtypes(Id))#{Id => true},
+            fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end
     end.
