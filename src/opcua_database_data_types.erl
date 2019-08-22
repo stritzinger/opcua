@@ -1,24 +1,27 @@
 -module(opcua_database_data_types).
 
--export([lookup/1, setup/1, example/1]).
-
-%% event handler for sax parser
--export([parse/3]).
+-export([lookup/1, setup/0, generate_schemas/1, example/1, store_data_type/2]).
 
 -include("opcua.hrl").
 -include("opcua_internal.hrl").
-
--define(DB_DATA_TYPES, db_data_types).
 
 
 %% PUBLIC API
 
 lookup(NodeId) ->
-    proplists:get_value(NodeId, ets:lookup(?DB_DATA_TYPES, NodeId)).
+    proplists:get_value(NodeId, ets:lookup(?MODULE, NodeId)).
 
-setup(File) ->
-    _Tid = ets:new(?DB_DATA_TYPES, [named_table]),
-    xmerl_sax_parser:file(File, [{event_fun, fun parse/3}]).
+generate_schemas(DataTypeNodes) ->
+    Digraph = generate_data_types_digraph(DataTypeNodes),
+    SortedNodes = digraph_utils:topsort(Digraph),
+    generate_schemas(Digraph, SortedNodes, #{}).
+
+setup() ->
+    _Tid = ets:new(?MODULE, [named_table]).
+
+store_data_type(Keys, DataType) ->
+    KeyValuePairs = [{Key, DataType} || Key <- Keys],
+    true = ets:insert(?MODULE, KeyValuePairs).
 
 example(#opcua_node_id{value = Id}) when ?IS_BUILTIN_TYPE_ID(Id) ->
     opcua_codec:builtin_type_name(Id);
@@ -42,72 +45,91 @@ example(Id) ->
 
 %% INTERNAL
 
-parse({startElement, _, "UADataType", _, Attributes}, _Loc, _State) ->
-    NodeId = opcua_util:get_node_id("NodeId", Attributes),
-    Name = opcua_util:convert_name(opcua_util:get_attr("BrowseName", Attributes)),
-    #{node_id => NodeId, name => Name, fields => []};
-parse({startElement, _, "Definition", _, Attributes}, _Loc, DataTypeMap) ->
-    IsOptionSet = opcua_util:get_attr("IsOptionSet", Attributes, false) == "true",
-    maps:put(is_option_set, IsOptionSet, DataTypeMap);
-parse({startElement, _, "Reference", _, Attributes}, _Loc, DataTypeMap)
-  when is_map(DataTypeMap) ->
-    case opcua_util:get_attr("ReferenceType", Attributes) of
-        "HasSubtype" -> {await_subtype, DataTypeMap};
-        _ -> DataTypeMap
-    end;
-parse({characters, Chars}, _Loc, {await_subtype, DataTypeMap}) ->
-    maps:put(parent_node_id, opcua_util:parse_node_id(Chars), DataTypeMap);
-parse({startElement, _, "Field", _, Attributes}, _Loc, DataTypeMap) ->
-    Name = opcua_util:convert_name(opcua_util:get_attr("Name", Attributes)),
-    NodeId = opcua_util:get_node_id("DataType", Attributes),
-    Value = opcua_util:get_int("Value", Attributes),
-    ValueRank = opcua_util:get_int("ValueRank", Attributes, -1),
-    NewField = #opcua_field{name = Name,
-                      node_id = NodeId,
-                      value_rank = ValueRank,
-                      value = Value},
-    NewFields = maps:get(fields, DataTypeMap) ++ [NewField],
-    maps:put(fields, NewFields, DataTypeMap);
-parse({endElement, _, "UADataType", _}, _Loc, #{node_id := #opcua_node_id{value =Id}})
-  when ?IS_BUILTIN_TYPE_ID(Id) -> ok;
-parse({endElement, _, "UADataType", _}, _Loc, DataTypeMap = #{node_id := NodeId, name := Name}) ->
-    {RootNodeId, Fields} = resolve_inheritance(DataTypeMap),
-    DataType = resolve_type(RootNodeId, DataTypeMap, Fields),
-    store_data_type(NodeId, Name, DataType);
-parse(_Event, _Loc, State) ->
-    State.
+generate_schemas(_Digraph, [], Acc) ->
+    maps:values(Acc);
+generate_schemas(Digraph, [#opcua_node{node_id = #opcua_node_id{value = Id}} | Nodes], Acc)
+  when ?IS_BUILTIN_TYPE_ID(Id) ->
+    generate_schemas(Digraph, Nodes, Acc);
+generate_schemas(Digraph, [Node | Nodes], Acc) ->
+    [#opcua_node{node_id = ParentNodeId}] = digraph:in_neighbours(Digraph, Node),
+    #opcua_node{node_id = NodeId, browse_name = BrowseName, node_class = NodeClass} = Node,
+    DataTypeDefinition = case NodeClass#opcua_data_type.data_type_definition of
+                             undefined  -> #{};
+                             Map        -> Map
+                         end,
+    Fields = maps:get(fields, DataTypeDefinition, []),
+    IsUnion = maps:get(is_union, DataTypeDefinition, false),
+    IsOptionSet = maps:get(is_option_set, DataTypeDefinition, false),
+    RecordFields = [field_to_record(Field) || Field <- Fields],
+    {RootNodeId, NewFields} = resolve_inheritance(ParentNodeId, RecordFields, Acc),
+    DataType = resolve_type(RootNodeId, NodeId, NewFields, IsUnion, IsOptionSet),
+    StringNodeId = #opcua_node_id{type = string, value = BrowseName},
+    Keys = [StringNodeId, NodeId, {0, BrowseName}, {0, NodeId#opcua_node_id.value}],
+    generate_schemas(Digraph, Nodes, maps:put(NodeId, {Keys, DataType}, Acc)).
 
-resolve_type(#opcua_node_id{value = 22}, Map = #{node_id := NodeId}, Fields) ->
-    #opcua_structure{node_id = NodeId, with_options = maps:get(is_option_set, Map, false), fields = Fields};
-resolve_type(#opcua_node_id{value = 29}, #{node_id := NodeId}, Fields) ->
-    #opcua_enum{node_id = NodeId, fields = Fields};
-resolve_type(#opcua_node_id{value = 12756}, #{node_id := NodeId}, Fields) ->
+field_to_record({Name, Attrs}) ->
+    #opcua_field{name       = Name,
+                 node_id    = maps:get(data_type, Attrs, #opcua_node_id{value = 24}),
+                 value_rank = maps:get(value_rank, Attrs, -1),
+                 value      = maps:get(value, Attrs, undefined)}.
+
+generate_data_types_digraph(DataTypeNodes) ->
+    NodesPropList = [{NodeId, Node} || Node = #opcua_node{node_id = NodeId} <- DataTypeNodes],
+    DataTypeNodesMap = maps:from_list(NodesPropList),
+    Digraph = digraph:new([acyclic]),
+    fill_data_types(Digraph, DataTypeNodesMap, DataTypeNodes).
+
+fill_data_types(Digraph, _NodesMap, []) ->
+    Digraph;
+fill_data_types(Digraph, NodesMap, [Node = #opcua_node{references = References} | Nodes]) ->
+    digraph:add_vertex(Digraph, Node),
+    case get_sub_type_reference(References) of
+        {IsForward, TargetNodeId} ->
+            Target = maps:get(TargetNodeId, NodesMap),
+            digraph:add_vertex(Digraph, Target),
+            case IsForward of
+                true  -> digraph:add_edge(Digraph, Node, Target);
+                false -> digraph:add_edge(Digraph, Target, Node)
+            end;
+        undefined ->
+            ok  %% we got a root node
+    end,
+    fill_data_types(Digraph, NodesMap, Nodes).
+
+get_sub_type_reference(References) ->
+    SubTypeRefs = [Ref || Ref = #opcua_reference{reference_type_id = #opcua_node_id{value = 45}} <- References],
+    case SubTypeRefs of
+        [] ->
+            undefined;
+        [#opcua_reference{is_forward = IsForward, target_id = TargetNodeId}] ->
+            {IsForward, TargetNodeId}
+    end.
+
+resolve_type(#opcua_node_id{value = 22}, NodeId, Fields, false, IsOptionSet) ->
+    #opcua_structure{node_id = NodeId, with_options = IsOptionSet, fields = Fields};
+resolve_type(#opcua_node_id{value = 22}, NodeId, Fields, true, _IsOptionSet) ->
     #opcua_union{node_id = NodeId, fields = Fields};
-resolve_type(BuiltinNodeId = #opcua_node_id{value = Id}, #{node_id := NodeId}, _Fields)
+resolve_type(#opcua_node_id{value = 29}, NodeId, Fields, _IsUnion, _IsOptionSet) ->
+    #opcua_enum{node_id = NodeId, fields = Fields};
+resolve_type(BuiltinNodeId = #opcua_node_id{value = Id}, NodeId, _Fields, _IsUnion, _IsOptionSet)
   when ?IS_BUILTIN_TYPE_ID(Id) ->
     #opcua_builtin{node_id = NodeId, builtin_node_id = BuiltinNodeId}.
 
-resolve_inheritance(#{parent_node_id := ParentNodeId, fields := Fields}) ->
-    {RootNodeId, NewFields} = resolve_inheritance1(ParentNodeId),
+resolve_inheritance(ParentNodeId, Fields, DataTypes) ->
+    {RootNodeId, NewFields} = resolve_inheritance1(ParentNodeId, DataTypes),
     {RootNodeId, NewFields ++ Fields}.
 
-resolve_inheritance1(NodeId = #opcua_node_id{value = Id})
-  when Id=:=29;Id=:=12756 ->
+resolve_inheritance1(NodeId = #opcua_node_id{value = Id}, _DataTypes)
+  when Id=:=29 ->
     {NodeId, []};
-resolve_inheritance1(NodeId = #opcua_node_id{value = Id}) 
+resolve_inheritance1(NodeId = #opcua_node_id{value = Id}, _DataTypes) 
   when ?IS_BUILTIN_TYPE_ID(Id) ->
     {NodeId, []};
-resolve_inheritance1(NodeId) ->
-    DataType = lookup(NodeId),
+resolve_inheritance1(NodeId, DataTypes) ->
+    {_Keys, DataType} = maps:get(NodeId, DataTypes),
     case DataType of
         #opcua_structure{fields = Fields} -> {#opcua_node_id{value = 22}, Fields};
+        #opcua_union{fields = Fields} -> {#opcua_node_id{value = 22}, Fields};
         #opcua_enum{fields = Fields} -> {#opcua_node_id{value = 29}, Fields};
-        #opcua_union{fields = Fields} -> {#opcua_node_id{value = 12756}, Fields};
         #opcua_builtin{builtin_node_id = BuiltinNodeId} -> {BuiltinNodeId, []}
     end.
-
-store_data_type(NodeId = #opcua_node_id{value = Id}, Name, DataType) ->
-    StringNodeId = #opcua_node_id{type = string, value = Name},
-    KeyValuePairs = [{StringNodeId, DataType}, {NodeId, DataType},
-                     {{0, Name}, DataType}, {{0, Id}, DataType}],
-    ets:insert(?DB_DATA_TYPES, KeyValuePairs).
