@@ -49,12 +49,12 @@ parse(File) ->
     References = extract_references(Nodes),
     Encodings = extract_encodings(Nodes),
     ?LOG_INFO("Saving OPCUA encoding specifications..."),
-    opcua_util_bterm:save(Root, "encodings", Encodings),
+    write_terms(Root, "encodings", Encodings),
     ?LOG_INFO("Saving OPCUA nodes..."),
     CleanNodes = [N#opcua_node{references = []} || N <- Nodes],
-    opcua_util_bterm:save(Root, "nodes", CleanNodes),
+    write_terms(Root, "nodes", CleanNodes),
     ?LOG_INFO("Saving OPCUA references..."),
-    opcua_util_bterm:save(Root, "references", References),
+    write_terms(Root, "references", References),
     ok.
 
 
@@ -268,19 +268,28 @@ extract_encodings(Nodes) ->
     ].
 
 load_nodes(Dir) ->
-    opcua_util_bterm:fold(Dir, "nodes", fun(Node, _) ->
+    load_all_terms(Dir, "nodes", fun(Node) ->
         opcua_address_space:add_nodes([Node])
-    end, undefined),
-    ok.
+    end).
 
 load_references(Dir) ->
-    opcua_util_bterm:fold(Dir, "references", fun(Reference, _) ->
+    load_all_terms(Dir, "references", fun(Reference) ->
         opcua_address_space:add_references([Reference])
-    end, undefined),
-    ok.
+    end).
 
 load_encodings(Dir) ->
-    opcua_util_bterm:fold(Dir, "encodings", fun({NodeId, {TargetNodeId, Encoding}}, _) ->
+    load_all_terms(Dir, "encodings", fun({NodeId, {TargetNodeId, Encoding}}) ->
         opcua_database_encodings:store(NodeId, TargetNodeId, Encoding)
-    end, undefined),
+    end).
+
+load_all_terms(DirPath, Tag, Fun) ->
+    Pattern = filename:join(DirPath, "**/*." ++ Tag ++ ".bterm"),
+    NoAccCB = fun(V, C) -> Fun(V), C + 1 end,
+    NoAccFun = fun(F, C) -> opcua_util_bterm:fold(F, NoAccCB, C) end,
+    Count = lists:foldl(NoAccFun, 0, filelib:wildcard(Pattern)),
+    ?LOG_DEBUG("Loaded ~w ~s terms", [Count, Tag]),
     ok.
+
+write_terms(BasePath, Tag, Terms) ->
+    FilePath = BasePath ++ "." ++ Tag ++ ".bterm",
+    opcua_util_bterm:save(FilePath, Terms).

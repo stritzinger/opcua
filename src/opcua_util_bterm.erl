@@ -4,8 +4,8 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([fold/3, fold/4]).
--export([save/2, save/3]).
+-export([fold/3]).
+-export([save/2]).
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -25,10 +25,6 @@ fold(FilePath, Fun, Acc) ->
             end
     end.
 
-fold(DirPath, Tag, Fun, Acc) ->
-    Pattern = filename:join(DirPath, "**/*." ++ Tag ++ ".bterm"),
-    lists:foldl(fun(F, A) -> fold(F, Fun, A) end, Acc, filelib:wildcard(Pattern)).
-
 save(FilePath, Terms) ->
     case file:open(FilePath, [write, raw, binary]) of
         {error, Reason} -> error({file_error, Reason, FilePath});
@@ -37,10 +33,6 @@ save(FilePath, Terms) ->
             after file:close(File)
             end
     end.
-
-save(BasePath, Tag, Terms) ->
-    FilePath = BasePath ++ "." ++ Tag ++ ".bterm",
-    save(FilePath, Terms).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

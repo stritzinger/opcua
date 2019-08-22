@@ -105,7 +105,6 @@ load_nodesets() ->
     opcua_database_data_types:setup(NodeSetFilePath),
     erlang:garbage_collect(),
     opcua_database_nodes:setup(NodeSetDir),
-    erlang:garbage_collect(),
     ok.
 
 load_status_codes() ->
