@@ -12,8 +12,8 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API
--export([add_object/1]).
--export([add_variable/3]).
+-export([add_object/2, add_object/3]).
+-export([add_property/4]).
 -export([set_value/3]).
 
 %% BEHAVIOUR application CALLBACK FUNCTIONS
@@ -255,48 +255,55 @@
 ]).
 
 
-%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--define(HAS_COMPONENT, #opcua_node_id{value = 47}).
--define(HAS_CHILD, #opcua_node_id{value = 34}).
--define(OBJECTS_FOLDER, #opcua_node_id{value = 85}).
-
-
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-add_object(Name) when is_binary(Name) ->
-    ObjectID = #opcua_node_id{ns = 0, type = string, value = Name},
+add_object(Name, TypeSpec) ->
+    add_object(Name, TypeSpec, ?NNID(?OBJ_OBJECTS_FOLDER)).
+
+add_object(Name, TypeSpec, ParentSpec) when is_binary(Name) ->
+    NodeId = opcua_database:next_node_id(),
+    TypeId = opcua_database:lookup_id(TypeSpec),
+    ParentId = opcua_database:lookup_id(ParentSpec),
     opcua_address_space:add_nodes([#opcua_node{
-        node_id = ObjectID,
+        node_id = NodeId,
         browse_name = Name,
         node_class = #opcua_object{}
     }]),
     opcua_address_space:add_references([
-        {ObjectID, #opcua_reference{
-            reference_type_id = ?HAS_CHILD,
-            target_id = ?OBJECTS_FOLDER
+        {NodeId, #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
+            target_id = TypeId
+        }},
+        {ParentId, #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_CHILD),
+            target_id = NodeId
         }}
     ]),
-    ObjectID.
+    NodeId.
 
-add_variable(ObjectID, Name, Value) ->
-    % Node = get_node(NodeId),
-    VariableID = #opcua_node_id{ns = 0, type = string, value = Name},
+add_property(ObjSpec, Name, TypeSpec, Value) ->
+    NodeId = opcua_database:next_node_id(),
+    ParentId = opcua_database:lookup_id(ObjSpec),
+    TypeId = opcua_database:lookup_id(TypeSpec),
     opcua_address_space:add_nodes([#opcua_node{
-        node_id = VariableID,
+        node_id = NodeId,
         browse_name = Name,
         node_class = #opcua_variable{
-            value = Value,
-            data_type = data_type(Value)
+            data_type = TypeId,
+            value = Value
         }
     }]),
     opcua_address_space:add_references([
-        {ObjectID, #opcua_reference{
-            reference_type_id = ?HAS_COMPONENT,
-            target_id = VariableID
+        {NodeId, #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
+            target_id = ?NNID(?TYPE_PROPERTY)
+        }},
+        {ParentId, #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_PROPERTY),
+            target_id = NodeId
         }}
     ]),
-    VariableID.
+    NodeId.
 
 set_value(_ObjectID, VariableID, Value) ->
     VariableNode = opcua_address_space:get_node(VariableID),
@@ -321,7 +328,3 @@ stop(_State) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% TODO: Check integer range!
-data_type(Term) when is_integer(Term) ->
-    #opcua_node_id{value = 9}.

@@ -13,6 +13,7 @@
 
 %% API Functions
 -export([start_link/1]).
+-export([next_node_id/0]).
 -export([allocate_secure_channel/1]).
 -export([release_secure_channel/1]).
 -export([perform/2]).
@@ -30,12 +31,14 @@
 
 -define(SERVER, ?MODULE).
 -define(MAX_SECURE_CHANNEL_ID, 4294967295).
+-define(FIRST_CUSTOM_NODE_ID,  50000).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(state, {
-    next_secure_channel_id :: pos_integer()
+    next_secure_channel_id :: pos_integer(),
+    next_node_id :: ?FIRST_CUSTOM_NODE_ID
 }).
 
 
@@ -44,10 +47,11 @@
 start_link(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Opts, []).
 
+next_node_id() ->
+    gen_server:call(?SERVER, next_node_id).
 
 allocate_secure_channel(Pid) ->
     gen_server:call(?SERVER, {allocate_secure_channel, Pid}).
-
 
 release_secure_channel(ChannelId) ->
     gen_server:call(?SERVER, {release_secure_channel, ChannelId}).
@@ -69,14 +73,13 @@ init(Opts) ->
     setup_static_nodes(),
     {ok, #state{next_secure_channel_id = NextSecureChannelId}}.
 
+handle_call(next_node_id, _From, #state{next_node_id = NextId} = State) ->
+    {reply, ?NNID(NextId), State#state{next_node_id = NextId + 1}};
 handle_call({allocate_secure_channel, _Pid}, _From, State) ->
     {ChannelId, State2} = next_secure_channel_id(State),
     {reply, {ok, ChannelId}, State2};
-
-
 handle_call({release_secure_channel, _ChannelId}, _From, State) ->
     {reply, ok, State};
-
 handle_call(Req, From, State) ->
     ?LOG_WARNING("Unexpected gen_server call from ~p: ~p", [From, Req]),
     {reply, {error, unexpected_call}, State}.

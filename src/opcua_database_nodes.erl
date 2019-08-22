@@ -284,7 +284,16 @@ load_encodings(Dir) ->
 
 load_all_terms(DirPath, Tag, Fun) ->
     Pattern = filename:join(DirPath, "**/*." ++ Tag ++ ".bterm"),
-    NoAccCB = fun(V, C) -> Fun(V), C + 1 end,
+    NoAccCB = fun(V, C) ->
+        Fun(V),
+        case C rem 500 of
+            0 ->
+                ?LOG_DEBUG("Loaded ~w ~s; memory: ~.3f MB",
+                           [C, Tag, erlang:memory(total)/(1024*1024)]);
+            _ -> ok
+        end,
+        C + 1
+    end,
     NoAccFun = fun(F, C) -> opcua_util_bterm:fold(F, NoAccCB, C) end,
     Count = lists:foldl(NoAccFun, 0, filelib:wildcard(Pattern)),
     ?LOG_DEBUG("Loaded ~w ~s terms", [Count, Tag]),
