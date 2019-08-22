@@ -1,5 +1,7 @@
 -module(opcua).
 
+-behaviour(application).
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -9,14 +11,14 @@
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% API Functions
--export([start_listener/0]).
--export([stop_listener/0]).
+%% API
+-export([add_object/1]).
+-export([add_variable/3]).
+-export([set_value/3]).
 
-
-%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--define(REF, opcua).
+%% BEHAVIOUR application CALLBACK FUNCTIONS
+-export([start/2]).
+-export([stop/1]).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -253,14 +255,73 @@
 ]).
 
 
+%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(HAS_COMPONENT, #opcua_node_id{value = 47}).
+-define(HAS_CHILD, #opcua_node_id{value = 34}).
+-define(OBJECTS_FOLDER, #opcua_node_id{value = 85}).
+
+
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_listener() ->
-	TOpts = [{port, 4840}],
-	case ranch:start_listener(?REF, ranch_tcp, TOpts, opcua_protocol, #{}) of
-	    {error, _Reason} = Error -> Error;
-		{ok, _} -> ok
-	end.
+add_object(Name) when is_binary(Name) ->
+    ObjectID = #opcua_node_id{ns = 0, type = string, value = Name},
+    opcua_address_space:add_nodes([#opcua_node{
+        node_id = ObjectID,
+        browse_name = Name,
+        node_class = #opcua_object{}
+    }]),
+    opcua_address_space:add_references([
+        {ObjectID, #opcua_reference{
+            reference_type_id = ?HAS_CHILD,
+            target_id = ?OBJECTS_FOLDER
+        }}
+    ]),
+    ObjectID.
 
-stop_listener() ->
-	ranch:stop_listener(?REF).
+add_variable(ObjectID, Name, Value) ->
+    % Node = get_node(NodeId),
+    VariableID = #opcua_node_id{ns = 0, type = string, value = Name},
+    opcua_address_space:add_nodes([#opcua_node{
+        node_id = VariableID,
+        browse_name = Name,
+        node_class = #opcua_variable{
+            value = Value,
+            data_type = data_type(Value)
+        }
+    }]),
+    opcua_address_space:add_references([
+        {ObjectID, #opcua_reference{
+            reference_type_id = ?HAS_COMPONENT,
+            target_id = VariableID
+        }}
+    ]),
+    VariableID.
+
+set_value(_ObjectID, VariableID, Value) ->
+    VariableNode = opcua_address_space:get_node(VariableID),
+    #opcua_node{node_class = Variable} = VariableNode,
+    opcua_address_space:add_nodes([VariableNode#opcua_node{
+        node_class = Variable#opcua_variable{
+            value = Value
+        }
+    }]).
+
+
+%%% BEHAVIOUR application CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start(_StartType, _StartArgs) ->
+    {ok, Pid} = opcua_sup:start_link(),
+    TOpts = [{port, 4840}],
+    {ok, _} = ranch:start_listener(?MODULE, ranch_tcp, TOpts, opcua_protocol, #{}),
+    {ok, Pid}.
+
+stop(_State) ->
+    ranch:stop_listener(?MODULE).
+
+
+%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% TODO: Check integer range!
+data_type(Term) when is_integer(Term) ->
+    #opcua_node_id{value = 9}.
