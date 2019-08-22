@@ -87,6 +87,8 @@ get_int(Key, Attributes, Default) ->
     end.
 
 %% converts CamelCase strings to snake_case atoms
+convert_name(Name) when is_binary(Name) ->
+    convert_name(binary_to_list(Name));
 convert_name([FirstLetter|Rest]) ->
     list_to_atom(
       string:lowercase([FirstLetter]) ++ 

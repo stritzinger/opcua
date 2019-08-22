@@ -35,10 +35,13 @@
 
 setup(Dir) ->
     opcua_database_encodings:setup(),
+    opcua_database_data_types:setup(),
     ?LOG_INFO("Loading OPCUA nodes..."),
     load_nodes(Dir),
     ?LOG_INFO("Loading OPCUA references..."),
     load_references(Dir),
+    ?LOG_INFO("Loading OPCUA data type schemas..."),
+    load_data_type_schemas(Dir),
     ?LOG_INFO("Loading OPCUA encoding specifications..."),
     load_encodings(Dir).
 
@@ -47,7 +50,10 @@ parse(File) ->
     Root = filename:rootname(File),
     Nodes = parse_node_set(xml_to_simple(XML)),
     References = extract_references(Nodes),
+    DataTypesSchemas = extract_data_type_schemas(Nodes),
     Encodings = extract_encodings(Nodes),
+    ?LOG_INFO("Saving OPCUA data type schemas..."),
+    write_terms(Root, "data_type_schemas", DataTypesSchemas),
     ?LOG_INFO("Saving OPCUA encoding specifications..."),
     write_terms(Root, "encodings", Encodings),
     ?LOG_INFO("Saving OPCUA nodes..."),
@@ -98,7 +104,7 @@ parse_node_class({<<"UAObject">>, Attrs, _Content}, Meta) ->
 parse_node_class({<<"UADataType">>, Attrs, Content}, Meta) ->
     #opcua_data_type{
         is_abstract = get_attr(<<"IsAbstract">>, Attrs, boolean, Meta, false),
-        data_type_definition = parse_data_type_definition(get_value([<<"Definition">>], Content, undefined), Meta)
+        data_type_definition = parse_data_type_definition(get_in([<<"Definition">>], Content, undefined), Meta)
     };
 parse_node_class({<<"UAReferenceType">>, Attrs, Content}, Meta) ->
     #opcua_reference_type{
@@ -165,11 +171,16 @@ parse(array_dimensions, Dimensions, Meta) ->
 
 parse_data_type_definition(undefined, _Meta) ->
     undefined;
-parse_data_type_definition(Fields, Meta) ->
-    maps:from_list([parse_data_type_definition_field(F, Meta) || F <- Fields]).
+parse_data_type_definition({_Tag, Attrs, Fields}, Meta) ->
+    ParsedFields = [parse_data_type_definition_field(F, Meta) || F <- Fields],
+    IsUnion = get_attr(<<"IsUnion">>, Attrs, boolean, Meta, false),
+    IsOptionSet = get_attr(<<"IsOptionSet">>, Attrs, boolean, Meta, false),
+    #{fields => ParsedFields,
+      is_union => IsUnion,
+      is_option_set => IsOptionSet}.
 
 parse_data_type_definition_field({<<"Field">>, Attrs, _Content}, Meta) ->
-    {maps:get(<<"Name">>, Attrs), maps:from_list(lists:foldl(
+    {opcua_util:convert_name(maps:get(<<"Name">>, Attrs)), maps:from_list(lists:foldl(
         fun({Attr, Key, Type}, Result) ->
             try
                 [{Key, get_attr(Attr, Attrs, Type, Meta)}|Result]
@@ -254,6 +265,10 @@ resolve_reference(Source, Ref) ->
         Ref
     }.
 
+extract_data_type_schemas(Nodes) ->
+    DataTypeNodes = [Node || Node = #opcua_node{node_class = #opcua_data_type{}} <- Nodes],
+    opcua_database_data_types:generate_schemas(DataTypeNodes).
+
 extract_encodings(Nodes) ->
     [{NodeId, {TargetNodeId, binary}} ||
         #opcua_node{
@@ -275,6 +290,11 @@ load_nodes(Dir) ->
 load_references(Dir) ->
     load_all_terms(Dir, "references", fun(Reference) ->
         opcua_address_space:add_references([Reference])
+    end).
+
+load_data_type_schemas(Dir) ->
+    load_all_terms(Dir, "data_type_schemas", fun({Keys, DataType}) ->
+        opcua_database_data_types:store(Keys, DataType)
     end).
 
 load_encodings(Dir) ->
