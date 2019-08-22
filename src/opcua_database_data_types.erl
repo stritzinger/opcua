@@ -1,24 +1,45 @@
 -module(opcua_database_data_types).
 
--export([lookup/1, setup/1, example/1]).
+
+%%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-export([lookup/1]).
+-export([setup/1]).
+-export([store/3]).
+-export([example/1]).
 
 %% event handler for sax parser
 -export([parse/3]).
 
+
+%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-include_lib("kernel/include/logger.hrl").
+
 -include("opcua.hrl").
 -include("opcua_internal.hrl").
+
+
+%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -define(DB_DATA_TYPES, db_data_types).
 
 
-%% PUBLIC API
+%%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 lookup(NodeId) ->
     proplists:get_value(NodeId, ets:lookup(?DB_DATA_TYPES, NodeId)).
 
 setup(File) ->
+    ?LOG_INFO("Loading OPCUA data types..."),
     _Tid = ets:new(?DB_DATA_TYPES, [named_table]),
     xmerl_sax_parser:file(File, [{event_fun, fun parse/3}]).
+
+store(NodeId = #opcua_node_id{value = Id}, Name, DataType) ->
+    StringNodeId = #opcua_node_id{type = string, value = Name},
+    KeyValuePairs = [{StringNodeId, DataType}, {NodeId, DataType},
+                     {{0, Name}, DataType}, {{0, Id}, DataType}],
+    ets:insert(?DB_DATA_TYPES, KeyValuePairs).
 
 example(#opcua_node_id{value = Id}) when ?IS_BUILTIN_TYPE_ID(Id) ->
     opcua_codec:builtin_type_name(Id);
@@ -40,7 +61,7 @@ example(Id) ->
     example(opcua_codec:node_id(Id)).
 
 
-%% INTERNAL
+%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 parse({startElement, _, "UADataType", _, Attributes}, _Loc, _State) ->
     NodeId = opcua_util:get_node_id("NodeId", Attributes),
@@ -73,7 +94,7 @@ parse({endElement, _, "UADataType", _}, _Loc, #{node_id := #opcua_node_id{value 
 parse({endElement, _, "UADataType", _}, _Loc, DataTypeMap = #{node_id := NodeId, name := Name}) ->
     {RootNodeId, Fields} = resolve_inheritance(DataTypeMap),
     DataType = resolve_type(RootNodeId, DataTypeMap, Fields),
-    store_data_type(NodeId, Name, DataType);
+    store(NodeId, Name, DataType);
 parse(_Event, _Loc, State) ->
     State.
 
@@ -105,9 +126,3 @@ resolve_inheritance1(NodeId) ->
         #opcua_union{fields = Fields} -> {#opcua_node_id{value = 12756}, Fields};
         #opcua_builtin{builtin_node_id = BuiltinNodeId} -> {BuiltinNodeId, []}
     end.
-
-store_data_type(NodeId = #opcua_node_id{value = Id}, Name, DataType) ->
-    StringNodeId = #opcua_node_id{type = string, value = Name},
-    KeyValuePairs = [{StringNodeId, DataType}, {NodeId, DataType},
-                     {{0, Name}, DataType}, {{0, Id}, DataType}],
-    ets:insert(?DB_DATA_TYPES, KeyValuePairs).
