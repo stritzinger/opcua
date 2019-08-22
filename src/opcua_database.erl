@@ -104,7 +104,6 @@ load_nodesets() ->
     NodeSetFilePath = filename:join([NodeSetDir, NodeSetFileName]),
     opcua_database_data_types:setup(NodeSetFilePath),
     erlang:garbage_collect(),
-    opcua_database_encodings:setup(),
     opcua_database_nodes:setup(NodeSetDir),
     ok.
 
@@ -113,6 +112,7 @@ load_status_codes() ->
     StatusCodeFileName = "StatusCode.csv",
     StatusCodeFilePath = filename:join([PrivDir, StatusCodeFileName]),
     opcua_database_status_codes:load(StatusCodeFilePath),
+    erlang:garbage_collect(),
     ok.
 
 load_attributes() ->
@@ -120,4 +120,5 @@ load_attributes() ->
     AttributeIdsFileName = "AttributeIds.csv",
     AttributeIdsFilePath = filename:join([PrivDir, AttributeIdsFileName]),
     opcua_database_attributes:load(AttributeIdsFilePath),
+    erlang:garbage_collect(),
     ok.
