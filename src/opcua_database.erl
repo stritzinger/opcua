@@ -100,10 +100,7 @@ code_change(_OldVsn, State, _Extra) ->
 load_nodesets() ->
     PrivDir = code:priv_dir(opcua),
     NodeSetDir = filename:join([PrivDir, "nodesets"]),
-    NodeSetFileName = "Opc.Ua.NodeSet2.Services.xml",
-    NodeSetFilePath = filename:join([NodeSetDir, NodeSetFileName]),
-    opcua_database_data_types:setup(NodeSetFilePath),
-    erlang:garbage_collect(),
+    opcua_database_data_types:setup(),
     opcua_database_encodings:setup(),
     opcua_database_nodes:setup(NodeSetDir),
     ok.
