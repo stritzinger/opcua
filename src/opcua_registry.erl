@@ -108,19 +108,7 @@ get_resolver_node(NodeId) ->
 get_resolver_refs(NodeId, Opts) ->
     case application:get_env(opcua, resolver) of
         undefined -> [];
-        {ok, Mod} -> Mod:get_references(NodeId, opts_to_map(Opts))
-    end.
-
-opts_to_map(Opts) ->
-    case proplists:get_value(type, Opts) of
-        undefined -> #{
-            direction => proplists:get_value(direction, Opts, forward)
-        };
-        TypeNodeId -> #{
-                type => TypeNodeId,
-                include_subtypes => proplists:is_defined(include_subtypes, Opts),
-                direction => proplists:get_value(direction, Opts, forward)
-            }
+        {ok, Mod} -> Mod:get_references(NodeId, Opts)
     end.
 
 get_node(NodeId) ->
@@ -148,9 +136,9 @@ static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir,
     #opcua_node{node_id = NodeId} = Node,
     ?LOG_DEBUG("Browsing node ~w's ~w and ~w references; with subtypes: ~w...",
                [NodeId#opcua_node_id.value, BaseId#opcua_node_id.value, Dir, SubTypes]),
-    BaseOpts = [{type, BaseId}, {direction, Dir}],
+    BaseOpts = #{type => BaseId, direction => Dir},
     Opts = case SubTypes of
-        true -> [include_subtypes | BaseOpts];
+        true -> BaseOpts#{include_subtypes => true};
         false -> BaseOpts
     end,
     Refs = get_references(Mode, NodeId, Opts),
@@ -182,7 +170,11 @@ post_process_ref(Ref) ->
         target_id = TargetId
     } = Ref,
     {TargetMode, TargetNode} = get_node(TargetId),
-    RefOpts = [forward, {type, ?NNID(?REF_HAS_TYPE_DEFINITION)}, include_subtypes],
+    RefOpts = #{
+        type => ?NNID(?REF_HAS_TYPE_DEFINITION),
+        direction => forward,
+        include_subtypes => true
+    },
     TargetRefs = get_references(TargetMode, TargetId, RefOpts),
     TypeDef = case TargetRefs of
         [] -> ?UNDEF_EXT_NODE_ID;
