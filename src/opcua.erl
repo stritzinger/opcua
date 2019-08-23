@@ -13,8 +13,9 @@
 
 %% API
 -export([add_object/2, add_object/3]).
+-export([add_variable/5]).
 -export([add_property/4]).
--export([set_value/3]).
+-export([set_value/2]).
 
 %% BEHAVIOUR application CALLBACK FUNCTIONS
 -export([start/2]).
@@ -258,10 +259,10 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 add_object(Name, TypeSpec) ->
-    add_object(Name, TypeSpec, ?NNID(?OBJ_OBJECTS_FOLDER)).
+    add_object(?OBJ_OBJECTS_FOLDER, Name, TypeSpec).
 
-add_object(Name, TypeSpec, ParentSpec) when is_binary(Name) ->
-    NodeId = opcua_database:next_node_id(),
+add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
+    NodeId = opcua_registry:next_node_id(),
     TypeId = opcua_database:lookup_id(TypeSpec),
     ParentId = opcua_database:lookup_id(ParentSpec),
     opcua_address_space:add_nodes([#opcua_node{
@@ -281,22 +282,23 @@ add_object(Name, TypeSpec, ParentSpec) when is_binary(Name) ->
     ]),
     NodeId.
 
-add_property(ObjSpec, Name, TypeSpec, Value) ->
-    NodeId = opcua_database:next_node_id(),
+add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
+    NodeId = opcua_registry:next_node_id(),
     ParentId = opcua_database:lookup_id(ObjSpec),
-    TypeId = opcua_database:lookup_id(TypeSpec),
+    VarTypeId = opcua_database:lookup_id(VarTypeSpec),
+    ValueTypeId = opcua_database:lookup_id(ValueTypeSpec),
     opcua_address_space:add_nodes([#opcua_node{
         node_id = NodeId,
         browse_name = Name,
         node_class = #opcua_variable{
-            data_type = TypeId,
+            data_type = ValueTypeId,
             value = Value
         }
     }]),
     opcua_address_space:add_references([
         {NodeId, #opcua_reference{
             reference_type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
-            target_id = ?NNID(?TYPE_PROPERTY)
+            target_id = VarTypeId
         }},
         {ParentId, #opcua_reference{
             reference_type_id = ?NNID(?REF_HAS_PROPERTY),
@@ -305,10 +307,15 @@ add_property(ObjSpec, Name, TypeSpec, Value) ->
     ]),
     NodeId.
 
-set_value(_ObjectID, VariableID, Value) ->
-    VariableNode = opcua_address_space:get_node(VariableID),
-    #opcua_node{node_class = Variable} = VariableNode,
-    opcua_address_space:add_nodes([VariableNode#opcua_node{
+add_property(ObjSpec, Name, ValueTypeSpec, Value) ->
+    add_variable(ObjSpec, Name, ?TYPE_PROPERTY, ValueTypeSpec, Value).
+
+set_value(VarSpec, Value) ->
+    VarId = opcua_database:lookup_id(VarSpec),
+    Node = opcua_address_space:get_node(VarId),
+    #opcua_node{node_class = Variable} = Node,
+    %TODO: Maybe some type checking here ?
+    opcua_address_space:add_nodes([Node#opcua_node{
         node_class = Variable#opcua_variable{
             value = Value
         }
