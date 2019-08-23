@@ -19,6 +19,8 @@
 -define(REF_HAS_PROPERTY,           46).
 -define(REF_HAS_COMPONENT,          47).
 
+-define(TYPE_BASE_OBJECT,           58).
+-define(TYPE_FOLDER,                61).
 -define(TYPE_PROPERTY,              68).
 
 -define(OBJ_ROOT_FOLDER,            84).

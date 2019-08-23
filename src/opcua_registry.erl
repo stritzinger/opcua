@@ -20,6 +20,7 @@
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
+-export([handle_continue/2]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
 -export([handle_info/2]).
@@ -38,7 +39,7 @@
 
 -record(state, {
     next_secure_channel_id :: pos_integer(),
-    next_node_id :: ?FIRST_CUSTOM_NODE_ID
+    next_node_id = ?FIRST_CUSTOM_NODE_ID :: pos_integer()
 }).
 
 
@@ -70,8 +71,12 @@ perform(NodeSpec, Commands) ->
 init(Opts) ->
     ?LOG_DEBUG("OPCUA registry process starting with options: ~p", [Opts]),
     NextSecureChannelId = crypto:bytes_to_integer(crypto:strong_rand_bytes(4)),
+    State = #state{next_secure_channel_id = NextSecureChannelId},
+    {ok, State, {continue, undefined}}.
+
+handle_continue(_, State) ->
     setup_static_nodes(),
-    {ok, #state{next_secure_channel_id = NextSecureChannelId}}.
+    {noreply, State}.
 
 handle_call(next_node_id, _From, #state{next_node_id = NextId} = State) ->
     {reply, ?NNID(NextId), State#state{next_node_id = NextId + 1}};
