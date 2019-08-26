@@ -193,7 +193,8 @@ parse_data_type_definition_field({<<"Field">>, Attrs, _Content}, Meta) ->
         [
             {<<"DataType">>, data_type, node_id},
             {<<"Value">>, value, integer},
-            {<<"ValueRank">>, value_rank, integer}
+            {<<"ValueRank">>, value_rank, integer},
+            {<<"IsOptional">>, is_optional, boolean}
         ]
     ))}.
 
