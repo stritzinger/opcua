@@ -25,7 +25,7 @@
 
 -define(OBJ_ROOT_FOLDER,            84).
 -define(OBJ_OBJECTS_FOLDER,         85).
-
+-define(OBJ_SERVER,                 2253).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
