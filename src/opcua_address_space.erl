@@ -8,6 +8,7 @@
 %% API Functions
 -export([start_link/0]).
 -export([add_nodes/1]).
+-export([del_nodes/1]).
 -export([add_references/1]).
 -export([get_node/1]).
 -export([get_references/1, get_references/2]).
@@ -37,6 +38,9 @@ start_link() ->
 
 add_nodes(Nodes) ->
     gen_server:call(?MODULE, {add_nodes, Nodes}).
+
+del_nodes(NodeIds) ->
+    gen_server:call(?MODULE, {del_nodes, NodeIds}).
 
 add_references(References) ->
     gen_server:call(?MODULE, {add_references, References}).
@@ -73,6 +77,9 @@ init(undefined) ->
 
 handle_call({add_nodes, Nodes}, _From, G) ->
     [digraph:add_vertex(G, Node#opcua_node.node_id, Node) || Node <- Nodes],
+    {reply, ok, G};
+handle_call({del_nodes, NodeIds}, _From, G) ->
+    [digraph:del_vertex(G, NodeId) || NodeId <- NodeIds],
     {reply, ok, G};
 handle_call({add_references, References}, _From, G) ->
     [digraph:add_edge(G, N1, N2, Type) || {N1, #opcua_reference{target_id = N2, reference_type_id = Type}} <- References],

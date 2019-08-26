@@ -13,6 +13,7 @@
 
 %% API
 -export([add_object/2, add_object/3]).
+-export([del_object/1]).
 -export([add_variable/5]).
 -export([add_property/4]).
 -export([set_value/2]).
@@ -280,6 +281,11 @@ add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
             target_id = NodeId
         }}
     ]),
+    NodeId.
+
+del_object(ObjSpec) ->
+    NodeId = opcua_database:lookup_id(ObjSpec),
+    opcua_address_space:del_nodes([NodeId]),
     NodeId.
 
 add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
