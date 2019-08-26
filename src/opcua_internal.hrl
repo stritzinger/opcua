@@ -74,6 +74,12 @@
     fields = []                 :: opcua:fields()
 }).
 
+-record(opcua_option_set, {
+    node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
+    mask_type = ?UNDEF_NODE_ID  :: opcua:node_id(),
+    fields = []                 :: opcua:fields()
+}).
+
 -record(opcua_builtin, {
     node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
     builtin_node_id = ?UNDEF_NODE_ID :: opcua:node_id()
