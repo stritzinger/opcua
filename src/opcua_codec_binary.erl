@@ -79,6 +79,9 @@ decode_schema(#opcua_union{fields = Fields}, Data) ->
 decode_schema(#opcua_enum{fields = Fields}, Data) ->
     {Value, Data1} = decode_builtin(int32, Data),
     {resolve_enum_value(Value, Fields), Data1};
+decode_schema(#opcua_option_set{mask_type = MaskNodeId, fields = Fields}, Data) ->
+    {Value, Data1} = decode_type(MaskNodeId, Data),
+    {resolve_option_set_value(Value, Fields), Data1};
 decode_schema(#opcua_builtin{builtin_node_id = BuiltinNodeId}, Data) ->
     decode_type(BuiltinNodeId, Data).
 
@@ -130,6 +133,15 @@ resolve_union_value(SwitchValue, Fields, Data) ->
 resolve_enum_value(EnumValue, Fields) ->
     [Field] = [F || F = #opcua_field{value=Value} <- Fields, Value == EnumValue],
     Field#opcua_field.name.
+
+resolve_option_set_value(OptionSetValue, Fields) ->
+    FieldNames = lists:foldl(fun(X, Acc) ->
+                                case (OptionSetValue bsr X#opcua_field.value) rem 2 of
+                                    0  -> Acc;
+                                    1  -> [X#opcua_field.name|Acc]
+                                end
+                             end, [], Fields),
+    lists:reverse(FieldNames).
 
 decode_extension_object(Data) ->
     {TypeId, <<Mask:8, T/binary>>} = decode_builtin(node_id, Data),
@@ -295,6 +307,10 @@ encode_schema(#opcua_union{fields = Fields}, UnionMap) ->
 encode_schema(#opcua_enum{fields = Fields}, Name) ->
     [Field] = [Field || Field = #opcua_field{name=FieldName} <- Fields, FieldName==Name],
     {encode_builtin(int32, Field#opcua_field.value), undefined};
+encode_schema(#opcua_option_set{mask_type = MaskNodeId, fields = Fields}, OptionSet) ->
+    ChosenFields = [Field || Field = #opcua_field{name = Name} <- Fields, lists:member(Name, OptionSet)],
+    Int = lists:foldl(fun(X, Acc) -> Acc bxor (1 bsl X#opcua_field.value) end, 0, ChosenFields),
+    encode_type(MaskNodeId, Int);
 encode_schema(#opcua_builtin{builtin_node_id = BuiltinNodeId}, Data) ->
     encode_type(BuiltinNodeId, Data).
 
