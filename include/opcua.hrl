@@ -89,8 +89,7 @@
     user_write_mask             :: opcua:optional(non_neg_integer()),
     role_permissions            :: opcua:optional(opcua:role_permission()),
     user_role_permissions       :: opcua:optional(opcua:role_permissions()),
-    access_restrictions         :: opcua:optional(non_neg_integer()),
-    references                  :: opcua:node_refs()
+    access_restrictions         :: opcua:optional(non_neg_integer())
 }).
 
 -record(opcua_object, {
