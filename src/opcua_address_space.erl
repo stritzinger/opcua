@@ -88,7 +88,7 @@ get_references(OriginId, Opts) ->
             {fun digraph:edges/2, fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end}
     end,
     Edges = [digraph:edge(Graph, I) || I <- GetEdgesFun(Graph, OriginId)],
-    [edge_to_ref(OriginId, E) || E <- Edges, FilterFun(E)].
+    [edge_to_ref(E) || E <- Edges, FilterFun(E)].
 
 %% @doc Returns if the given OPCUA type node id is a subtype of the second
 %% given OPCUA type node id.
@@ -154,15 +154,9 @@ subtypes(TypeNodeId, Acc) ->
         end
     end, Acc, get_references(TypeNodeId, RefOpts)).
 
-edge_to_ref(OriginId, {_, From, OriginId, Type}) ->
+edge_to_ref({_, SourceNodeId, TargetNodeId, Type}) ->
     #opcua_reference{
-        target_id = From,
-        reference_type_id = Type,
-        is_forward = false
-    };
-edge_to_ref(OriginId, {_, OriginId, To, Type}) ->
-    #opcua_reference{
-        target_id = To,
-        reference_type_id = Type,
-        is_forward = true
+        source_id = SourceNodeId,
+        target_id = TargetNodeId,
+        reference_type_id = Type
     }.
