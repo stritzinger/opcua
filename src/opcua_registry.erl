@@ -13,12 +13,14 @@
 
 %% API Functions
 -export([start_link/1]).
+-export([next_node_id/0]).
 -export([allocate_secure_channel/1]).
 -export([release_secure_channel/1]).
 -export([perform/2]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
+-export([handle_continue/2]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
 -export([handle_info/2]).
@@ -30,12 +32,14 @@
 
 -define(SERVER, ?MODULE).
 -define(MAX_SECURE_CHANNEL_ID, 4294967295).
+-define(FIRST_CUSTOM_NODE_ID,  50000).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(state, {
-    next_secure_channel_id :: pos_integer()
+    next_secure_channel_id :: pos_integer(),
+    next_node_id = ?FIRST_CUSTOM_NODE_ID :: pos_integer()
 }).
 
 
@@ -44,10 +48,11 @@
 start_link(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Opts, []).
 
+next_node_id() ->
+    gen_server:call(?SERVER, next_node_id).
 
 allocate_secure_channel(Pid) ->
     gen_server:call(?SERVER, {allocate_secure_channel, Pid}).
-
 
 release_secure_channel(ChannelId) ->
     gen_server:call(?SERVER, {release_secure_channel, ChannelId}).
@@ -66,17 +71,20 @@ perform(NodeSpec, Commands) ->
 init(Opts) ->
     ?LOG_DEBUG("OPCUA registry process starting with options: ~p", [Opts]),
     NextSecureChannelId = crypto:bytes_to_integer(crypto:strong_rand_bytes(4)),
-    setup_static_nodes(),
-    {ok, #state{next_secure_channel_id = NextSecureChannelId}}.
+    State = #state{next_secure_channel_id = NextSecureChannelId},
+    {ok, State, {continue, undefined}}.
 
+handle_continue(_, State) ->
+    setup_static_nodes(),
+    {noreply, State}.
+
+handle_call(next_node_id, _From, #state{next_node_id = NextId} = State) ->
+    {reply, ?NNID(NextId), State#state{next_node_id = NextId + 1}};
 handle_call({allocate_secure_channel, _Pid}, _From, State) ->
     {ChannelId, State2} = next_secure_channel_id(State),
     {reply, {ok, ChannelId}, State2};
-
-
 handle_call({release_secure_channel, _ChannelId}, _From, State) ->
     {reply, ok, State};
-
 handle_call(Req, From, State) ->
     ?LOG_WARNING("Unexpected gen_server call from ~p: ~p", [From, Req]),
     {reply, {error, unexpected_call}, State}.

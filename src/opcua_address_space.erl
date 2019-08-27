@@ -8,6 +8,7 @@
 %% API Functions
 -export([start_link/0]).
 -export([add_nodes/1]).
+-export([del_nodes/1]).
 -export([add_references/1]).
 -export([get_node/1]).
 -export([get_references/1, get_references/2]).
@@ -29,9 +30,10 @@
 -include("opcua.hrl").
 -include("opcua_internal.hrl").
 
-%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--type expand_fun() :: fun((term()) -> [term()]).
+%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(SUBTYPES_CACHE, opcua_address_space_subtypes_cache).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -41,6 +43,9 @@ start_link() ->
 
 add_nodes(Nodes) ->
     gen_server:call(?MODULE, {add_nodes, Nodes}).
+
+del_nodes(NodeIds) ->
+    gen_server:call(?MODULE, {del_nodes, NodeIds}).
 
 add_references(References) ->
     gen_server:call(?MODULE, {add_references, References}).
@@ -56,8 +61,33 @@ get_references(OriginId) ->
 
 get_references(OriginId, Opts) ->
     Graph = persistent_term:get(?MODULE),
-    FilterFun = make_reference_filter(OriginId, Opts),
-    Edges = [digraph:edge(Graph, I) || I <- digraph:edges(Graph, OriginId)],
+    Subtypes = maps:get(include_subtypes, Opts, false),
+    RefTypeId = maps:get(type, Opts, undefined),
+    Direction = maps:get(direction, Opts, forward),
+    {GetEdgesFun, FilterFun} = case {RefTypeId, Subtypes, Direction} of
+        {undefined, _, forward} ->
+            {fun digraph:out_edges/2, fun(_) -> true end};
+        {undefined, _, inverse} ->
+            {fun digraph:in_edges/2, fun(_) -> true end};
+        {undefined, _, _} ->
+            {fun digraph:edges/2, fun(_) -> true end};
+        {Id, false, forward} ->
+            {fun digraph:out_edges/2, fun({_, _, _, T}) -> T =:= Id end};
+        {Id, false, inverse} ->
+            {fun digraph:in_edges/2, fun({_, _, _, T}) -> T =:= Id end};
+        {Id, false, _} ->
+            {fun digraph:edges/2, fun({_, _, _, T}) -> T =:= Id end};
+        {Id, true, forward} ->
+            RefTypes = (subtypes(Id))#{Id => true},
+            {fun digraph:out_edges/2, fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end};
+        {Id, true, inverse} ->
+            RefTypes = (subtypes(Id))#{Id => true},
+            {fun digraph:in_edges/2, fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end};
+        {Id, true, _} ->
+            RefTypes = (subtypes(Id))#{Id => true},
+            {fun digraph:edges/2, fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end}
+    end,
+    Edges = [digraph:edge(Graph, I) || I <- GetEdgesFun(Graph, OriginId)],
     [edge_to_ref(OriginId, E) || E <- Edges, FilterFun(E)].
 
 %% @doc Returns if the given OPCUA type node id is a subtype of the second
@@ -73,15 +103,23 @@ is_subtype(TypeId, SuperTypeId) ->
 init(undefined) ->
     G = digraph:new([cyclic, protected]),
     persistent_term:put(?MODULE, G),
+    persistent_term:put(?SUBTYPES_CACHE, #{}),
     {ok, G}.
 
 handle_call({add_nodes, Nodes}, _From, G) ->
     [digraph:add_vertex(G, Node#opcua_node.node_id, Node) || Node <- Nodes],
     {reply, ok, G};
+handle_call({del_nodes, NodeIds}, _From, G) ->
+    [digraph:del_vertex(G, NodeId) || NodeId <- NodeIds],
+    {reply, ok, G};
 handle_call({add_references, References}, _From, G) ->
     [digraph:add_edge(G, N1, N2, Type) || {N1, #opcua_reference{target_id = N2, reference_type_id = Type}} <- References],
     {reply, ok, G}.
 
+handle_cast({cache_subtypes, Type, Subtypes}, State) ->
+    Cache = persistent_term:get(?SUBTYPES_CACHE),
+    persistent_term:put(?SUBTYPES_CACHE, Cache#{Type => Subtypes}),
+    {noreply, State};
 handle_cast(Request, _State) ->
     error({unknown_cast, Request}).
 
@@ -93,7 +131,15 @@ handle_info(Info, _State) ->
 
 %% Returns a map where the keys are the node id of all the OPCUA subtypes
 %% of the given type id.
-subtypes(TypenodeId) -> subtypes(TypenodeId, #{}).
+subtypes(TypeNodeId) ->
+    Cache = persistent_term:get(?SUBTYPES_CACHE),
+    case maps:find(TypeNodeId, Cache) of
+        {ok, Value} -> Value;
+        error ->
+            Value = subtypes(TypeNodeId, #{}),
+            gen_server:cast(?MODULE, {cache_subtypes, TypeNodeId, Value}),
+            Value
+    end.
 
 subtypes(TypeNodeId, Acc) ->
     RefOpts = #{
@@ -120,31 +166,3 @@ edge_to_ref(OriginId, {_, OriginId, To, Type}) ->
         reference_type_id = Type,
         is_forward = true
     }.
-
-make_reference_filter(OriginId, Opts) ->
-    Subtypes = maps:get(include_subtypes, Opts, false),
-    RefTypeId = maps:get(type, Opts, undefined),
-    Direction = maps:get(direction, Opts, forward),
-    case {RefTypeId, Subtypes, Direction} of
-        {undefined, _, forward} ->
-            fun({_, I, _, _}) -> I =:= OriginId end;
-        {undefined, _, inverse} ->
-            fun({_, _, I, _}) -> I =:= OriginId end;
-        {undefined, _, _} ->
-            fun({_, _, _, _}) -> true end;
-        {Id, false, forward} ->
-            fun({_, I, _, T}) -> I =:= OriginId andalso T =:= Id end;
-        {Id, false, inverse} ->
-            fun({_, _, I, T}) -> I =:= OriginId andalso T =:= Id end;
-        {Id, false, _} ->
-            fun({_, _, _, T}) -> T =:= Id end;
-        {Id, true, forward} ->
-            RefTypes = (subtypes(Id))#{Id => true},
-            fun({_, I, _, T}) -> I =:= OriginId andalso maps:is_key(T, RefTypes) end;
-        {Id, true, inverse} ->
-            RefTypes = (subtypes(Id))#{Id => true},
-            fun({_, _, I, T}) -> I =:= OriginId andalso maps:is_key(T, RefTypes) end;
-        {Id, true, _} ->
-            RefTypes = (subtypes(Id))#{Id => true},
-            fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end
-    end.
