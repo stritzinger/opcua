@@ -48,17 +48,17 @@ setup(Dir) ->
 parse(File) ->
     {XML, []} = xmerl_scan:file(File, [{space, normalize}]),
     Root = filename:rootname(File),
-    Nodes = parse_node_set(xml_to_simple(XML)),
-    References = extract_references(Nodes),
-    DataTypesSchemas = extract_data_type_schemas(Nodes),
-    Encodings = extract_encodings(Nodes),
+    NodesProplist = parse_node_set(xml_to_simple(XML)),
+    DataTypesSchemas = extract_data_type_schemas(NodesProplist),
+    Encodings = extract_encodings(NodesProplist),
+    Nodes = extract_nodes(NodesProplist),
+    References = extract_references(NodesProplist),
     ?LOG_INFO("Saving OPCUA data type schemas..."),
     write_terms(Root, "data_type_schemas", DataTypesSchemas),
     ?LOG_INFO("Saving OPCUA encoding specifications..."),
     write_terms(Root, "encodings", Encodings),
     ?LOG_INFO("Saving OPCUA nodes..."),
-    CleanNodes = [N#opcua_node{references = []} || N <- Nodes],
-    write_terms(Root, "nodes", CleanNodes),
+    write_terms(Root, "nodes", Nodes),
     ?LOG_INFO("Saving OPCUA references..."),
     write_terms(Root, "references", References),
     ok.
@@ -81,10 +81,10 @@ parse_node({Tag, Attrs, Content} = Elem, {Meta, Nodes}) when ?IS_NODE(Tag) ->
         node_id = NodeId,
         browse_name = maps:get(<<"BrowseName">>, Attrs, undefined),
         display_name = hd(get_value([<<"DisplayName">>], Content)),
-        references = parse_references(get_value([<<"References">>], Content), NodeId, Meta),
         node_class = parse_node_class(Elem, Meta)
     },
-    {Meta, [Node|Nodes]};
+    Refs = parse_references(get_value([<<"References">>], Content), NodeId, Meta),
+    {Meta, [{NodeId, {Node, Refs}}|Nodes]};
 parse_node(_Element, State) ->
     State.
 
@@ -254,22 +254,30 @@ xml_attrs_to_map(Attrs) ->
         #xmlAttribute{name = Name, value = Value} <- Attrs
     ]).
 
-extract_references(Nodes) ->
-    [{N#opcua_node.node_id, R} ||
-        N <- Nodes,
-        R <- N#opcua_node.references
-    ].
+extract_references(NodesProplist) ->
+    lists:flatten(lists:map(fun({_NodeId, {_Node, Refs}}) -> Refs end, NodesProplist)).
 
-extract_data_type_schemas(Nodes) ->
-    DataTypeNodes = [Node || Node = #opcua_node{node_class = #opcua_data_type{}} <- Nodes],
-    opcua_database_data_types:generate_schemas(DataTypeNodes).
+extract_nodes(NodesProplist) ->
+    lists:flatten(lists:map(fun({_NodeId, {Node, _Refs}}) -> Node end, NodesProplist)).
 
-extract_encodings(Nodes) ->
+extract_data_type_schemas(NodesProplist) ->
+    DataTypeNodesProplist = [Node ||
+                             Node = {_NodeId,
+                                     {
+                                      #opcua_node{node_class = #opcua_data_type{}},
+                                      _Refs
+                                     }
+                                    } <- NodesProplist],
+    opcua_database_data_types:generate_schemas(DataTypeNodesProplist).
+
+extract_encodings(NodesProplist) ->
     [{TargetNodeId, {SourceNodeId, binary}} ||
-        #opcua_node{
-            browse_name = <<"Default Binary">>,
-            references = References
-        } <- Nodes,
+        {_NodeId,
+         {
+            #opcua_node{browse_name = <<"Default Binary">>},
+            References
+         }
+        } <- NodesProplist,
         #opcua_reference{
             reference_type_id = #opcua_node_id{value = 38},
             source_id = SourceNodeId,

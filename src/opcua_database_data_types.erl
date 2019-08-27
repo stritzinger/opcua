@@ -23,8 +23,8 @@
 lookup(NodeId) ->
     proplists:get_value(NodeId, ets:lookup(?MODULE, NodeId)).
 
-generate_schemas(DataTypeNodes) ->
-    Digraph = generate_data_types_digraph(DataTypeNodes),
+generate_schemas(DataTypeNodesProplist) ->
+    Digraph = generate_data_types_digraph(DataTypeNodesProplist),
     SortedNodes = digraph_utils:topsort(Digraph),
     generate_schemas(Digraph, SortedNodes, #{}).
 
@@ -85,19 +85,18 @@ field_to_record({Name, Attrs}) ->
                  value_rank = maps:get(value_rank, Attrs, -1),
                  value      = maps:get(value, Attrs, undefined)}.
 
-generate_data_types_digraph(DataTypeNodes) ->
-    NodesPropList = [{NodeId, Node} || Node = #opcua_node{node_id = NodeId} <- DataTypeNodes],
-    DataTypeNodesMap = maps:from_list(NodesPropList),
+generate_data_types_digraph(DataTypeNodesProplist) ->
+    DataTypeNodesMap = maps:from_list(DataTypeNodesProplist),
     Digraph = digraph:new([acyclic]),
-    fill_data_types(Digraph, DataTypeNodesMap, DataTypeNodes).
+    fill_data_types(Digraph, DataTypeNodesMap, maps:values(DataTypeNodesMap)).
 
 fill_data_types(Digraph, _NodesMap, []) ->
     Digraph;
-fill_data_types(Digraph, NodesMap, [Node = #opcua_node{references = References} | Nodes]) ->
+fill_data_types(Digraph, NodesMap, [{Node, References} | Nodes]) ->
     case get_sub_type_reference(References) of
         {SourceNodeId, TargetNodeId} ->
-            Source = maps:get(SourceNodeId, NodesMap),
-            Target = maps:get(TargetNodeId, NodesMap),
+            {Source, _} = maps:get(SourceNodeId, NodesMap),
+            {Target, _} = maps:get(TargetNodeId, NodesMap),
             %% NOTE: we might add nodes multiple times here,
             %% but the add operation is idempotent anyway
             digraph:add_vertex(Digraph, Source),
