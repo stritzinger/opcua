@@ -14,6 +14,22 @@
 -export([attribute_type/2]).
 
 
+%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-type id() :: {opcua_namespace:index(), value()} | value().
+-type expanded_id() :: {server_index(), opcua_namespace:uri(), value()}.
+
+-type value() :: numeric() | alias() | name() | guid() | opaque().
+-type numeric() :: pos_integer().
+-type alias() :: atom().
+-type name() :: binary().
+-type guid() :: {guid, binary()}.
+-type opaque() :: {opaque, binary()}.
+-type server_index() :: pos_integer().
+
+-export_type([id/0]).
+-export_type([expanded_id/0]).
+
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 class(#opcua_node{node_class = #opcua_object{}})         -> object;
