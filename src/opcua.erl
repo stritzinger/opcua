@@ -1,5 +1,7 @@
 -module(opcua).
 
+-behaviour(application).
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -9,14 +11,16 @@
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% API Functions
--export([start_listener/0]).
--export([stop_listener/0]).
+%% API
+-export([add_object/2, add_object/3]).
+-export([del_object/1]).
+-export([add_variable/5]).
+-export([add_property/4]).
+-export([set_value/2]).
 
-
-%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--define(REF, opcua).
+%% BEHAVIOUR application CALLBACK FUNCTIONS
+-export([start/2]).
+-export([stop/1]).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -255,12 +259,85 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_listener() ->
-	TOpts = [{port, 4840}],
-	case ranch:start_listener(?REF, ranch_tcp, TOpts, opcua_protocol, #{}) of
-	    {error, _Reason} = Error -> Error;
-		{ok, _} -> ok
-	end.
+add_object(Name, TypeSpec) ->
+    add_object(?OBJ_OBJECTS_FOLDER, Name, TypeSpec).
 
-stop_listener() ->
-	ranch:stop_listener(?REF).
+add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
+    NodeId = opcua_registry:next_node_id(),
+    TypeId = opcua_database:lookup_id(TypeSpec),
+    ParentId = opcua_database:lookup_id(ParentSpec),
+    opcua_address_space:add_nodes([#opcua_node{
+        node_id = NodeId,
+        browse_name = Name,
+        node_class = #opcua_object{}
+    }]),
+    opcua_address_space:add_references([
+        {NodeId, #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
+            target_id = TypeId
+        }},
+        {ParentId, #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_CHILD),
+            target_id = NodeId
+        }}
+    ]),
+    NodeId.
+
+del_object(ObjSpec) ->
+    NodeId = opcua_database:lookup_id(ObjSpec),
+    opcua_address_space:del_nodes([NodeId]),
+    NodeId.
+
+add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
+    NodeId = opcua_registry:next_node_id(),
+    ParentId = opcua_database:lookup_id(ObjSpec),
+    VarTypeId = opcua_database:lookup_id(VarTypeSpec),
+    ValueTypeId = opcua_database:lookup_id(ValueTypeSpec),
+    opcua_address_space:add_nodes([#opcua_node{
+        node_id = NodeId,
+        browse_name = Name,
+        node_class = #opcua_variable{
+            data_type = ValueTypeId,
+            value = Value
+        }
+    }]),
+    opcua_address_space:add_references([
+        {NodeId, #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
+            target_id = VarTypeId
+        }},
+        {ParentId, #opcua_reference{
+            reference_type_id = ?NNID(?REF_HAS_PROPERTY),
+            target_id = NodeId
+        }}
+    ]),
+    NodeId.
+
+add_property(ObjSpec, Name, ValueTypeSpec, Value) ->
+    add_variable(ObjSpec, Name, ?TYPE_PROPERTY, ValueTypeSpec, Value).
+
+set_value(VarSpec, Value) ->
+    VarId = opcua_database:lookup_id(VarSpec),
+    Node = opcua_address_space:get_node(VarId),
+    #opcua_node{node_class = Variable} = Node,
+    %TODO: Maybe some type checking here ?
+    opcua_address_space:add_nodes([Node#opcua_node{
+        node_class = Variable#opcua_variable{
+            value = Value
+        }
+    }]).
+
+
+%%% BEHAVIOUR application CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start(_StartType, _StartArgs) ->
+    {ok, Pid} = opcua_sup:start_link(),
+    TOpts = [{port, 4840}],
+    {ok, _} = ranch:start_listener(?MODULE, ranch_tcp, TOpts, opcua_protocol, #{}),
+    {ok, Pid}.
+
+stop(_State) ->
+    ranch:stop_listener(?MODULE).
+
+
+%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
