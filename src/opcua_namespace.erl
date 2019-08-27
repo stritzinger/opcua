@@ -11,6 +11,14 @@
 -export([uri/1]).
 
 
+%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-type uri() :: binary().
+-type index() :: pos_integer().
+
+-export_type([uri/0]).
+-export_type([index/0]).
+
 %%% MACRO %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -define(DEFAULT, #{undefined => 0}).
