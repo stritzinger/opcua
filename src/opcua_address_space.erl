@@ -113,7 +113,12 @@ handle_call({del_nodes, NodeIds}, _From, G) ->
     [digraph:del_vertex(G, NodeId) || NodeId <- NodeIds],
     {reply, ok, G};
 handle_call({add_references, References}, _From, G) ->
-    [digraph:add_edge(G, N1, N2, Type) || {N1, #opcua_reference{target_id = N2, reference_type_id = Type}} <- References],
+    [digraph:add_edge(G, N1, N2, Type) ||
+     #opcua_reference{
+        source_id = N1,
+        target_id = N2,
+        reference_type_id = Type
+     } <- References],
     {reply, ok, G}.
 
 handle_cast({cache_subtypes, Type, Subtypes}, State) ->
