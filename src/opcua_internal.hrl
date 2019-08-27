@@ -160,5 +160,9 @@
 }).
 
 -record(uacp_connection, {
-    pid                         :: pid()
+    pid                         :: pid(),
+    socket                      :: inet:socket(),
+    transport                   :: module(),
+    peer                        :: undefined | {inet:ip_address(), inet:port_number()},
+    sock                        :: undefined | {inet:ip_address(), inet:port_number()}
 }).
