@@ -96,17 +96,17 @@ generate_data_types_digraph(DataTypeNodes) ->
 fill_data_types(Digraph, _NodesMap, []) ->
     Digraph;
 fill_data_types(Digraph, NodesMap, [Node = #opcua_node{references = References} | Nodes]) ->
-    digraph:add_vertex(Digraph, Node),
     case get_sub_type_reference(References) of
-        {IsForward, TargetNodeId} ->
+        {SourceNodeId, TargetNodeId} ->
+            Source = maps:get(SourceNodeId, NodesMap),
             Target = maps:get(TargetNodeId, NodesMap),
+            %% NOTE: we might add nodes multiple times here,
+            %% but the add operation is idempotent anyway
+            digraph:add_vertex(Digraph, Source),
             digraph:add_vertex(Digraph, Target),
-            case IsForward of
-                true  -> digraph:add_edge(Digraph, Node, Target);
-                false -> digraph:add_edge(Digraph, Target, Node)
-            end;
+            digraph:add_edge(Digraph, Source, Target);
         undefined ->
-            ok  %% we got a root node
+            digraph:add_vertex(Digraph, Node) %% we got a root node
     end,
     fill_data_types(Digraph, NodesMap, Nodes).
 
@@ -115,8 +115,8 @@ get_sub_type_reference(References) ->
     case SubTypeRefs of
         [] ->
             undefined;
-        [#opcua_reference{is_forward = IsForward, target_id = TargetNodeId}] ->
-            {IsForward, TargetNodeId}
+        [#opcua_reference{source_id = SourceNodeId, target_id = TargetNodeId}] ->
+            {SourceNodeId, TargetNodeId}
     end.
 
 resolve_type(#opcua_node_id{value = 22}, NodeId, Fields, false, false, WithOptions) ->

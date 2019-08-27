@@ -116,8 +116,8 @@
 
 -record(opcua_reference, {
     reference_type_id           :: opcua:node_id(),
-    is_forward                  :: boolean(),
-    target_id                   :: opcua:expanded_node_id()
+    source_id                   :: opcua:node_id(),
+    target_id                   :: opcua:node_id()
 }).
 
 -record(opcua_object_type, {
