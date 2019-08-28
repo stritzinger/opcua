@@ -256,19 +256,15 @@ xml_attrs_to_map(Attrs) ->
     ]).
 
 extract_references(NodesProplist) ->
-    lists:flatten(lists:map(fun({_NodeId, {_Node, Refs}}) -> Refs end, NodesProplist)).
+    [Ref || {_NodeId, {_Node, Refs}} <- NodesProplist, Ref <- Refs].
 
 extract_nodes(NodesProplist) ->
-    lists:flatten(lists:map(fun({_NodeId, {Node, _Refs}}) -> Node end, NodesProplist)).
+    [Node || {_NodeId, {Node, _Refs}} <- NodesProplist].
 
 extract_data_type_schemas(NodesProplist) ->
-    DataTypeNodesProplist = [Node ||
-                             Node = {_NodeId,
-                                     {
-                                      #opcua_node{node_class = #opcua_data_type{}},
-                                      _Refs
-                                     }
-                                    } <- NodesProplist],
+    DataTypeNodesProplist = lists:filter(fun({_, {Node, _}}) ->
+        is_record(Node#opcua_node.node_class, opcua_data_type)
+    end, NodesProplist),
     opcua_database_data_types:generate_schemas(DataTypeNodesProplist).
 
 extract_encodings(NodesProplist) ->
