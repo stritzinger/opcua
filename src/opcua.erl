@@ -333,7 +333,8 @@ set_value(VarSpec, Value) ->
 start(_StartType, _StartArgs) ->
     {ok, Pid} = opcua_sup:start_link(),
     TOpts = [{port, 4840}],
-    {ok, _} = ranch:start_listener(?MODULE, ranch_tcp, TOpts, opcua_protocol, #{}),
+    {ok, _} = ranch:start_listener(?MODULE, ranch_tcp, TOpts,
+                                   opcua_server_ranch_protocol, #{}),
     {ok, Pid}.
 
 stop(_State) ->
