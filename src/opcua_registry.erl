@@ -174,7 +174,7 @@ static_perform(_Mode, _Node, _Command) ->
 
 post_process_ref(Ref) ->
     #opcua_reference{
-        reference_type_id = RefId,
+        type_id = RefId,
         target_id = TargetId
     } = Ref,
     {TargetMode, TargetNode} = get_node(TargetId),
