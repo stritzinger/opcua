@@ -98,7 +98,7 @@ parse_reference({<<"Reference">>, Attrs, [Peer]}, BaseNodeId, Meta) ->
                                        false    -> {PeerNodeId, BaseNodeId}
                                    end,
     #opcua_reference{
-        reference_type_id = get_attr(<<"ReferenceType">>, Attrs, node_id, Meta),
+        type_id = get_attr(<<"ReferenceType">>, Attrs, node_id, Meta),
         source_id = SourceNodeId,
         target_id = TargetNodeId
     }.
@@ -276,7 +276,7 @@ extract_encodings(NodesProplist) ->
          }
         } <- NodesProplist,
         #opcua_reference{
-            reference_type_id = #opcua_node_id{value = 38},
+            type_id = #opcua_node_id{value = 38},
             source_id = SourceNodeId,
             target_id = TargetNodeId
         } <- References

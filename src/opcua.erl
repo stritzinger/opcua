@@ -273,11 +273,11 @@ add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
     }]),
     opcua_address_space:add_references([
         {NodeId, #opcua_reference{
-            reference_type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
+            type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
             target_id = TypeId
         }},
         {ParentId, #opcua_reference{
-            reference_type_id = ?NNID(?REF_HAS_CHILD),
+            type_id = ?NNID(?REF_HAS_CHILD),
             target_id = NodeId
         }}
     ]),
@@ -303,11 +303,11 @@ add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
     }]),
     opcua_address_space:add_references([
         {NodeId, #opcua_reference{
-            reference_type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
+            type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
             target_id = VarTypeId
         }},
         {ParentId, #opcua_reference{
-            reference_type_id = ?NNID(?REF_HAS_PROPERTY),
+            type_id = ?NNID(?REF_HAS_PROPERTY),
             target_id = NodeId
         }}
     ]),
