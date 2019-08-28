@@ -1,0 +1,411 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<UANodeSet xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" LastModified="2019-04-01T00:00:00Z" xmlns="http://opcfoundation.org/UA/2011/03/UANodeSet.xsd">
+  <NamespaceUris>
+    <Uri>https://opcua.rocks/UA/animal/</Uri>
+  </NamespaceUris>
+  <Models>
+    <Model ModelUri="https://opcua.rocks/UA/animal/" Version="0.9.0" PublicationDate="2019-04-01T00:00:00Z">
+      <RequiredModel ModelUri="http://opcfoundation.org/UA/" Version="1.03" PublicationDate="2013-12-02T00:00:00Z" />
+    </Model>
+  </Models>
+  <Aliases>
+    <Alias Alias="Boolean">i=1</Alias>
+    <Alias Alias="SByte">i=2</Alias>
+    <Alias Alias="Byte">i=3</Alias>
+    <Alias Alias="Int16">i=4</Alias>
+    <Alias Alias="UInt16">i=5</Alias>
+    <Alias Alias="Int32">i=6</Alias>
+    <Alias Alias="UInt32">i=7</Alias>
+    <Alias Alias="Int64">i=8</Alias>
+    <Alias Alias="UInt64">i=9</Alias>
+    <Alias Alias="Float">i=10</Alias>
+    <Alias Alias="Double">i=11</Alias>
+    <Alias Alias="DateTime">i=13</Alias>
+    <Alias Alias="String">i=12</Alias>
+    <Alias Alias="ByteString">i=15</Alias>
+    <Alias Alias="Guid">i=14</Alias>
+    <Alias Alias="XmlElement">i=16</Alias>
+    <Alias Alias="NodeId">i=17</Alias>
+    <Alias Alias="ExpandedNodeId">i=18</Alias>
+    <Alias Alias="QualifiedName">i=20</Alias>
+    <Alias Alias="LocalizedText">i=21</Alias>
+    <Alias Alias="StatusCode">i=19</Alias>
+    <Alias Alias="Structure">i=22</Alias>
+    <Alias Alias="Number">i=26</Alias>
+    <Alias Alias="Integer">i=27</Alias>
+    <Alias Alias="UInteger">i=28</Alias>
+    <Alias Alias="HasComponent">i=47</Alias>
+    <Alias Alias="HasProperty">i=46</Alias>
+    <Alias Alias="Organizes">i=35</Alias>
+    <Alias Alias="HasEventSource">i=36</Alias>
+    <Alias Alias="HasNotifier">i=48</Alias>
+    <Alias Alias="HasSubtype">i=45</Alias>
+    <Alias Alias="HasTypeDefinition">i=40</Alias>
+    <Alias Alias="HasModellingRule">i=37</Alias>
+    <Alias Alias="HasEncoding">i=38</Alias>
+    <Alias Alias="HasDescription">i=39</Alias>
+  </Aliases>
+  <UAObjectType NodeId="ns=1;i=15001" BrowseName="1:AnimalType" IsAbstract="true">
+    <DisplayName>AnimalType</DisplayName>
+    <Description>Base type for all animals</Description>
+    <References>
+      <Reference ReferenceType="HasProperty">ns=1;i=15002</Reference>
+      <Reference ReferenceType="HasSubtype" IsForward="false">i=58</Reference>
+    </References>
+  </UAObjectType>
+  <UAVariable NodeId="ns=1;i=15002" BrowseName="1:Name" ParentNodeId="ns=1;i=15001" DataType="String">
+    <DisplayName>Name</DisplayName>
+    <Description>Name of the animal</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasModellingRule">i=78</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15001</Reference>
+    </References>
+  </UAVariable>
+  <UAObjectType NodeId="ns=1;i=15003" BrowseName="1:MammalType" IsAbstract="true">
+    <DisplayName>MammalType</DisplayName>
+    <Description>Base type for all mammals</Description>
+    <References>
+      <Reference ReferenceType="HasProperty">ns=1;i=15005</Reference>
+      <Reference ReferenceType="HasComponent">ns=1;i=15013</Reference>
+      <Reference ReferenceType="HasSubtype" IsForward="false">ns=1;i=15001</Reference>
+    </References>
+  </UAObjectType>
+  <UAVariable NodeId="ns=1;i=15005" BrowseName="1:LegCount" ParentNodeId="ns=1;i=15003" DataType="UInt32">
+    <DisplayName>LegCount</DisplayName>
+    <Description>Number of legs the animal has</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasModellingRule">i=78</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15003</Reference>
+    </References>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15013" BrowseName="1:Sound" ParentNodeId="ns=1;i=15003" DataType="ns=1;i=15025">
+    <DisplayName>Sound</DisplayName>
+    <Description>The sound the animal makes</Description>
+    <References>
+      <Reference ReferenceType="HasComponent">ns=1;i=15014</Reference>
+      <Reference ReferenceType="HasTypeDefinition">ns=1;i=15022</Reference>
+      <Reference ReferenceType="HasModellingRule">i=80</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;i=15003</Reference>
+    </References>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15014" BrowseName="1:Verb" ParentNodeId="ns=1;i=15013" DataType="String">
+    <DisplayName>Verb</DisplayName>
+    <Description>Verb describing the animal sound</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=63</Reference>
+      <Reference ReferenceType="HasModellingRule">i=78</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;i=15013</Reference>
+    </References>
+  </UAVariable>
+  <UAObjectType NodeId="ns=1;i=15006" BrowseName="1:CatType">
+    <DisplayName>CatType</DisplayName>
+    <Description>A cat mammal</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">ns=1;i=15003</Reference>
+    </References>
+  </UAObjectType>
+  <UAObjectType NodeId="ns=1;i=15009" BrowseName="1:DogType">
+    <DisplayName>DogType</DisplayName>
+    <Description>A dog mammal</Description>
+    <References>
+      <Reference ReferenceType="HasProperty">ns=1;i=15012</Reference>
+      <Reference ReferenceType="HasSubtype" IsForward="false">ns=1;i=15003</Reference>
+    </References>
+  </UAObjectType>
+  <UAVariable NodeId="ns=1;i=15012" BrowseName="1:Weight" ParentNodeId="ns=1;i=15009" DataType="Double">
+    <DisplayName>Weight</DisplayName>
+    <Description>Weight of the dog in KG</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasModellingRule">i=80</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15009</Reference>
+    </References>
+  </UAVariable>
+  <UAVariableType NodeId="ns=1;i=15022" BrowseName="1:AnimalSoundType" DataType="ns=1;i=15025">
+    <DisplayName>AnimalSoundType</DisplayName>
+    <Description>Represents the sound of an animal</Description>
+    <References>
+      <Reference ReferenceType="HasComponent">ns=1;i=15023</Reference>
+      <Reference ReferenceType="HasComponent">ns=1;i=15024</Reference>
+      <Reference ReferenceType="HasSubtype" IsForward="false">i=63</Reference>
+    </References>
+  </UAVariableType>
+  <UAVariable NodeId="ns=1;i=15023" BrowseName="1:Verb" ParentNodeId="ns=1;i=15022" DataType="String">
+    <DisplayName>Verb</DisplayName>
+    <Description>Verb describing the animal sound</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=63</Reference>
+      <Reference ReferenceType="HasModellingRule">i=78</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;i=15022</Reference>
+    </References>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15024" BrowseName="1:AudioFile" ParentNodeId="ns=1;i=15022" DataType="String">
+    <DisplayName>AudioFile</DisplayName>
+    <Description>URL to an audio file for the sound</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=63</Reference>
+      <Reference ReferenceType="HasModellingRule">i=80</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;i=15022</Reference>
+    </References>
+  </UAVariable>
+  <UADataType NodeId="ns=1;i=15025" BrowseName="1:AnimalSound">
+    <DisplayName>AnimalSound</DisplayName>
+    <Description>Sound of an animal</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">i=22</Reference>
+    </References>
+    <Definition Name="1:AnimalSound">
+      <Field Name="Verb" DataType="i=12">
+        <Description>Sound Verb</Description>
+      </Field>
+      <Field Name="AudioFile" DataType="i=12">
+        <Description>URL to an audio file</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UAObject NodeId="ns=1;i=15043" BrowseName="1:AnimalSet">
+    <DisplayName>AnimalSet</DisplayName>
+    <Description>Contains all instances of animals</Description>
+    <References>
+      <Reference ReferenceType="Organizes" IsForward="false">i=85</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=58</Reference>
+    </References>
+  </UAObject>
+  <UAObject NodeId="ns=1;i=15044" BrowseName="1:Cat" EventNotifier="1">
+    <DisplayName>Cat</DisplayName>
+    <Description>A Cat named Cattie</Description>
+    <References>
+      <Reference ReferenceType="HasProperty">ns=1;i=15045</Reference>
+      <Reference ReferenceType="HasProperty">ns=1;i=15046</Reference>
+      <Reference ReferenceType="Organizes" IsForward="false">ns=1;i=15043</Reference>
+      <Reference ReferenceType="HasTypeDefinition">ns=1;i=15006</Reference>
+    </References>
+  </UAObject>
+  <UAVariable NodeId="ns=1;i=15045" BrowseName="1:Name" ParentNodeId="ns=1;i=15044" DataType="String">
+    <DisplayName>Name</DisplayName>
+    <Description>Name of the animal</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15044</Reference>
+    </References>
+    <Value>
+      <String xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">Cattie</String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15046" BrowseName="1:LegCount" ParentNodeId="ns=1;i=15044" DataType="UInt32">
+    <DisplayName>LegCount</DisplayName>
+    <Description>Number of legs the animal has</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15044</Reference>
+    </References>
+    <Value>
+      <UInt32 xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">4</UInt32>
+    </Value>
+  </UAVariable>
+  <UAObject NodeId="ns=1;i=15050" BrowseName="1:Dog" EventNotifier="1">
+    <DisplayName>Dog</DisplayName>
+    <Description>A dog named Wuffy</Description>
+    <References>
+      <Reference ReferenceType="HasProperty">ns=1;i=15051</Reference>
+      <Reference ReferenceType="HasProperty">ns=1;i=15052</Reference>
+      <Reference ReferenceType="HasComponent">ns=1;i=15053</Reference>
+      <Reference ReferenceType="Organizes" IsForward="false">ns=1;i=15043</Reference>
+      <Reference ReferenceType="HasTypeDefinition">ns=1;i=15009</Reference>
+    </References>
+  </UAObject>
+  <UAVariable NodeId="ns=1;i=15051" BrowseName="1:Name" ParentNodeId="ns=1;i=15050" DataType="String">
+    <DisplayName>Name</DisplayName>
+    <Description>Name of the animal</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15050</Reference>
+    </References>
+    <Value>
+      <String xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">Wuffy</String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15052" BrowseName="1:LegCount" ParentNodeId="ns=1;i=15050" DataType="UInt32">
+    <DisplayName>LegCount</DisplayName>
+    <Description>Number of legs the animal has</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15050</Reference>
+    </References>
+    <Value>
+      <UInt32 xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">4</UInt32>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15053" BrowseName="1:Sound" ParentNodeId="ns=1;i=15050" DataType="ns=1;i=15025">
+    <DisplayName>Sound</DisplayName>
+    <Description>Sound of the dog</Description>
+    <References>
+      <Reference ReferenceType="HasComponent">ns=1;i=15054</Reference>
+      <Reference ReferenceType="HasTypeDefinition">ns=1;i=15022</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;i=15050</Reference>
+    </References>
+    <Value>
+      <ExtensionObject xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">
+        <TypeId>
+          <Identifier>ns=1;i=15025</Identifier>
+        </TypeId>
+        <Body>
+          <AnimalSound xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">
+            <Verb>bark</Verb>
+            <AudioFile>https://en.wikipedia.org/wiki/File:Barking_of_a_dog_2.ogg</AudioFile>
+          </AnimalSound>
+        </Body>
+      </ExtensionObject>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15054" BrowseName="1:Verb" ParentNodeId="ns=1;i=15053" DataType="String">
+    <DisplayName>Verb</DisplayName>
+    <Description>Verb describing the animal sound</Description>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=63</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;i=15053</Reference>
+    </References>
+  </UAVariable>
+  <UAObject NodeId="ns=1;i=15026" BrowseName="Default Binary" SymbolicName="DefaultBinary">
+    <DisplayName>Default Binary</DisplayName>
+    <References>
+      <Reference ReferenceType="HasEncoding" IsForward="false">ns=1;i=15025</Reference>
+      <Reference ReferenceType="HasDescription">ns=1;i=15031</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=76</Reference>
+    </References>
+  </UAObject>
+  <UAVariable NodeId="ns=1;i=15027" BrowseName="1:animal" SymbolicName="animal_BinarySchema" DataType="ByteString">
+    <DisplayName>animal</DisplayName>
+    <References>
+      <Reference ReferenceType="HasProperty">ns=1;i=15029</Reference>
+      <Reference ReferenceType="HasProperty">ns=1;i=15030</Reference>
+      <Reference ReferenceType="HasComponent">ns=1;i=15031</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">i=93</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=72</Reference>
+    </References>
+    <Value>
+      <ByteString xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">PG9wYzpUeXBlRGljdGlvbmFyeQ0KICB4bWxuczpvcGM9Imh0dHA6Ly9vcGNmb3VuZGF0aW9uLm9y
+Zy9CaW5hcnlTY2hlbWEvIg0KICB4bWxuczp4c2k9Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvWE1M
+U2NoZW1hLWluc3RhbmNlIg0KICB4bWxuczp1YT0iaHR0cDovL29wY2ZvdW5kYXRpb24ub3JnL1VB
+LyINCiAgeG1sbnM6dG5zPSJodHRwczovL29wY3VhLnJvY2tzL1VBL2FuaW1hbC8iDQogIERlZmF1
+bHRCeXRlT3JkZXI9IkxpdHRsZUVuZGlhbiINCiAgVGFyZ2V0TmFtZXNwYWNlPSJodHRwczovL29w
+Y3VhLnJvY2tzL1VBL2FuaW1hbC8iDQo+DQogIDxvcGM6SW1wb3J0IE5hbWVzcGFjZT0iaHR0cDov
+L29wY2ZvdW5kYXRpb24ub3JnL1VBLyIgTG9jYXRpb249Ik9wYy5VYS5CaW5hcnlTY2hlbWEuYnNk
+Ii8+DQoNCiAgPG9wYzpTdHJ1Y3R1cmVkVHlwZSBOYW1lPSJBbmltYWxTb3VuZCIgQmFzZVR5cGU9
+InVhOkV4dGVuc2lvbk9iamVjdCI+DQogICAgPG9wYzpEb2N1bWVudGF0aW9uPlNvdW5kIG9mIGFu
+IGFuaW1hbDwvb3BjOkRvY3VtZW50YXRpb24+DQogICAgPG9wYzpGaWVsZCBOYW1lPSJWZXJiIiBU
+eXBlTmFtZT0ib3BjOlN0cmluZyIgLz4NCiAgICA8b3BjOkZpZWxkIE5hbWU9IkF1ZGlvRmlsZSIg
+VHlwZU5hbWU9Im9wYzpTdHJpbmciIC8+DQogIDwvb3BjOlN0cnVjdHVyZWRUeXBlPg0KDQo8L29w
+YzpUeXBlRGljdGlvbmFyeT4=</ByteString>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15029" BrowseName="NamespaceUri" ParentNodeId="ns=1;i=15027" DataType="String">
+    <DisplayName>NamespaceUri</DisplayName>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15027</Reference>
+    </References>
+    <Value>
+      <String xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">https://opcua.rocks/UA/animal/</String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15030" BrowseName="Deprecated" ParentNodeId="ns=1;i=15027" DataType="Boolean">
+    <DisplayName>Deprecated</DisplayName>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15027</Reference>
+    </References>
+    <Value>
+      <Boolean xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">true</Boolean>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15031" BrowseName="1:AnimalSound" ParentNodeId="ns=1;i=15027" DataType="String">
+    <DisplayName>AnimalSound</DisplayName>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=69</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;i=15027</Reference>
+    </References>
+    <Value>
+      <String xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">AnimalSound</String>
+    </Value>
+  </UAVariable>
+  <UAObject NodeId="ns=1;i=15034" BrowseName="Default XML" SymbolicName="DefaultXml">
+    <DisplayName>Default XML</DisplayName>
+    <References>
+      <Reference ReferenceType="HasEncoding" IsForward="false">ns=1;i=15025</Reference>
+      <Reference ReferenceType="HasDescription">ns=1;i=15039</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=76</Reference>
+    </References>
+  </UAObject>
+  <UAVariable NodeId="ns=1;i=15035" BrowseName="1:animal" SymbolicName="animal_XmlSchema" DataType="ByteString">
+    <DisplayName>animal</DisplayName>
+    <References>
+      <Reference ReferenceType="HasProperty">ns=1;i=15037</Reference>
+      <Reference ReferenceType="HasProperty">ns=1;i=15038</Reference>
+      <Reference ReferenceType="HasComponent">ns=1;i=15039</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">i=92</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=72</Reference>
+    </References>
+    <Value>
+      <ByteString xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">PHhzOnNjaGVtYQ0KICB4bWxuczp4cz0iaHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEi
+DQogIHhtbG5zOnVhPSJodHRwOi8vb3BjZm91bmRhdGlvbi5vcmcvVUEvMjAwOC8wMi9UeXBlcy54
+c2QiDQogIHhtbG5zOnRucz0iaHR0cHM6Ly9vcGN1YS5yb2Nrcy9VQS9hbmltYWwvVHlwZXMueHNk
+Ig0KICB0YXJnZXROYW1lc3BhY2U9Imh0dHBzOi8vb3BjdWEucm9ja3MvVUEvYW5pbWFsL1R5cGVz
+LnhzZCINCiAgZWxlbWVudEZvcm1EZWZhdWx0PSJxdWFsaWZpZWQiDQo+DQogIDx4czppbXBvcnQg
+bmFtZXNwYWNlPSJodHRwOi8vb3BjZm91bmRhdGlvbi5vcmcvVUEvMjAwOC8wMi9UeXBlcy54c2Qi
+IC8+DQoNCiAgPHhzOmNvbXBsZXhUeXBlIG5hbWU9IkFuaW1hbFNvdW5kIj4NCiAgICA8eHM6YW5u
+b3RhdGlvbj4NCiAgICAgIDx4czpkb2N1bWVudGF0aW9uPlNvdW5kIG9mIGFuIGFuaW1hbDwveHM6
+ZG9jdW1lbnRhdGlvbj4NCiAgICA8L3hzOmFubm90YXRpb24+DQogICAgPHhzOnNlcXVlbmNlPg0K
+ICAgICAgPHhzOmVsZW1lbnQgbmFtZT0iVmVyYiIgdHlwZT0ieHM6c3RyaW5nIiBtaW5PY2N1cnM9
+IjAiIG5pbGxhYmxlPSJ0cnVlIiAvPg0KICAgICAgPHhzOmVsZW1lbnQgbmFtZT0iQXVkaW9GaWxl
+IiB0eXBlPSJ4czpzdHJpbmciIG1pbk9jY3Vycz0iMCIgbmlsbGFibGU9InRydWUiIC8+DQogICAg
+PC94czpzZXF1ZW5jZT4NCiAgPC94czpjb21wbGV4VHlwZT4NCiAgPHhzOmVsZW1lbnQgbmFtZT0i
+QW5pbWFsU291bmQiIHR5cGU9InRuczpBbmltYWxTb3VuZCIgLz4NCg0KICA8eHM6Y29tcGxleFR5
+cGUgbmFtZT0iTGlzdE9mQW5pbWFsU291bmQiPg0KICAgIDx4czpzZXF1ZW5jZT4NCiAgICAgIDx4
+czplbGVtZW50IG5hbWU9IkFuaW1hbFNvdW5kIiB0eXBlPSJ0bnM6QW5pbWFsU291bmQiIG1pbk9j
+Y3Vycz0iMCIgbWF4T2NjdXJzPSJ1bmJvdW5kZWQiIG5pbGxhYmxlPSJ0cnVlIiAvPg0KICAgIDwv
+eHM6c2VxdWVuY2U+DQogIDwveHM6Y29tcGxleFR5cGU+DQogIDx4czplbGVtZW50IG5hbWU9Ikxp
+c3RPZkFuaW1hbFNvdW5kIiB0eXBlPSJ0bnM6TGlzdE9mQW5pbWFsU291bmQiIG5pbGxhYmxlPSJ0
+cnVlIj48L3hzOmVsZW1lbnQ+DQoNCjwveHM6c2NoZW1hPg==</ByteString>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15037" BrowseName="NamespaceUri" ParentNodeId="ns=1;i=15035" DataType="String">
+    <DisplayName>NamespaceUri</DisplayName>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15035</Reference>
+    </References>
+    <Value>
+      <String xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">https://opcua.rocks/UA/animal/Types.xsd</String>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15038" BrowseName="Deprecated" ParentNodeId="ns=1;i=15035" DataType="Boolean">
+    <DisplayName>Deprecated</DisplayName>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=68</Reference>
+      <Reference ReferenceType="HasProperty" IsForward="false">ns=1;i=15035</Reference>
+    </References>
+    <Value>
+      <Boolean xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">true</Boolean>
+    </Value>
+  </UAVariable>
+  <UAVariable NodeId="ns=1;i=15039" BrowseName="1:AnimalSound" ParentNodeId="ns=1;i=15035" DataType="String">
+    <DisplayName>AnimalSound</DisplayName>
+    <References>
+      <Reference ReferenceType="HasTypeDefinition">i=69</Reference>
+      <Reference ReferenceType="HasComponent" IsForward="false">ns=1;i=15035</Reference>
+    </References>
+    <Value>
+      <String xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">//xs:element[@name='AnimalSound']</String>
+    </Value>
+  </UAVariable>
+  <UAObject NodeId="ns=1;i=15042" BrowseName="Default JSON" SymbolicName="DefaultJson">
+    <DisplayName>Default JSON</DisplayName>
+    <References>
+      <Reference ReferenceType="HasEncoding" IsForward="false">ns=1;i=15025</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=76</Reference>
+    </References>
+  </UAObject>
+</UANodeSet>
