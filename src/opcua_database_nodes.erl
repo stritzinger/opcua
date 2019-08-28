@@ -48,17 +48,17 @@ setup(Dir) ->
 parse(File) ->
     {XML, []} = xmerl_scan:file(File, [{space, normalize}]),
     Root = filename:rootname(File),
-    Nodes = parse_node_set(xml_to_simple(XML)),
-    References = extract_references(Nodes),
-    DataTypesSchemas = extract_data_type_schemas(Nodes),
-    Encodings = extract_encodings(Nodes),
+    NodesProplist = parse_node_set(xml_to_simple(XML)),
+    DataTypesSchemas = extract_data_type_schemas(NodesProplist),
+    Encodings = extract_encodings(NodesProplist),
+    Nodes = extract_nodes(NodesProplist),
+    References = extract_references(NodesProplist),
     ?LOG_INFO("Saving OPCUA data type schemas..."),
     write_terms(Root, "data_type_schemas", DataTypesSchemas),
     ?LOG_INFO("Saving OPCUA encoding specifications..."),
     write_terms(Root, "encodings", Encodings),
     ?LOG_INFO("Saving OPCUA nodes..."),
-    CleanNodes = [N#opcua_node{references = []} || N <- Nodes],
-    write_terms(Root, "nodes", CleanNodes),
+    write_terms(Root, "nodes", Nodes),
     ?LOG_INFO("Saving OPCUA references..."),
     write_terms(Root, "references", References),
     ok.
@@ -76,25 +76,31 @@ parse_aliases(Aliases) ->
     maps:from_list([{Name, parse(node_id, ID, #{aliases => #{}})} || {<<"Alias">>, #{<<"Alias">> := Name}, [ID]} <- Aliases]).
 
 parse_node({Tag, Attrs, Content} = Elem, {Meta, Nodes}) when ?IS_NODE(Tag) ->
+    NodeId = get_attr(<<"NodeId">>, Attrs, node_id, Meta),
     Node = #opcua_node{
-        node_id = get_attr(<<"NodeId">>, Attrs, node_id, Meta),
+        node_id = NodeId,
         browse_name = maps:get(<<"BrowseName">>, Attrs, undefined),
         display_name = hd(get_value([<<"DisplayName">>], Content)),
-        references = parse_references(get_value([<<"References">>], Content), Meta),
         node_class = parse_node_class(Elem, Meta)
     },
-    {Meta, [Node|Nodes]};
+    Refs = parse_references(get_value([<<"References">>], Content), NodeId, Meta),
+    {Meta, [{NodeId, {Node, Refs}}|Nodes]};
 parse_node(_Element, State) ->
     State.
 
-parse_references(Refs, Meta) ->
-    [parse_reference(R, Meta) || R <- Refs].
+parse_references(Refs, NodeId, Meta) ->
+    [parse_reference(R, NodeId, Meta) || R <- Refs].
 
-parse_reference({<<"Reference">>, Attrs, [Target]}, Meta) ->
+parse_reference({<<"Reference">>, Attrs, [Peer]}, BaseNodeId, Meta) ->
+    PeerNodeId = parse(node_id, Peer, Meta),
+    {SourceNodeId, TargetNodeId} = case get_attr(<<"IsForward">>, Attrs, boolean, Meta, true) of
+                                       true     -> {BaseNodeId, PeerNodeId};
+                                       false    -> {PeerNodeId, BaseNodeId}
+                                   end,
     #opcua_reference{
-        reference_type_id = get_attr(<<"ReferenceType">>, Attrs, node_id, Meta),
-        is_forward = get_attr(<<"IsForward">>, Attrs, boolean, Meta, true),
-        target_id = parse(node_id, Target, Meta)
+        type_id = get_attr(<<"ReferenceType">>, Attrs, node_id, Meta),
+        source_id = SourceNodeId,
+        target_id = TargetNodeId
     }.
 
 parse_node_class({<<"UAObject">>, Attrs, _Content}, Meta) ->
@@ -249,36 +255,29 @@ xml_attrs_to_map(Attrs) ->
         #xmlAttribute{name = Name, value = Value} <- Attrs
     ]).
 
-extract_references(Nodes) ->
-    [resolve_reference(N#opcua_node.node_id, R) ||
-        N <- Nodes,
-        R <- N#opcua_node.references
-    ].
+extract_references(NodesProplist) ->
+    [Ref || {_NodeId, {_Node, Refs}} <- NodesProplist, Ref <- Refs].
 
-resolve_reference(Source, #opcua_reference{is_forward = false} = Reference) ->
-    {
-        Reference#opcua_reference.target_id,
-        Reference#opcua_reference{target_id = Source, is_forward = true}
-    };
-resolve_reference(Source, Ref) ->
-    {
-        Source,
-        Ref
-    }.
+extract_nodes(NodesProplist) ->
+    [Node || {_NodeId, {Node, _Refs}} <- NodesProplist].
 
-extract_data_type_schemas(Nodes) ->
-    DataTypeNodes = [Node || Node = #opcua_node{node_class = #opcua_data_type{}} <- Nodes],
-    opcua_database_data_types:generate_schemas(DataTypeNodes).
+extract_data_type_schemas(NodesProplist) ->
+    DataTypeNodesProplist = lists:filter(fun({_, {Node, _}}) ->
+        is_record(Node#opcua_node.node_class, opcua_data_type)
+    end, NodesProplist),
+    opcua_database_data_types:generate_schemas(DataTypeNodesProplist).
 
-extract_encodings(Nodes) ->
-    [{NodeId, {TargetNodeId, binary}} ||
-        #opcua_node{
-            node_id = NodeId,
-            browse_name = <<"Default Binary">>,
-            references = References
-        } <- Nodes,
+extract_encodings(NodesProplist) ->
+    [{TargetNodeId, {SourceNodeId, binary}} ||
+        {_NodeId,
+         {
+            #opcua_node{browse_name = <<"Default Binary">>},
+            References
+         }
+        } <- NodesProplist,
         #opcua_reference{
-            reference_type_id = #opcua_node_id{value = 38},
+            type_id = #opcua_node_id{value = 38},
+            source_id = SourceNodeId,
             target_id = TargetNodeId
         } <- References
     ].

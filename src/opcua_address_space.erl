@@ -88,7 +88,7 @@ get_references(OriginId, Opts) ->
             {fun digraph:edges/2, fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end}
     end,
     Edges = [digraph:edge(Graph, I) || I <- GetEdgesFun(Graph, OriginId)],
-    [edge_to_ref(OriginId, E) || E <- Edges, FilterFun(E)].
+    [edge_to_ref(E) || E <- Edges, FilterFun(E)].
 
 %% @doc Returns if the given OPCUA type node id is a subtype of the second
 %% given OPCUA type node id.
@@ -113,7 +113,12 @@ handle_call({del_nodes, NodeIds}, _From, G) ->
     [digraph:del_vertex(G, NodeId) || NodeId <- NodeIds],
     {reply, ok, G};
 handle_call({add_references, References}, _From, G) ->
-    [digraph:add_edge(G, N1, N2, Type) || {N1, #opcua_reference{target_id = N2, reference_type_id = Type}} <- References],
+    [digraph:add_edge(G, N1, N2, Type) ||
+     #opcua_reference{
+        source_id = N1,
+        target_id = N2,
+        type_id = Type
+     } <- References],
     {reply, ok, G}.
 
 handle_cast({cache_subtypes, Type, Subtypes}, State) ->
@@ -154,15 +159,9 @@ subtypes(TypeNodeId, Acc) ->
         end
     end, Acc, get_references(TypeNodeId, RefOpts)).
 
-edge_to_ref(OriginId, {_, From, OriginId, Type}) ->
+edge_to_ref({_, SourceNodeId, TargetNodeId, Type}) ->
     #opcua_reference{
-        target_id = From,
-        reference_type_id = Type,
-        is_forward = false
-    };
-edge_to_ref(OriginId, {_, OriginId, To, Type}) ->
-    #opcua_reference{
-        target_id = To,
-        reference_type_id = Type,
-        is_forward = true
+        source_id = SourceNodeId,
+        target_id = TargetNodeId,
+        type_id = Type
     }.

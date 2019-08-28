@@ -23,8 +23,8 @@
 lookup(NodeId) ->
     proplists:get_value(NodeId, ets:lookup(?MODULE, NodeId)).
 
-generate_schemas(DataTypeNodes) ->
-    Digraph = generate_data_types_digraph(DataTypeNodes),
+generate_schemas(DataTypeNodesProplist) ->
+    Digraph = generate_data_types_digraph(DataTypeNodesProplist),
     SortedNodes = digraph_utils:topsort(Digraph),
     generate_schemas(Digraph, SortedNodes, #{}).
 
@@ -87,36 +87,35 @@ field_to_record({Name, Attrs}) ->
                  value          = maps:get(value, Attrs, undefined),
                  is_optional    = maps:get(is_optional, Attrs, false)}.
 
-generate_data_types_digraph(DataTypeNodes) ->
-    NodesPropList = [{NodeId, Node} || Node = #opcua_node{node_id = NodeId} <- DataTypeNodes],
-    DataTypeNodesMap = maps:from_list(NodesPropList),
+generate_data_types_digraph(DataTypeNodesProplist) ->
+    DataTypeNodesMap = maps:from_list(DataTypeNodesProplist),
     Digraph = digraph:new([acyclic]),
-    fill_data_types(Digraph, DataTypeNodesMap, DataTypeNodes).
+    fill_data_types(Digraph, DataTypeNodesMap, maps:values(DataTypeNodesMap)).
 
 fill_data_types(Digraph, _NodesMap, []) ->
     Digraph;
-fill_data_types(Digraph, NodesMap, [Node = #opcua_node{references = References} | Nodes]) ->
-    digraph:add_vertex(Digraph, Node),
+fill_data_types(Digraph, NodesMap, [{Node, References} | Nodes]) ->
     case get_sub_type_reference(References) of
-        {IsForward, TargetNodeId} ->
-            Target = maps:get(TargetNodeId, NodesMap),
+        {SourceNodeId, TargetNodeId} ->
+            {Source, _} = maps:get(SourceNodeId, NodesMap),
+            {Target, _} = maps:get(TargetNodeId, NodesMap),
+            %% NOTE: we might add nodes multiple times here,
+            %% but the add operation is idempotent anyway
+            digraph:add_vertex(Digraph, Source),
             digraph:add_vertex(Digraph, Target),
-            case IsForward of
-                true  -> digraph:add_edge(Digraph, Node, Target);
-                false -> digraph:add_edge(Digraph, Target, Node)
-            end;
+            digraph:add_edge(Digraph, Source, Target);
         undefined ->
-            ok  %% we got a root node
+            digraph:add_vertex(Digraph, Node) %% we got a root node
     end,
     fill_data_types(Digraph, NodesMap, Nodes).
 
 get_sub_type_reference(References) ->
-    SubTypeRefs = [Ref || Ref = #opcua_reference{reference_type_id = #opcua_node_id{value = 45}} <- References],
+    SubTypeRefs = [Ref || Ref = #opcua_reference{type_id = #opcua_node_id{value = 45}} <- References],
     case SubTypeRefs of
         [] ->
             undefined;
-        [#opcua_reference{is_forward = IsForward, target_id = TargetNodeId}] ->
-            {IsForward, TargetNodeId}
+        [#opcua_reference{source_id = SourceNodeId, target_id = TargetNodeId}] ->
+            {SourceNodeId, TargetNodeId}
     end.
 
 resolve_type(#opcua_node_id{value = 22}, NodeId, Fields, false, false, WithOptions) ->

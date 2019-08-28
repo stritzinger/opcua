@@ -89,8 +89,7 @@
     user_write_mask             :: opcua:optional(non_neg_integer()),
     role_permissions            :: opcua:optional(opcua:role_permission()),
     user_role_permissions       :: opcua:optional(opcua:role_permissions()),
-    access_restrictions         :: opcua:optional(non_neg_integer()),
-    references                  :: opcua:node_refs()
+    access_restrictions         :: opcua:optional(non_neg_integer())
 }).
 
 -record(opcua_object, {
@@ -115,9 +114,9 @@
 }).
 
 -record(opcua_reference, {
-    reference_type_id           :: opcua:node_id(),
-    is_forward                  :: boolean(),
-    target_id                   :: opcua:expanded_node_id()
+    type_id                     :: opcua:node_id(),
+    source_id                   :: opcua:node_id(),
+    target_id                   :: opcua:node_id()
 }).
 
 -record(opcua_object_type, {
