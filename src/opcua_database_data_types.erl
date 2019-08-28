@@ -73,17 +73,19 @@ generate_schemas(Digraph, [Node | Nodes], Acc) ->
     IsUnion = maps:get(is_union, DataTypeDefinition, false),
     IsOptionSet = maps:get(is_option_set, DataTypeDefinition, false),
     RecordFields = [field_to_record(Field) || Field <- Fields],
+    WithOptions = lists:any(fun(X) -> X#opcua_field.is_optional end, RecordFields),
     {RootNodeId, NewFields} = resolve_inheritance(ParentNodeId, RecordFields, Acc),
-    DataType = resolve_type(RootNodeId, NodeId, NewFields, IsUnion, IsOptionSet),
+    DataType = resolve_type(RootNodeId, NodeId, NewFields, IsUnion, IsOptionSet, WithOptions),
     StringNodeId = #opcua_node_id{type = string, value = BrowseName},
     Keys = [StringNodeId, NodeId, {0, BrowseName}, {0, NodeId#opcua_node_id.value}],
     generate_schemas(Digraph, Nodes, maps:put(NodeId, {Keys, DataType}, Acc)).
 
 field_to_record({Name, Attrs}) ->
-    #opcua_field{name       = Name,
-                 node_id    = maps:get(data_type, Attrs, #opcua_node_id{value = 24}),
-                 value_rank = maps:get(value_rank, Attrs, -1),
-                 value      = maps:get(value, Attrs, undefined)}.
+    #opcua_field{name           = Name,
+                 node_id        = maps:get(data_type, Attrs, #opcua_node_id{value = 24}),
+                 value_rank     = maps:get(value_rank, Attrs, -1),
+                 value          = maps:get(value, Attrs, undefined),
+                 is_optional    = maps:get(is_optional, Attrs, false)}.
 
 generate_data_types_digraph(DataTypeNodes) ->
     NodesPropList = [{NodeId, Node} || Node = #opcua_node{node_id = NodeId} <- DataTypeNodes],
@@ -117,13 +119,15 @@ get_sub_type_reference(References) ->
             {IsForward, TargetNodeId}
     end.
 
-resolve_type(#opcua_node_id{value = 22}, NodeId, Fields, false, IsOptionSet) ->
-    #opcua_structure{node_id = NodeId, with_options = IsOptionSet, fields = Fields};
-resolve_type(#opcua_node_id{value = 22}, NodeId, Fields, true, _IsOptionSet) ->
+resolve_type(#opcua_node_id{value = 22}, NodeId, Fields, false, false, WithOptions) ->
+    #opcua_structure{node_id = NodeId, fields = Fields, with_options = WithOptions};
+resolve_type(#opcua_node_id{value = 22}, NodeId, Fields, true, _IsOptionSet, _WithOptions) ->
     #opcua_union{node_id = NodeId, fields = Fields};
-resolve_type(#opcua_node_id{value = 29}, NodeId, Fields, _IsUnion, _IsOptionSet) ->
+resolve_type(#opcua_node_id{} =  MaskTypeNodeId, NodeId, Fields, _IsUnion, true, _WithOptions) ->
+    #opcua_option_set{node_id = NodeId, mask_type = MaskTypeNodeId, fields = Fields};
+resolve_type(#opcua_node_id{value = 29}, NodeId, Fields, _IsUnion, _IsOptionSet, _WithOptions) ->
     #opcua_enum{node_id = NodeId, fields = Fields};
-resolve_type(BuiltinNodeId = #opcua_node_id{value = Id}, NodeId, _Fields, _IsUnion, _IsOptionSet)
+resolve_type(BuiltinNodeId = #opcua_node_id{value = Id}, NodeId, _Fields, _IsUnion, _IsOptionSet, _WithOptions)
   when ?IS_BUILTIN_TYPE_ID(Id) ->
     #opcua_builtin{node_id = NodeId, builtin_node_id = BuiltinNodeId}.
 

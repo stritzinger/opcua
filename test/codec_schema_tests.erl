@@ -13,6 +13,7 @@ t_test_() ->
       fun structure_with_options/0,
       fun enum/0,
       fun union/0,
+      fun option_set/0,
       fun builtin/0]}.
 
 setup() ->
@@ -122,6 +123,19 @@ union() ->
         fun(#opcua_node_id{value = 101}) -> Union end),
     NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = #{some_string => <<"Hello!">>},
+    assert_codec(NodeId, ToBeEncoded).
+
+option_set() ->
+    OptionSet = #opcua_option_set{
+                    node_id = #opcua_node_id{type = numeric, value = 101},
+                    mask_type = #opcua_node_id{value = 3},
+                    fields = [#opcua_field{name = option_0, value = 0},
+                              #opcua_field{name = option_1, value = 1},
+                              #opcua_field{name = option_2, value = 2}]},
+    meck:expect(opcua_database, lookup_schema,
+        fun(#opcua_node_id{value = 101}) -> OptionSet end),
+    NodeId = #opcua_node_id{type = numeric, value = 101},
+    ToBeEncoded = [option_0, option_2],
     assert_codec(NodeId, ToBeEncoded).
 
 builtin() ->
