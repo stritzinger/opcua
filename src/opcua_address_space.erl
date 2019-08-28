@@ -117,7 +117,7 @@ handle_call({add_references, References}, _From, G) ->
      #opcua_reference{
         source_id = N1,
         target_id = N2,
-        reference_type_id = Type
+        type_id = Type
      } <- References],
     {reply, ok, G}.
 
@@ -163,5 +163,5 @@ edge_to_ref({_, SourceNodeId, TargetNodeId, Type}) ->
     #opcua_reference{
         source_id = SourceNodeId,
         target_id = TargetNodeId,
-        reference_type_id = Type
+        type_id = Type
     }.

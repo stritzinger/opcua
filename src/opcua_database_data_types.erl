@@ -108,7 +108,7 @@ fill_data_types(Digraph, NodesMap, [{Node, References} | Nodes]) ->
     fill_data_types(Digraph, NodesMap, Nodes).
 
 get_sub_type_reference(References) ->
-    SubTypeRefs = [Ref || Ref = #opcua_reference{reference_type_id = #opcua_node_id{value = 45}} <- References],
+    SubTypeRefs = [Ref || Ref = #opcua_reference{type_id = #opcua_node_id{value = 45}} <- References],
     case SubTypeRefs of
         [] ->
             undefined;

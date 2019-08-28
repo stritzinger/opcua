@@ -114,7 +114,7 @@
 }).
 
 -record(opcua_reference, {
-    reference_type_id           :: opcua:node_id(),
+    type_id                     :: opcua:node_id(),
     source_id                   :: opcua:node_id(),
     target_id                   :: opcua:node_id()
 }).
