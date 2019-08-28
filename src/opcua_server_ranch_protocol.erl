@@ -81,7 +81,7 @@ init(Parent, Ref, Socket, Transport, Opts) ->
     ], Opts),
     PeerRes = Transport:peername(Socket),
     SockRes = Transport:sockname(Socket),
-    UACPRes = opcua_uacp:new_server(ProtoOpts),
+    UACPRes = opcua_server_uacp:new(ProtoOpts),
     case {PeerRes, SockRes, UACPRes} of
         {{ok, Peer}, {ok, Sock}, {ok, Proto}} ->
             Conn = #uacp_connection{
@@ -118,14 +118,14 @@ loop(#state{conn = Conn} = State) ->
 loop_consume(#state{parent = P, conn = Conn, proto = Proto} = State) ->
     #uacp_connection{socket = S, transport = T} = Conn,
     {OK, Closed, Error} = T:messages(),
-    Timeout = case opcua_uacp:has_chunk(Conn, Proto) of
+    Timeout = case opcua_server_uacp:can_produce(Conn, Proto) of
         true -> 3;
         false -> infinity
     end,
     receive
         {OK, S, Input} ->
             ?LOG_DEBUG("Received: ~p", [Input]),
-            case opcua_uacp:handle_data(Input, Conn, Proto) of
+            case opcua_server_uacp:handle_data(Input, Conn, Proto) of
                 {ok, Proto2} ->
                     loop_produce(State#state{proto = Proto2}, fun loop/1);
                 {stop, Reason, Proto2} ->
@@ -152,7 +152,7 @@ loop_consume(#state{parent = P, conn = Conn, proto = Proto} = State) ->
 -spec loop_produce(state(), function()) -> no_return().
 loop_produce(#state{conn = Conn, proto = Proto} = State, Cont) ->
     #uacp_connection{socket = S, transport = T} = Conn,
-    case opcua_uacp:next_chunk(Conn, Proto) of
+    case opcua_server_uacp:produce(Conn, Proto) of
         {stop, Reason, Proto2} ->
             terminate(State#state{proto = Proto2}, Reason);
         {ok, Proto2} ->
@@ -177,13 +177,13 @@ terminate(State, Reason) ->
     State2 = terminate_produce(State),
     State3 = terminate_linger(State2),
     #state{conn = Conn, proto = Proto} = State3,
-    opcua_uacp:terminate(Reason, Conn, Proto),
+    opcua_server_uacp:terminate(Reason, Conn, Proto),
     exit({shutdown, Reason}).
 
 terminate_produce(#state{conn = Conn, proto = Proto} = State) ->
     %TODO: we may want to do that for a maximum amount of time ?
     #uacp_connection{socket = S, transport = T} = Conn,
-    case opcua_uacp:next_chunk(Conn, Proto) of
+    case opcua_server_uacp:produce(Conn, Proto) of
         {ok, Proto2} -> #state{proto = Proto2};
         {ok, Output, Proto2} ->
             ?LOG_DEBUG("Sending:  ~p", [Output]),

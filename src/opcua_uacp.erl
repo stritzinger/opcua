@@ -17,11 +17,27 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([new_server/1]).
+-export([new/3]).
 -export([has_chunk/2]).
 -export([next_chunk/2]).
+-export([send/2]).
 -export([handle_data/3]).
 -export([terminate/3]).
+
+%%% BEHAVIOUR opcua_uacp DEFINITION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-callback init(Opts :: map()) -> State :: term().
+-callback channel_allocate(term())
+    -> {ok, opcua:channel_id(), State :: term()}
+     | {error, Reason :: term()}.
+-callback channel_release(opcua:channel_id(), term())
+    -> {ok, State :: term()}
+     | {error, Reason :: term()}.
+
+-optional_callbacks([
+    channel_allocate/1,
+    channel_release/2
+]).
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -49,6 +65,7 @@
 }).
 
 -record(state, {
+    side                            :: server | client,
     buff = <<>>                     :: binary(),
     channel_id                      :: undefined | pos_integer(),
     max_res_chunk_size = ?DEFAULT_MAX_CHUNK_SIZE    :: non_neg_integer(),
@@ -64,14 +81,18 @@
     temp_token_id                   :: undefined | pos_integer(),
     curr_sec                        :: term(),
     temp_sec                        :: term(),
-    sess                            :: undefined | pid()
+    mod                             :: module(),
+    sub                             :: term()
 }).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-new_server(_Opts) ->
-    {ok, #state{}}.
+new(Side, Mod, Opts) when Side =:= client; Side =:= server ->
+    case Mod:init(Opts) of
+        {ok, Sub} ->  {ok, #state{side = Side, mod = Mod, sub = Sub}};
+        {error, _Reason} = Error -> Error
+    end.
 
 has_chunk(_Conn, #state{inflight_responses = Map}) -> maps:size(Map) > 0.
 
@@ -94,7 +115,7 @@ next_chunk(_conn, #state{} = State) ->
                         data = Data
                     } = Inflight,
                     case produce_chunk(State2, MsgType, final, ReqId, Data) of
-                        {error, Reason, State3} -> {stop, Reason, State3};
+                        {error, _Reason, _State3} = Error -> Error;
                         {ok, Chunk, State3} ->
                             Output = opcua_uacp_codec:encode_chunks(Chunk),
                             {ok, Output, State3}
@@ -102,20 +123,31 @@ next_chunk(_conn, #state{} = State) ->
             end
     end.
 
+send(#uacp_message{type = MsgType} = Msg, State)
+  when MsgType =:= acknowledge; MsgType =:= error ->
+    #uacp_message{payload = Payload} = Msg,
+    Data = encode_basic_payload(MsgType, Payload),
+    inflight_response_add(State, MsgType, undefined, Data);
+send(#uacp_message{type = MsgType} = Msg, State)
+  when MsgType =:= channel_open; MsgType =:= channel_close; MsgType =:= channel_message ->
+    #uacp_message{request_id = ReqId, node_id = NodeId, payload = Payload} = Msg,
+    Data = opcua_uacp_codec:encode_object(NodeId, Payload),
+    inflight_response_add(State, MsgType, ReqId, Data).
+
 handle_data(Data, Conn, #state{buff = Buff} = State) ->
     %TODO: Handle decoding errors so it can be recoverable,
     %      updated buffer would be required to not keep decoding the
     %      same data all over again.
     TotalSize = byte_size(Data) + byte_size(Buff),
     case TotalSize > State#state.max_req_chunk_size of
-        true -> {stop, bad_encoding_limits_exceeded, State};
+        true -> {error, bad_encoding_limits_exceeded, State};
         false ->
             AllData = <<Buff/binary, Data/binary>>,
             {Chunks, Buff2} = opcua_uacp_codec:decode_chunks(AllData),
             State2 = State#state{buff = Buff2},
             case handle_chunks(State2, Conn, Chunks) of
-                {error, Reason, State3} -> {stop, Reason, State3};
-                {ok, State3} -> {ok, State3}
+                {error, _Reason, _State3} = Error -> Error;
+                {ok, _Msgs, _State3} = Result -> Result
             end
     end.
 
@@ -126,21 +158,25 @@ terminate(_Reason, _Conn, State) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-handle_chunks(State, _Conn, []) -> {ok, State};
-handle_chunks(State, Conn, [Chunk | Rest]) ->
+handle_chunks(State, Conn, Chunks) ->
+    handle_chunks(State, Conn, Chunks, []).
+
+handle_chunks(State, _Conn, [], Acc) ->
+    {ok, Acc, State};
+handle_chunks(State, Conn, [Chunk | Rest], Acc) ->
     %TODO: handle errors so non-fatal errors do not break the chunk processing
     case handle_chunk(State, Conn, Chunk) of
         {error, _Reason, _State2} = Error -> Error;
-        {ok, State2} -> handle_chunks(State2, Conn, Rest)
+        {ok, State2} -> handle_chunks(State2, Conn, Rest, Acc);
+        {ok, Msg, State2} -> handle_chunks(State2, Conn, Rest, [Msg | Acc])
     end.
 
 handle_chunk(State, Conn,
              #uacp_chunk{state = undefined, message_type = MsgType,
                          chunk_type = final, body = Body}) ->
-    Message = decode_basic_payload(MsgType, Body),
-    Request = #uacp_message{type = MsgType, payload = Message},
-    ?LOG_DEBUG("Handling request ~p", [Request]),
-    handle_request(State, Conn, Request);
+    Payload = decode_basic_payload(MsgType, Body),
+    Message = #uacp_message{type = MsgType, payload = Payload},
+    handle_message(State, Conn, Message);
 handle_chunk(State, Conn, #uacp_chunk{state = locked} = Chunk) ->
     #uacp_chunk{message_type = MsgType, channel_id = ChannelId} = Chunk,
     channel_validate(State, MsgType, ChannelId),
@@ -178,14 +214,13 @@ handle_open_chunk(State, Conn, #uacp_chunk{security = SecPolicy} = Chunk) ->
                     } = Chunk2,
                     {NodeId, Payload} =
                         opcua_uacp_codec:decode_object(Body),
-                    Request = #uacp_message{
+                    Message = #uacp_message{
                         type = channel_open,
                         request_id = RequestId,
                         node_id = NodeId,
                         payload = Payload
                     },
-                    ?LOG_DEBUG("Handling request ~p", [Request]),
-                    handle_request(State3, Conn, Request)
+                    handle_message(State3, Conn, Message)
             end
     end.
 
@@ -199,26 +234,81 @@ handle_close_chunk(State, Conn, Chunk) ->
             } = Chunk2,
             {NodeId, Payload} =
                 opcua_uacp_codec:decode_object(Body),
-            Request = #uacp_message{
+            Message = #uacp_message{
                 type = channel_close,
                 request_id = RequestId,
                 node_id = NodeId,
                 payload = Payload
             },
-            ?LOG_DEBUG("Handling request ~p", [Request]),
-            handle_request(State2, Conn, Request)
+            handle_message(State2, Conn, Message)
     end.
 
-handle_message_chunk(State, Conn, Chunk) ->
+handle_message(State, _Conn,
+               #uacp_message{type = hello, payload = Msg}) ->
+    #state{
+        max_res_chunk_size = ServerMaxResChunkSize,
+        max_req_chunk_size = ServerMaxReqChunkSize,
+        max_msg_size = ServerMaxMsgSize,
+        max_chunk_count = ServerMaxChunkCount
+    } = State,
+    #{
+        ver := ClientVersion,
+        max_res_chunk_size := ClientMaxResChunkSize,
+        max_req_chunk_size := ClientMaxReqChunkSize,
+        max_msg_size := ClientMaxMsgSize,
+        max_chunk_count := ClientMaxChunkCount,
+        endpoint_url := EndPointUrl
+    } = Msg,
+    MaxResChunkSize = negotiate_limit(ServerMaxResChunkSize, ClientMaxResChunkSize),
+    MaxReqChunkSize = negotiate_limit(ServerMaxReqChunkSize, ClientMaxReqChunkSize),
+    MaxMsgSize = negotiate_limit(ServerMaxMsgSize, ClientMaxMsgSize),
+    MaxChunkCount = negotiate_limit(ServerMaxChunkCount, ClientMaxChunkCount),
+    ?LOG_INFO("Negociated protocol configuration: client_ver=~w, server_ver=~w, "
+              "max_res_chunk_size=~w, max_req_chunk_size=~w, max_msg_size=~w, "
+              "max_chunk_count=~w, endpoint_url=~p" ,
+              [ClientVersion, ?SERVER_VER, MaxResChunkSize, MaxReqChunkSize,
+               MaxMsgSize, MaxChunkCount, EndPointUrl]),
+    State2 = State#state{
+        client_ver = ClientVersion,
+        max_res_chunk_size = MaxResChunkSize,
+        max_req_chunk_size = MaxReqChunkSize,
+        max_msg_size = MaxMsgSize,
+        max_chunk_count = MaxChunkCount,
+        endpoint_url = EndPointUrl
+    },
+    Response = #uacp_message{
+        type = acknowledge,
+        payload = #{
+            ver => ?SERVER_VER,
+            max_res_chunk_size => MaxResChunkSize,
+            max_req_chunk_size => MaxReqChunkSize,
+            max_msg_size => MaxMsgSize,
+            max_chunk_count => MaxChunkCount
+        }
+    },
+    send(Response, State2);
+handle_message(State, _Conn, #uacp_message{type = error} = Msg) ->
+    {ok, Msg, State};
+handle_message(State, Conn, #uacp_message{type = channel_open} = Request) ->
+    case security_open(State, Conn, Request) of
+        {error, _Reason, _State2} = Error -> Error;
+        {ok, Resp, State2} -> send(Resp, State2)
+    end;
+handle_message(State, Conn, #uacp_message{type = channel_close} = Request) ->
+    case security_close(State, Conn, Request) of
+        {error, _Reason, _State2} = Error -> Error;
+        {ok, Resp, State2} -> send(Resp, State2)
+    end;
+handle_message(State, _Conn, #uacp_message{type = channel_message} = Msg) ->
+    {ok, Msg, State}.
+
+handle_message_chunk(State, _Conn, Chunk) ->
     case security_sym_unlock(State, Chunk) of
         {error, _Reason, _State2} = Error -> Error;
         {ok, Chunk2, State2} ->
             case inflight_request_update(State2, Chunk2) of
                 {ok, State3} -> {ok, State3};
-                {ok, Request, State3} ->
-                    ?LOG_DEBUG("Handling request ~p", [Request]),
-                    handle_request(State3, Conn, Request)
-
+                {ok, Message, State3} -> {ok, Message, State3}
             end
     end.
 
@@ -296,108 +386,14 @@ inflight_request_update(State, #uacp_chunk{chunk_type = final} = Chunk) ->
     #inflight_request{reversed_data = FinalReversedData} = Inflight2,
     FinalData = lists:reverse(FinalReversedData),
     {NodeId, Payload} = opcua_uacp_codec:decode_object(FinalData),
-    Request = #uacp_message{
+    Message = #uacp_message{
         type = MsgType,
         request_id = ReqId,
         node_id = NodeId,
         payload = Payload
     },
-    {ok, Request, State2}.
+    {ok, Message, State2}.
 
-handle_request(State, _Conn, #uacp_message{type = hello, payload = Msg}) ->
-    #state{
-        max_res_chunk_size = ServerMaxResChunkSize,
-        max_req_chunk_size = ServerMaxReqChunkSize,
-        max_msg_size = ServerMaxMsgSize,
-        max_chunk_count = ServerMaxChunkCount
-    } = State,
-    #{
-        ver := ClientVersion,
-        max_res_chunk_size := ClientMaxResChunkSize,
-        max_req_chunk_size := ClientMaxReqChunkSize,
-        max_msg_size := ClientMaxMsgSize,
-        max_chunk_count := ClientMaxChunkCount,
-        endpoint_url := EndPointUrl
-    } = Msg,
-    MaxResChunkSize = negotiate_min(ServerMaxResChunkSize, ClientMaxResChunkSize),
-    MaxReqChunkSize = negotiate_min(ServerMaxReqChunkSize, ClientMaxReqChunkSize),
-    MaxMsgSize = negotiate_min(ServerMaxMsgSize, ClientMaxMsgSize),
-    MaxChunkCount = negotiate_min(ServerMaxChunkCount, ClientMaxChunkCount),
-    ?LOG_INFO("Negociated protocol configuration: client_ver=~w, server_ver=~w, "
-              "max_res_chunk_size=~w, max_req_chunk_size=~w, max_msg_size=~w, "
-              "max_chunk_count=~w, endpoint_url=~p" ,
-              [ClientVersion, ?SERVER_VER, MaxResChunkSize, MaxReqChunkSize,
-               MaxMsgSize, MaxChunkCount, EndPointUrl]),
-    State2 = State#state{
-        client_ver = ClientVersion,
-        max_res_chunk_size = MaxResChunkSize,
-        max_req_chunk_size = MaxReqChunkSize,
-        max_msg_size = MaxMsgSize,
-        max_chunk_count = MaxChunkCount,
-        endpoint_url = EndPointUrl
-    },
-    Response = #uacp_message{
-        type = acknowledge,
-        payload = #{
-            ver => ?SERVER_VER,
-            max_res_chunk_size => MaxResChunkSize,
-            max_req_chunk_size => MaxReqChunkSize,
-            max_msg_size => MaxMsgSize,
-            max_chunk_count => MaxChunkCount
-        }
-    },
-    handle_response(State2, Response);
-handle_request(State, _Conn, #uacp_message{type = error, payload = Msg}) ->
-    #{error := Error, reason := Reason} = Msg,
-    ?LOG_ERROR("Received client error ~w: ~s", [Error, Reason]),
-    {ok, State};
-handle_request(State, Conn, #uacp_message{type = channel_open} = Request) ->
-    case security_open(State, Conn, Request) of
-        {error, _Reason, _State2} = Error -> Error;
-        {ok, Resp, State2} -> handle_response(State2, Resp)
-    end;
-handle_request(State, Conn, #uacp_message{type = channel_close} = Request) ->
-    case security_close(State, Conn, Request) of
-        {error, _Reason, _State2} = Error -> Error;
-        {ok, Resp, State2} -> handle_response(State2, Resp)
-    end;
-handle_request(#state{sess = Sess} = State, Conn,
-               #uacp_message{type = channel_message} = Request) ->
-    #uacp_message{node_id = NodeSpec} = Request,
-    %TODO: figure a way to no hardcode the ids...
-    NodeId = opcua_database:lookup_id(NodeSpec),
-    Request2 = Request#uacp_message{node_id = NodeId},
-    Result = case {Sess, NodeId} of
-        {_, #opcua_node_id{value = 426}} -> %% GetEndpoints
-            opcua_discovery:handle_request(Conn, Request2);
-        {undefined, _} ->
-            opcua_session_manager:handle_request(Conn, Request2);
-        {Session, _} ->
-            opcua_session:handle_request(Conn, Request2, Session)
-    end,
-    case Result of
-        {error, Reason} ->
-            {error, Reason, State};
-        {created, Resp, _SessPid} ->
-            handle_response(State, Resp);
-        {bound, Resp, SessPid} ->
-            handle_response(State#state{sess = SessPid}, Resp);
-        {closed, Resp} ->
-            handle_response(State#state{sess = undefined}, Resp);
-        {reply, Resp} ->
-            handle_response(State, Resp)
-    end.
-
-handle_response(State, #uacp_message{type = MsgType} = Response)
-  when MsgType =:= acknowledge; MsgType =:= error ->
-    #uacp_message{payload = Payload} = Response,
-    Data = encode_basic_payload(MsgType, Payload),
-    inflight_response_add(State, MsgType, undefined, Data);
-handle_response(State, #uacp_message{type = MsgType} = Response)
-  when MsgType =:= channel_open; MsgType =:= channel_close; MsgType =:= channel_message ->
-    #uacp_message{request_id = ReqId, node_id = NodeId, payload = Payload} = Response,
-    Data = opcua_uacp_codec:encode_object(NodeId, Payload),
-    inflight_response_add(State, MsgType, ReqId, Data).
 
 inflight_response_add(State, MsgType, ReqId, Data) ->
     #state{inflight_responses = ResMap, inflight_queue = ResQueue} = State,
@@ -464,25 +460,9 @@ channel_validate(#state{channel_id = ChannelId}, _MsgType, ChannelId) -> ok;
 channel_validate(_State, _MsgType, _ChannelId) ->
     throw(bad_tcp_secure_channel_unknown).
 
-channel_allocate(#state{channel_id = undefined} = State) ->
-    case opcua_registry:allocate_secure_channel(self()) of
-        {ok, ChannelId} -> {ok, State#state{channel_id = ChannelId}};
-        {error, Reason} -> {error, Reason, State}
-    end.
-
-channel_release(#state{channel_id = undefined} = State) -> State;
-channel_release(#state{channel_id = ChannelId} = State) ->
-    case opcua_registry:release_secure_channel(ChannelId) of
-        ok -> State#state{channel_id = undefined};
-        {error, Reason} ->
-            ?LOG_ERROR("Error while releasing secure channel ~w: ~p",
-                       [ChannelId, Reason]),
-            State#state{channel_id = undefined}
-    end.
-
-negotiate_min(0, B) -> B;
-negotiate_min(A, 0) -> A;
-negotiate_min(A, B) -> min(A, B).
+negotiate_limit(0, B) when is_integer(B), B >= 0 -> B;
+negotiate_limit(A, 0) when is_integer(A), A > 0-> A;
+negotiate_limit(A, B) when is_integer(A), A > 0, is_integer(B), B > 0 -> min(A, B).
 
 
 %== Security Module Abstraction Functions ======================================
@@ -596,4 +576,22 @@ security_close(#state{curr_token_id = Tok} = State, Conn, Req)
             {error, Reason, State2};
         {ok, Resp, Sub2} ->
             {ok, Resp, State#state{curr_sec = Sub2}}
+    end.
+
+
+%== Callback Module Abstraction Functions ======================================
+
+channel_allocate(#state{channel_id = undefined, mod = Mod, sub = Sub} = State) ->
+    case Mod:channel_allocate(Sub) of
+        {error, Reason} -> {error, Reason, State};
+        {ok, ChannelId, Sub2} ->
+            {ok, State#state{channel_id = ChannelId, sub = Sub2}}
+    end.
+
+channel_release(#state{channel_id = undefined} = State) -> State;
+channel_release(#state{channel_id = ChannelId, mod = Mod, sub = Sub} = State) ->
+    case Mod:channel_release(ChannelId, Sub) of
+        {error, Reason} -> {error, Reason, State};
+        {ok, Sub2} ->
+            {ok, State#state{channel_id = undefined, sub = Sub2}}
     end.
