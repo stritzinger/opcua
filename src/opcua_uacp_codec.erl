@@ -1,4 +1,4 @@
--module(opcua_protocol_codec).
+-module(opcua_uacp_codec).
 
 %TODO: Support non-fatal decoding errors when decoding multiple chunks by
 %      adding the buffer to the error so the decoding can continue after
