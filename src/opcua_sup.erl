@@ -21,13 +21,18 @@ start_link() ->
 
 init([]) ->
     {ok, {#{strategy => one_for_all}, [
-        child(opcua_address_space, []),
-        child(opcua_database, [#{}]),
-        child(opcua_registry, [#{}]),
-        child(opcua_sessions_sup, [])
+        worker(opcua_address_space, []),
+        worker(opcua_database, [#{}]),
+        worker(opcua_registry, [#{}]),
+        supervisor(opcua_sessions_sup, []),
+        supervisor(opcua_client_sup, [])
     ]}}.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-child(Module, Args) -> #{id => Module, start => {Module, start_link, Args}}.
+worker(Module, Args) ->
+    #{id => Module, start => {Module, start_link, Args}}.
+
+supervisor(Module, Args) ->
+    #{id => Module, type => supervisor, start => {Module, start_link, Args}}.
