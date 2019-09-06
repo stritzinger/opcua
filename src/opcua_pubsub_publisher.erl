@@ -90,16 +90,39 @@ init_samples([PDS | PDSs], Samples) ->
 
 sample(_PV, _PVIdx) ->
     %% for now just return a random integer
-    rand:uniform(100).
+    rand:uniform(16#FFFFFFFF).
 
 init_publish_interval(PublishInterval) ->
     timer:send_interval(PublishInterval, self(), publish).
 
 send_network_message(_Transport, NetworkMessage) ->
-    io:format("SEND NETWORK MESSAGE: ~p~n", [NetworkMessage]).
+    io:format("SEND NETWORK MESSAGE: ~w~n", [NetworkMessage]).
 
-build_data_set_messages(_DataSetWriters, _DataSets, _Samples) ->
-    [].
+build_data_set_messages(DataSetWriters, DataSets, Samples) ->
+    [build_data_set_message(DSW, maps:get(PDSName, DataSets), maps:get(PDSName, Samples))
+     || DSW = #data_set_writer{data_set_name = PDSName} <- DataSetWriters].
 
-build_network_message(_WriterGroup, _DataSetMessages) ->
-    [].
+build_data_set_message(DSW, PDS, Sample) ->
+    {_, FieldSamples} = lists:unzip(lists:keysort(1, maps:to_list(Sample#sample.field_samples))),
+    DataSetFieldContentMask = DSW#data_set_writer.data_set_field_content_mask,
+    FieldsMetaData = PDS#published_data_set.data_set_meta_data
+                        #data_set_meta_data.fields,
+    encode_data_set_fields(DataSetFieldContentMask, FieldsMetaData, FieldSamples).
+
+encode_data_set_fields(DataSetFieldContentMask, FieldsMetaData, FieldSamples) ->
+    case lists:member(raw_data, DataSetFieldContentMask) of
+        true ->
+            encode_data_set_fields_raw_data(FieldsMetaData, FieldSamples);
+        _   ->
+            FieldSamples
+    end.
+
+encode_data_set_fields_raw_data(FieldsMetaData, FieldSamples) ->
+    [encode_data_set_field_raw_data(FMD, FS)
+     || {FMD, FS} <- lists:zip(FieldsMetaData, FieldSamples)].
+
+encode_data_set_field_raw_data(#field_meta_data{built_in_type = Type}, FieldSample) ->
+    element(1, opcua_codec_binary:encode(Type, FieldSample)).
+
+build_network_message(_WriterGroup, DataSetMessages) ->
+    DataSetMessages.

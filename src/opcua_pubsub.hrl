@@ -109,7 +109,7 @@
     name = <<"demo data set writer">>,
     enabled = false,
     data_set_writer_id = 1,
-    data_set_field_content_mask,
+    data_set_field_content_mask = [raw_data],
     key_frame_count = 10,
     data_set_name = <<"demo published data set">>,
     data_set_writer_properties,
