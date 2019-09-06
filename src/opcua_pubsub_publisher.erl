@@ -18,13 +18,15 @@
 -record(sample, {
     data_set_name = <<"demo published data set">>,
     field_samples = #{},
-    timer_refs = []
+    sample_timer_refs = []
 }).
 
 -record(state, {
     writer_group = #writer_group{},
     data_sets = #{<<"demo published data set">> => #published_data_set{}},
-    samples = #{}
+    samples = #{},
+    publish_timer_ref,
+    transport_context = #{}
 }).
 
 start_link() ->
@@ -33,7 +35,9 @@ start_link() ->
 init(_) ->
     State = #state{},
     PublishedDataSets = maps:values(State#state.data_sets),
-    {ok, State#state{samples = init_samples(PublishedDataSets)}}.
+    InitializedSamples = init_samples(PublishedDataSets),
+    PubTRef = init_publish_interval(State#state.writer_group#writer_group.publishing_interval),
+    {ok, State#state{samples = InitializedSamples, publish_timer_ref = PubTRef}}.
 
 handle_call(_Request, _From, State) ->
     {reply, ignored, State}.
@@ -46,7 +50,17 @@ handle_info({sample, PDSName, PVIdx}, State = #state{samples = Samples, data_set
     PDSSample = maps:get(PDSName, Samples),
     NewFieldSamples = maps:put(PVIdx, FieldSample, PDSSample#sample.field_samples),
     NewPDSSample = PDSSample#sample{field_samples = NewFieldSamples},
-    {noreply, State#state{samples = maps:put(PDSName, NewPDSSample, Samples)}}.
+    {noreply, State#state{samples = maps:put(PDSName, NewPDSSample, Samples)}};
+handle_info(publish, State) ->
+    #state{writer_group = WriterGroup,
+           data_sets = DataSets,
+           samples = Samples,
+           transport_context = Transport} = State,
+    DataSetWriters = WriterGroup#writer_group.data_set_writers,
+    DataSetMessages = build_data_set_messages(DataSetWriters, DataSets, Samples),
+    NetworkMessage = build_network_message(WriterGroup, DataSetMessages),
+    send_network_message(Transport, NetworkMessage), 
+    {noreply, State}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -71,9 +85,21 @@ init_samples([PDS | PDSs], Samples) ->
                       end, IndexedVariables),
     Sample = #sample{data_set_name = PDSName,
                      field_samples = #{},
-                     timer_refs = TRefs},
+                     sample_timer_refs = TRefs},
     init_samples(PDSs, maps:put(PDSName, Sample, Samples)).
 
 sample(_PV, _PVIdx) ->
     %% for now just return a random integer
     rand:uniform(100).
+
+init_publish_interval(PublishInterval) ->
+    timer:send_interval(PublishInterval, self(), publish).
+
+send_network_message(_Transport, NetworkMessage) ->
+    io:format("SEND NETWORK MESSAGE: ~p~n", [NetworkMessage]).
+
+build_data_set_messages(_DataSetWriters, _DataSets, _Samples) ->
+    [].
+
+build_network_message(_WriterGroup, _DataSetMessages) ->
+    [].
