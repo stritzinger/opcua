@@ -1,25 +1,25 @@
 -record(field_meta_data, {
-    name,
+    name = <<"system time">>,
     description,
-    field_flags = [promoted_field],
-    built_in_type,
+    field_flags = [],
+    built_in_type = 7,
     data_type,
     value_rank = -1,
     array_dimensions = [],
-    max_string_length,
-    data_set_field_id,
+    max_string_length = 0,
+    data_set_field_id = 1,
     properties = []
 }).
 
 -record(configuration_version, {
-    major_version,
-    minor_version
+    major_version = 1,
+    minor_version = 0
 }).
 
 -record(data_set_meta_data, {
-    name,
+    name = <<"">>,
     description,
-    fields = [],
+    fields = [#field_meta_data{}],
     data_set_class_id,
     configuration_version = #configuration_version{}
 }).
@@ -27,7 +27,7 @@
 -record(published_variable, {
     published_variable,
     attribute_id,
-    sampling_interval_hint,
+    sampling_interval_hint = 100,
     deadband_type,
     deadband_value,
     index_range,
@@ -111,7 +111,7 @@
     data_set_writer_id = 1,
     data_set_field_content_mask,
     key_frame_count = 10,
-    data_set_name,
+    data_set_name = <<"demo published data set">>,
     data_set_writer_properties,
     transport_settings = #broker_data_set_writer_transport{},
     message_settings = #uadp_data_set_writer_message{}
