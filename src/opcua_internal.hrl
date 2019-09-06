@@ -38,8 +38,30 @@
 
 -define(IS_BUILTIN_TYPE_ID(T), is_integer(T), T > 0, T =< 25).
 
+-define(POLICY_NONE, <<"http://opcfoundation.org/UA/SecurityPolicy#None">>).
+
+-define(NID_CHANNEL_OPEN_REQ,           ?NNID(444)).
+-define(NID_CHANNEL_OPEN_RES,           ?NNID(447)).
+-define(NID_CHANNEL_CLOSE_REQ,          ?NNID(450)).
+-define(NID_CHANNEL_CLOSE_RES,          ?NNID(453)).
+-define(NID_CREATE_SESS_REQ,            ?NNID(459)).
+-define(NID_CREATE_SESS_RES,            ?NNID(462)).
+-define(NID_ACTIVATE_SESS_REQ,          ?NNID(465)).
+-define(NID_ACTIVATE_SESS_RES,          ?NNID(468)).
+-define(NID_BROWSE_REQ,                 ?NNID(525)).
+-define(NID_BROWSE_RES,                 ?NNID(528)).
+-define(NID_READ_REQ,                   ?NNID(629)).
+-define(NID_READ_RES,                   ?NNID(632)).
+-define(NID_ANONYMOUS_IDENTITY_TOKEN,   ?NNID(319)).
+
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-record(opcua_endpoint, {
+    url                         :: binary(),
+    host                        :: inet:ip4_address() | inet:hostname(),
+    port                        :: inet:port_number()
+}).
 
 %-- Codec Records --------------------------------------------------------------
 
@@ -160,15 +182,16 @@
 
 -record(uacp_message, {
     type                        :: opcua:message_type(),
+    sender                      :: undefined | opcua:message_sender(),
     request_id                  :: undefined | pos_integer(),
     node_id                     :: undefined | opcua:node_id(),
-    payload                     :: undefined | term()
+    payload                     :: undefined | term(),
+    context                     :: undefined | term()
 }).
 
 -record(uacp_connection, {
     pid                         :: pid(),
-    socket                      :: inet:socket(),
-    transport                   :: module(),
-    peer                        :: undefined | {inet:ip_address(), inet:port_number()},
-    sock                        :: undefined | {inet:ip_address(), inet:port_number()}
+    endpoint                    :: opcus:endpoint(),
+    peer                        :: {inet:ip_address(), inet:port_number()},
+    sock                        :: {inet:ip_address(), inet:port_number()}
 }).

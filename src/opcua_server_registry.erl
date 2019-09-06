@@ -1,4 +1,4 @@
--module(opcua_registry).
+-module(opcua_server_registry).
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -5,9 +5,11 @@
 
 -define(NID_NS(NS), #opcua_node_id{ns = NS}).
 -define(NNID(Num), #opcua_node_id{ns = 0, type = numeric, value = Num}).
+-define(NNID(NS, Num), #opcua_node_id{ns = NS, type = numeric, value = Num}).
 -define(XID(NID), #opcua_expanded_node_id{node_id = NID}).
 
 -define(UNDEF_NODE_ID, #opcua_node_id{ns = 0, type = numeric, value = 0}).
+-define(UNDEF_QUALIFIED_NAME, #opcua_qualified_name{ns = 0, name = undefined}).
 
 
 %-- OPCUA Standard Node Id Numbers ---------------------------------------------

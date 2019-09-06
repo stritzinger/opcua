@@ -1,4 +1,4 @@
--module(opcua_session_manager).
+-module(opcua_server_session_manager).
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -86,7 +86,7 @@ handle_info(Msg, State) ->
     {noreply, State}.
 
 terminate(Reason, _State) ->
-    ?LOG_DEBUG("OPCUA registry process terminating: ~p", [Reason]),
+    ?LOG_DEBUG("OPCUA session manager process terminating: ~p", [Reason]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -105,10 +105,10 @@ create_session(State, Conn, Req) ->
     %TODO: Probably check the request header...
     {SessNodeId, State2} = next_session_node_id(State),
     AuthToken = generate_session_auth_token(),
-    case opcua_session_sup:start_session(SessNodeId, AuthToken) of
+    case opcua_server_session_pool_sup:start_session(SessNodeId, AuthToken) of
         {error, _Reason} = Error -> Error;
         {ok, SessPid} ->
-            case opcua_session:handle_request(Conn, Req, SessPid) of
+            case opcua_server_session:handle_request(Conn, Req, SessPid) of
                 {error, _Reason} = Error -> Error;
                 {created, Resp} ->
                     State3 = session_add(State2, SessPid, AuthToken),
@@ -121,7 +121,7 @@ forward_request(State, Conn, #uacp_message{payload = Msg} = Req) ->
     case session_find_by_auth(State, AuthToken) of
         error -> {error, bad_session_id_invalid};
         {ok, #session{pid = SessPid}} ->
-            case opcua_session:handle_request(Conn, Req, SessPid) of
+            case opcua_server_session:handle_request(Conn, Req, SessPid) of
                 ok -> {{ok, SessPid}, State};
                 {error, _Reason} = Error -> Error;
                 {Tag, Resp} when is_atom(Tag) -> {{Tag, Resp, SessPid}, State}

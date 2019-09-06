@@ -22,12 +22,16 @@
 -export([encode_chunks/1]).
 
 %% Message payload encoding and decoding functions
+-export([encode_payload/3]).
+-export([decode_payload/2]).
+-export([encode_hello/1]).
 -export([decode_hello/1]).
 -export([encode_acknowledge/1]).
--export([decode_error/1]).
+-export([decode_acknowledge/1]).
 -export([encode_error/1]).
--export([decode_object/1]).
+-export([decode_error/1]).
 -export([encode_object/2]).
+-export([decode_object/1]).
 
 %% Utility encoding/decoding functions
 -export([decode_sequence_header/1]).
@@ -79,6 +83,28 @@ freeze_chunks(Chunks) -> [freeze_chunk(C) || C <- Chunks].
 encode_chunks(#uacp_chunk{} = Chunk) -> encode_chunk(Chunk);
 encode_chunks(Chunks) -> [encode_chunk(C) || C <- Chunks].
 
+encode_payload(hello, undefined, Payload) ->
+    opcua_uacp_codec:encode_hello(Payload);
+encode_payload(acknowledge, undefined, Payload) ->
+    opcua_uacp_codec:encode_acknowledge(Payload);
+encode_payload(error, undefined, Payload) ->
+    opcua_uacp_codec:encode_error(Payload);
+encode_payload(_MsgType, NodeId, Payload) ->
+    opcua_uacp_codec:encode_object(NodeId, Payload).
+
+decode_payload(hello, Data) -> {undefined, decode_hello(Data)};
+decode_payload(acknowledge, Data) -> {undefined, decode_acknowledge(Data)};
+decode_payload(error, Data) -> {undefined, decode_error(Data)};
+decode_payload(_MsgType, Data) -> decode_object(Data).
+
+-spec encode_hello(opcua:hello_payload()) -> iodata().
+encode_hello(Data) ->
+    case opcua_codec_binary:encode(?HEL_SPEC, Data) of
+        {Result, Extra} when Extra =:= #{} -> Result;
+        {_Result, Extra} ->
+            ?LOG_ERROR("HELLO message decoding error; extra data: ~p", [Extra]),
+            throw(bad_encoding_error)
+    end.
 
 -spec decode_hello(iodata()) -> opcua:hello_payload().
 decode_hello(Data) ->
@@ -98,12 +124,12 @@ encode_acknowledge(Map) ->
             throw(bad_encoding_error)
     end.
 
--spec decode_error(iodata()) -> opcua:error_payload().
-decode_error(Data) ->
-    case opcua_codec_binary:decode(?ERR_SPEC, iolist_to_binary(Data)) of
+-spec decode_acknowledge(iodata()) -> opcua:acknowledge_payload().
+decode_acknowledge(Data) ->
+    case opcua_codec_binary:decode(?ACK_SPEC, iolist_to_binary(Data)) of
         {Result, <<>>} -> Result;
         {_Result, Extra} ->
-            ?LOG_ERROR("ERROR message decoding error; extra data: ~p", [Extra]),
+            ?LOG_ERROR("ACKNOWLEDGE message decoding error; extra data: ~p", [Extra]),
             throw(bad_decoding_error)
     end.
 
@@ -116,6 +142,22 @@ encode_error(Data) ->
             throw(bad_encoding_error)
     end.
 
+-spec decode_error(iodata()) -> opcua:error_payload().
+decode_error(Data) ->
+    case opcua_codec_binary:decode(?ERR_SPEC, iolist_to_binary(Data)) of
+        {Result, <<>>} -> Result;
+        {_Result, Extra} ->
+            ?LOG_ERROR("ERROR message decoding error; extra data: ~p", [Extra]),
+            throw(bad_decoding_error)
+    end.
+
+-spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
+encode_object(NodeId, Data) ->
+    {EncNodeId, _} = opcua_database:lookup_encoding(NodeId, binary),
+    {Header, _} = opcua_codec_binary:encode(node_id, EncNodeId),
+    {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
+    [Header, Msg].
+
 -spec decode_object(iodata()) -> {opcua:node_id(), opcua:node_object()}.
 decode_object(Data) ->
     {NodeId, RemData} = opcua_codec_binary:decode(node_id, iolist_to_binary(Data)),
@@ -126,12 +168,12 @@ decode_object(Data) ->
         {_, _} -> throw(bad_data_encoding_unsupported)
     end.
 
--spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
-encode_object(NodeId, Data) ->
-    {EncNodeId, _} = opcua_database:lookup_encoding(NodeId, binary),
-    {Header, _} = opcua_codec_binary:encode(node_id, EncNodeId),
-    {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
-    [Header, Msg].
+-spec encode_sequence_header(SeqNum, ReqId) -> iodata()
+  when SeqNum :: opcua_protocol:sequence_num(),
+       ReqId :: opcua_protocol:request_id().
+encode_sequence_header(SeqNum, ReqId) ->
+    {Result, []} = opcua_codec_binary:encode([uint32, uint32], [SeqNum, ReqId]),
+    Result.
 
 -spec decode_sequence_header(iodata()) -> {{SeqNum, ReqId}, iodata()}
   when SeqNum :: opcua_protocol:sequence_num(),
@@ -140,13 +182,6 @@ decode_sequence_header(Data) ->
     {[SeqNum, ReqId], RemData} =
         opcua_codec_binary:decode([uint32, uint32], iolist_to_binary(Data)),
     {{SeqNum, ReqId}, RemData}.
-
--spec encode_sequence_header(SeqNum, ReqId) -> iodata()
-  when SeqNum :: opcua_protocol:sequence_num(),
-       ReqId :: opcua_protocol:request_id().
-encode_sequence_header(SeqNum, ReqId) ->
-    {Result, []} = opcua_codec_binary:encode([uint32, uint32], [SeqNum, ReqId]),
-    Result.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -176,6 +211,7 @@ decode_chunks(Data, Acc) ->
 
 decode_chunk(MsgType, ChunkType, Data, Chunk)
   when MsgType =:= hello, ChunkType =:= final;
+       MsgType =:= acknowledge, ChunkType =:= final;
        MsgType =:= error, ChunkType =:= final ->
     Chunk#uacp_chunk{body = Data};
 decode_chunk(channel_open, final, Data, Chunk) ->
