@@ -12,6 +12,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API
+-export([node_id/1]).
 -export([add_object/2, add_object/3]).
 -export([del_object/1]).
 -export([add_variable/5]).
@@ -37,6 +38,7 @@
 
 %-- OPCUA Types ----------------------------------------------------------------
 
+-type endpoint() :: #opcua_endpoint{}.
 -type node_id_type() :: numeric | string | guid | opaque.
 -type node_id() :: #opcua_node_id{}.
 -type expanded_node_id() :: #opcua_expanded_node_id{}.
@@ -62,6 +64,7 @@
                       | variant | data_value.
 
 -export_type([
+    endpoint/0,
     node_id_type/0,
     node_id/0,
     expanded_node_id/0,
@@ -206,6 +209,7 @@
 
 -type message_type() :: hello | acknowledge | reverse_hello | error
                       | channel_open | channel_close | channel_message.
+-type message_sender() :: client | server.
 -type chunk_type() :: final | intermediate | aborted.
 -type chunk_state() :: undefined | locked | unlocked.
 -type token_id() :: pos_integer().
@@ -259,11 +263,16 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+node_id(root)     -> ?NNID(?OBJ_ROOT_FOLDER);
+node_id(objects)  -> ?NNID(?OBJ_OBJECTS_FOLDER);
+node_id(server)   -> ?NNID(?OBJ_SERVER);
+node_id(NodeSpec) -> opcua_database:lookup_id(NodeSpec).
+
 add_object(Name, TypeSpec) ->
     add_object(?OBJ_OBJECTS_FOLDER, Name, TypeSpec).
 
 add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
-    NodeId = opcua_registry:next_node_id(),
+    NodeId = opcua_server_registry:next_node_id(),
     TypeId = opcua_database:lookup_id(TypeSpec),
     ParentId = opcua_database:lookup_id(ParentSpec),
     opcua_address_space:add_nodes([#opcua_node{
@@ -291,7 +300,7 @@ del_object(ObjSpec) ->
     NodeId.
 
 add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
-    NodeId = opcua_registry:next_node_id(),
+    NodeId = opcua_server_registry:next_node_id(),
     ParentId = opcua_database:lookup_id(ObjSpec),
     VarTypeId = opcua_database:lookup_id(VarTypeSpec),
     ValueTypeId = opcua_database:lookup_id(ValueTypeSpec),
@@ -336,13 +345,11 @@ set_value(VarSpec, Value) ->
 
 start(_StartType, _StartArgs) ->
     {ok, Pid} = opcua_sup:start_link(),
-    TOpts = [{port, 4840}],
-    {ok, _} = ranch:start_listener(?MODULE, ranch_tcp, TOpts,
-                                   opcua_server_ranch_protocol, #{}),
+    {ok, _} = opcua_server_ranch_protocol:start_listener(),
     {ok, Pid}.
 
 stop(_State) ->
-    ranch:stop_listener(?MODULE).
+    opcua_server_ranch_protocol:stop_listener().
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

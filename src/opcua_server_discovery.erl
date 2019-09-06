@@ -1,4 +1,4 @@
--module(opcua_discovery).
+-module(opcua_server_discovery).
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -25,8 +25,8 @@ handle_request(Conn, #uacp_message{node_id = #opcua_node_id{value = 426}} = Req)
     }} = Req,
     %TODO: Maybe check the request header,
     %      validate that the EndpointUrl is correct...
-    Resp = opcua_connection:req2res(Conn, Req, 429, #{
-        endpoints => [ %% Duplicated in opcua_session
+    Resp = opcua_connection:response(Conn, Req, 429, #{
+        endpoints => [ %% Duplicated in opcua_server_session
             #{
                 endpoint_url => EndpointUrl,
                 server => #{

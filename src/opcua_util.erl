@@ -1,12 +1,35 @@
 -module(opcua_util).
 
--export([trace/2, trace/3, trace_clear/0, date_time/0,
-         nonce/0, date_time_to_rfc3339/1, bin_to_hex/1,
-         guid_to_hex/1, bin_to_hex/2, hex_to_bin/1,
-         get_node_id/2, parse_node_id/1, get_attr/2,
-         get_attr/3, get_int/2, get_int/3, convert_name/1,
-         parse_range/1]).
+%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
+
+
+%%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% API functions
+-export([trace/2, trace/3]).
+-export([trace_clear/0]).
+-export([date_time/0]).
+-export([nonce/0]).
+-export([date_time_to_rfc3339/1]).
+-export([bin_to_hex/1]).
+-export([guid_to_hex/1]).
+-export([bin_to_hex/2]).
+-export([hex_to_bin/1]).
+-export([get_node_id/2]).
+-export([parse_node_id/1]).
+-export([get_attr/2]).
+-export([get_attr/3]).
+-export([get_int/2]).
+-export([get_int/3]).
+-export([convert_name/1]).
+-export([parse_range/1]).
+-export([parse_endpoint/1]).
+
+
+%%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec trace(atom(), atom()) -> non_neg_integer().
 trace(Mod, Fun) ->
@@ -103,6 +126,34 @@ convert_name([FirstLetter|Rest]) ->
 parse_range(undefined) -> undefined;
 parse_range(<<>>) -> undefined;
 parse_range(Range) -> parse_range_dims(Range, []).
+
+parse_endpoint({{A, B, C, D} = Ip, Port})
+  when is_integer(A), A >= 0, A < 256, is_integer(B), B >= 0, B < 256,
+       is_integer(C), C >= 0, C < 256, is_integer(D), D >= 0, D < 256,
+       is_integer(Port), Port >= 0, Port < 65536 ->
+    Url = iolist_to_binary(io_lib:format("opc.tcp://~w.~w.~w.~w:~w", [A, B, C, D, Port])),
+    {ok, #opcua_endpoint{url = Url, host = Ip, port = Port}};
+parse_endpoint(Url) when is_binary(Url) ->
+    Opts = [
+        {scheme_defaults, [{'opc.tcp', 4840}]},
+        {scheme_validation_fun, fun
+            (<<"opc.tcp">>) -> valid;
+            (_)             -> {error, bad_scheme}
+        end}
+    ],
+    case http_uri:parse(Url, Opts) of
+         {ok, {_, <<>>, HostStr, Port, <<"/">>, <<>>}} ->
+            Host = case inet:parse_address(binary_to_list(HostStr)) of
+                {ok, Addr}      -> Addr;
+                {error, einval} -> HostStr
+            end,
+            {ok, #opcua_endpoint{url = Url, host = Host, port = Port}};
+        {ok, _} -> {error, bad_endpoint};
+        {error, _Reason} = Error -> Error
+    end;
+parse_endpoint(_Endpoint) ->
+    {error, bad_endpoint}.
+
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

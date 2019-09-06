@@ -1,4 +1,4 @@
--module(opcua_session).
+-module(opcua_server_session).
 
 -behaviour(gen_statem).
 
@@ -41,7 +41,6 @@
     session_id :: opcua:node_id(),
     auth_token :: opcua:node_id(),
     session_name :: undefined | binary(),
-    endpoint_url :: undefined | binary(),
     client_certificate :: undefined | binary(),
     client_description :: undefined | binary(),
     client_nonce :: undefined | binary(),
@@ -192,6 +191,7 @@ session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         requested_session_timeout := RequestedSessionTimeout,
         session_name := SessionName
     } = Msg,
+    %TODO: Validate that the given endpoint match the connection one
     ServerNonce = opcua_util:nonce(),
     #data{
         session_id = SessId,
@@ -202,18 +202,17 @@ session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         client_description = ClientDescription,
         client_nonce = ClientNonce,
         server_nonce = ServerNonce,
-        endpoint_url = EndpointURL,
         max_response_message_size = MaxResponseMessageSize,
         requested_session_timeout = RequestedSessionTimeout,
         session_name = SessionName
     },
-    Resp = opcua_connection:req2res(Conn, Req, 462, #{
+    Resp = opcua_connection:response(Conn, Req, 462, #{
         session_id => SessId,
         authentication_token => AuthToken,
         revised_session_timeout => RequestedSessionTimeout,
         server_nonce => ServerNonce,
         server_certificate => undefined,
-        server_endpoints => [ %% Duplicated in opcua_discovery
+        server_endpoints => [ %% Duplicated in opcua_server_discovery
             #{
                 endpoint_url => EndpointURL,
                 server => #{
@@ -269,7 +268,7 @@ session_activate_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
                 conn = Conn,
                 mon_ref = MonRef
             },
-            Resp = opcua_connection:req2res(Conn, Req, 468, #{
+            Resp = opcua_connection:response(Conn, Req, 468, #{
                 server_nonce => ServerNonce,
                 results => [],
                 diagnostic_infos => []
@@ -284,7 +283,7 @@ session_close_command(Data, Conn, #uacp_message{payload = _Msg} = Req) ->
     #data{mon_ref = MonRef} = Data,
     opcua_connection:demonitor(Conn, MonRef),
     Data2 = Data#data{conn = undefined, mon_ref = undefined},
-    Resp = opcua_connection:req2res(Conn, Req, 474, #{}),
+    Resp = opcua_connection:response(Conn, Req, 474, #{}),
     {{reply, Resp}, Data2}.
 
 check_identity(ExtObj) ->
@@ -313,7 +312,7 @@ attribute_read_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     },
     Results = attribute_read(Data, ReadOpts, NodesToRead),
     ?assertEqual(length(NodesToRead), length(Results)),
-    Resp = opcua_connection:req2res(Conn, Req, 632, #{
+    Resp = opcua_connection:response(Conn, Req, 632, #{
         results => Results,
         diagnostic_infos => []
     }),
@@ -338,7 +337,7 @@ attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
                 range = opcua_util:parse_range(RangeStr),
                 opts = ReadOpts
             },
-            case opcua_registry:perform(NodeId, [Command]) of
+            case opcua_server_registry:perform(NodeId, [Command]) of
                 [{error, Reason}] ->
                     Status = opcua_database_status_codes:name(Reason, bad_internal_error),
                     Result = #opcua_data_value{status = Status},
@@ -367,7 +366,7 @@ view_browse_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     BrowseOpts = #{max_refs => MaxRefs},
     Results = view_browse(Data, BrowseOpts, NodesToBrowse),
     ?assertEqual(length(NodesToBrowse), length(Results)),
-    Resp = opcua_connection:req2res(Conn, Req, 528, #{
+    Resp = opcua_connection:response(Conn, Req, 528, #{
         results => Results,
         diagnostic_infos => []
     }),
@@ -390,7 +389,7 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
         direction = Direction,
         opts = BrowseOpts
     },
-    case opcua_registry:perform(NodeId, [Command]) of
+    case opcua_server_registry:perform(NodeId, [Command]) of
         [{error, Reason}] ->
             Status = opcua_database_status_codes:name(Reason, bad_internal_error),
             BrowseResult = #{

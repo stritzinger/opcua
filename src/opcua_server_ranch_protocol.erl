@@ -15,6 +15,8 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Behaviour ranch_protocol Callback Functions
+-export([start_listener/0]).
+-export([stop_listener/0]).
 -export([start_link/4]).
 
 %% System Callback Functions
@@ -37,6 +39,8 @@
 -record(state, {
     parent          :: pid(),
     ref             :: ranch:ref(),
+    transport       :: module(),
+    socket          :: inet:socket(),
     conn            :: undefined | opcua:connection(),
     proto           :: term(),
     linger_timeout  :: pos_integer()
@@ -47,10 +51,17 @@
 
 %%% BEHAVIOUR ranch_protocol CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+start_listener() ->
+    TOpts = [{port, 4840}],
+    ranch:start_listener(?MODULE, ranch_tcp, TOpts, ?MODULE, #{}).
+
 start_link(Ref, _Socket, Transport, Opts) ->
     Pid = proc_lib:spawn_link(?MODULE, connection_process,
                               [self(), Ref, Transport, Opts]),
     {ok, Pid}.
+
+stop_listener() ->
+    ranch:stop_listener(?MODULE).
 
 
 %%% SYSTEM CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -79,22 +90,18 @@ init(Parent, Ref, Socket, Transport, Opts) ->
     {[LingerTimeout], ProtoOpts} = extract_options([
         {linger_timeout, ?DEFAULT_LINGER_TIMEOUT}
     ], Opts),
-    PeerRes = Transport:peername(Socket),
-    SockRes = Transport:sockname(Socket),
-    UACPRes = opcua_server_uacp:new(ProtoOpts),
-    case {PeerRes, SockRes, UACPRes} of
-        {{ok, Peer}, {ok, Sock}, {ok, Proto}} ->
-            Conn = #uacp_connection{
-                pid = self(),
-                socket = Socket,
-                transport = Transport,
-                peer = Peer,
-                sock = Sock
-            },
+    PeerNameRes = Transport:peername(Socket),
+    SockNameRes = Transport:sockname(Socket),
+    UACPRes = opcua_server_uacp:init(ProtoOpts),
+    case {PeerNameRes, SockNameRes, UACPRes} of
+        {{ok, PeerName}, {ok, {SockAddr, _} = SockName}, {ok, Proto}} ->
+            Endpoint = opcua_util:parse_endpoint({SockAddr, 4840}),
             State = #state{
                 parent = Parent,
                 ref = Ref,
-                conn = Conn,
+                transport = Transport,
+                socket = Socket,
+                conn = opcua_connection:new(Endpoint, PeerName, SockName),
                 proto = Proto,
                 linger_timeout = LingerTimeout
             },
@@ -110,16 +117,16 @@ init(Parent, Ref, Socket, Transport, Opts) ->
                 'A protocol error occurred when setting up UACP.')
     end.
 
-loop(#state{conn = Conn} = State) ->
-    #uacp_connection{socket = S, transport = T} = Conn,
+loop(#state{transport = T, socket = S} = State) ->
     T:setopts(S, [{active, once}]),
     loop_consume(State).
 
-loop_consume(#state{parent = P, conn = Conn, proto = Proto} = State) ->
-    #uacp_connection{socket = S, transport = T} = Conn,
+loop_consume(State) ->
+    #state{parent = P, transport = T, socket = S,
+           conn = Conn, proto = Proto} = State,
     {OK, Closed, Error} = T:messages(),
     Timeout = case opcua_server_uacp:can_produce(Conn, Proto) of
-        true -> 3;
+        true -> 0;
         false -> infinity
     end,
     receive
@@ -128,12 +135,12 @@ loop_consume(#state{parent = P, conn = Conn, proto = Proto} = State) ->
             case opcua_server_uacp:handle_data(Input, Conn, Proto) of
                 {ok, Proto2} ->
                     loop_produce(State#state{proto = Proto2}, fun loop/1);
-                {stop, Reason, Proto2} ->
+                {error, Reason, Proto2} ->
                     terminate(State#state{proto = Proto2}, Reason)
             end;
         {Closed, S} ->
             ?LOG_DEBUG("Socket closed"),
-            handle_error(State, socket_error, closed, 'The socket has been closed.');
+            terminate(State, normal);
         {Error, S, Reason} ->
             ?LOG_DEBUG("Socket error: ~p", [Reason]),
             handle_error(State, socket_error, Reason, 'An error has occurred on the socket.');
@@ -142,6 +149,9 @@ loop_consume(#state{parent = P, conn = Conn, proto = Proto} = State) ->
             handle_error(State, stop, {exit, Reason}, 'Parent process terminated.');
         {system, From, Request} ->
             sys:handle_system_msg(Request, From, P, ?MODULE, [], State);
+        {opcua_connection, Notif} ->
+            ?LOG_DEBUG("Server OPCUA connection: ~p", [Notif]),
+            loop_consume(State);
         Msg ->
             ?LOG_WARNING("Received unexpected message ~p", [Msg]),
             loop(State)
@@ -150,10 +160,10 @@ loop_consume(#state{parent = P, conn = Conn, proto = Proto} = State) ->
     end.
 
 -spec loop_produce(state(), function()) -> no_return().
-loop_produce(#state{conn = Conn, proto = Proto} = State, Cont) ->
-    #uacp_connection{socket = S, transport = T} = Conn,
+loop_produce(State, Cont) ->
+    #state{transport = T, socket = S, conn = Conn, proto = Proto} = State,
     case opcua_server_uacp:produce(Conn, Proto) of
-        {stop, Reason, Proto2} ->
+        {error, Reason, Proto2} ->
             terminate(State#state{proto = Proto2}, Reason);
         {ok, Proto2} ->
             Cont(State#state{proto = Proto2});
@@ -180,11 +190,11 @@ terminate(State, Reason) ->
     opcua_server_uacp:terminate(Reason, Conn, Proto),
     exit({shutdown, Reason}).
 
-terminate_produce(#state{conn = Conn, proto = Proto} = State) ->
+terminate_produce(State) ->
     %TODO: we may want to do that for a maximum amount of time ?
-    #uacp_connection{socket = S, transport = T} = Conn,
+    #state{socket = S, transport = T, conn = Conn, proto = Proto} = State,
     case opcua_server_uacp:produce(Conn, Proto) of
-        {ok, Proto2} -> #state{proto = Proto2};
+        {ok, Proto2} -> State#state{proto = Proto2};
         {ok, Output, Proto2} ->
             ?LOG_DEBUG("Sending:  ~p", [Output]),
             case T:send(S, Output) of
@@ -192,12 +202,12 @@ terminate_produce(#state{conn = Conn, proto = Proto} = State) ->
                 {error, Reason} ->
                     ?LOG_WARNING("Socket error while terminating the "
                                  "connection: ~p", [Reason]),
-                    ok
+                    State#state{proto = Proto2}
             end
     end.
 
-terminate_linger(#state{conn = Conn, linger_timeout = Timeout} = State) ->
-    #uacp_connection{socket = S, transport = T} = Conn,
+terminate_linger(State) ->
+    #state{socket = S, transport = T, linger_timeout = Timeout} = State,
     case T:shutdown(S, write) of
         ok ->
             case Timeout of
@@ -211,8 +221,7 @@ terminate_linger(#state{conn = Conn, linger_timeout = Timeout} = State) ->
             State
     end.
 
-terminate_linger_loop(#state{conn = Conn} = State, TRef) ->
-    #uacp_connection{socket = S, transport = T} = Conn,
+terminate_linger_loop(#state{socket = S, transport = T} = State, TRef) ->
     {OK, Closed, Error} = T:messages(),
     case T:setopts(S, [{active, once}]) of
         {error, _} -> State;

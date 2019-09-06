@@ -1,11 +1,13 @@
--module(opcua_client_sup).
+-module(opcua_client_pool_sup).
 
 -behaviour(supervisor).
 
+
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% API Functions
+%% API functions
 -export([start_link/0]).
+-export([start_client/1]).
 
 %% Behaviour supervisor callback functions
 -export([init/1]).
@@ -16,16 +18,15 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+start_client(Opts) ->
+    supervisor:start_child(?MODULE, [Opts]).
+
 
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
-    {ok, {#{strategy => one_for_all}, [
-        supervisor(opcua_client_pool_sup, [])
-    ]}}.
-
-
-%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-supervisor(Module, Args) ->
-    #{id => Module, type => supervisor, start => {Module, start_link, Args}}.
+    {ok, {#{strategy => simple_one_for_one}, [#{
+        id      => undefined,
+        restart => permanent,
+        start   => {opcua_client, start_link, []}
+    }]}}.
