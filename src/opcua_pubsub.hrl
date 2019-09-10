@@ -161,7 +161,7 @@
 }).
 
 -record(network_address_url, {
-    url = <<"opc.udp://224.0.0.22:4840/">>     
+    url = <<"opc.udp://224.0.0.22:4444/">>     
 }).
 
 -record(pub_sub_connection, {
