@@ -21,26 +21,37 @@
     sample_timer_refs = []
 }).
 
+-record(network_target, {
+    sock,
+    ip,
+    port
+}).
+
 -record(state, {
     writer_group,
     data_sets,
     sequence_number_counter,
     samples = #{},
     publish_timer_ref,
-    transport_context = #{}
+    network_target
 }).
 
 start_link(Args) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
 
-init([_Url, WriterGroup, PublishedDataSets]) ->
+init([Url, WriterGroup, PublishedDataSets]) ->
+    {ok, {'opc.udp', _, Host, Port, _, _}} = http_uri:parse(Url),
+    {ok, ParsedIP} = inet:parse_address(binary_to_list(Host)),
+    {ok, Sock} = gen_udp:open(Port, [binary, {active, true},
+                                     {add_membership, {ParsedIP, {0,0,0,0}}}]), %% for testing we receive our own messages
     InitializedSamples = init_samples(PublishedDataSets),
     IndexedPublishedDataSets = maps:from_list([{Name, PDS} || PDS = #published_data_set{name = Name} <- PublishedDataSets]),
     State = #state{data_sets = IndexedPublishedDataSets, writer_group = WriterGroup},
     PubTRef = init_publish_interval(State#state.writer_group#writer_group.publishing_interval),
     {ok, State#state{samples = InitializedSamples,
                      sequence_number_counter = counters:new(2, []),
-                     publish_timer_ref = PubTRef}}.
+                     publish_timer_ref = PubTRef,
+                     network_target = #network_target{sock = Sock, ip = ParsedIP, port = Port}}}.
 
 handle_call(_Request, _From, State) ->
     {reply, ignored, State}.
@@ -59,11 +70,14 @@ handle_info(publish, State) ->
            sequence_number_counter = CRef,
            data_sets = DataSets,
            samples = Samples,
-           transport_context = Transport} = State,
+           network_target = NetworkTarget} = State,
     DataSetWriters = WriterGroup#writer_group.data_set_writers,
     DataSetMessages = build_data_set_messages(CRef, DataSetWriters, DataSets, Samples),
     NetworkMessage = build_network_message(CRef, WriterGroup, DataSetMessages),
-    send_network_message(Transport, NetworkMessage), 
+    send_network_message(NetworkTarget, NetworkMessage), 
+    {noreply, State};
+handle_info({udp, _, _, _, NetworkMessage}, State) ->
+    io:format("RECEIVED NETWORK MESSAGE: \t~w~n", [NetworkMessage]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -99,8 +113,9 @@ sample(_PV, _PVIdx) ->
 init_publish_interval(PublishInterval) ->
     timer:send_interval(PublishInterval, self(), publish).
 
-send_network_message(_Transport, NetworkMessage) ->
-    io:format("SEND NETWORK MESSAGE: ~w~n", [iolist_to_binary(NetworkMessage)]).
+send_network_message(#network_target{sock = Sock, ip = IP, port = Port}, NetworkMessage) ->
+    gen_udp:send(Sock, IP, Port, NetworkMessage),
+    io:format("SENT NETWORK MESSAGE: \t\t~w~n", [iolist_to_binary(NetworkMessage)]).
 
 encode(Spec, Data) ->
     element(1, opcua_codec_binary:encode(Spec, Data)).
