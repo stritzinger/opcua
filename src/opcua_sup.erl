@@ -21,8 +21,7 @@ start_link() ->
 
 init([]) ->
     {ok, {#{strategy => one_for_one}, [
-        %TODO: figure out what is needed for the client and server
-        worker(opcua_address_space, []),
+        supervisor(opcua_address_space_sup, []),
         worker(opcua_database, [#{}]),
         supervisor(opcua_server_sup, []),
         supervisor(opcua_client_sup, [])
