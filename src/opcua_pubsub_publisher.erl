@@ -5,7 +5,7 @@
 -include("opcua_pubsub.hrl").
 
 
--export([start_link/0]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -22,21 +22,21 @@
 }).
 
 -record(state, {
-    writer_group = #writer_group{},
-    data_sets = #{<<"demo published data set">> => #published_data_set{}},
+    writer_group,
+    data_sets,
     sequence_number_counter,
     samples = #{},
     publish_timer_ref,
     transport_context = #{}
 }).
 
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link(Args) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
 
-init(_) ->
-    State = #state{},
-    PublishedDataSets = maps:values(State#state.data_sets),
+init([_Url, WriterGroup, PublishedDataSets]) ->
     InitializedSamples = init_samples(PublishedDataSets),
+    IndexedPublishedDataSets = maps:from_list([{Name, PDS} || PDS = #published_data_set{name = Name} <- PublishedDataSets]),
+    State = #state{data_sets = IndexedPublishedDataSets, writer_group = WriterGroup},
     PubTRef = init_publish_interval(State#state.writer_group#writer_group.publishing_interval),
     {ok, State#state{samples = InitializedSamples,
                      sequence_number_counter = counters:new(2, []),
@@ -145,13 +145,14 @@ build_data_set_message_header(CRef, #data_set_writer{}) ->
     element(1, opcua_codec_binary:encode(Spec, Data)).
 
 get_data_set_message_sequence_number(CRef) ->
-    SequenceNumber = counters:get(CRef, 1),
-    counters:add(CRef, 1, 1),
-    SequenceNumber rem 65535.
+    get_sequence_number(CRef, 1).
 
 get_network_message_sequence_number(CRef) ->
-    SequenceNumber = counters:get(CRef, 2),
-    counters:add(CRef, 2, 1),
+    get_sequence_number(CRef, 2).
+
+get_sequence_number(CRef, Idx) ->
+    counters:add(CRef, Idx, 1),
+    SequenceNumber = counters:get(CRef, Idx),
     SequenceNumber rem 65535.
 
 build_network_message(CRef, WriterGroup = #writer_group{}, DataSetMessages) ->
