@@ -6,19 +6,23 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([start_link/0]).
--export([add_nodes/1]).
--export([del_nodes/1]).
--export([add_references/1]).
--export([get_node/1]).
--export([get_references/1, get_references/2]).
--export([is_subtype/2]).
+-export([create/1]).
+-export([destroy/1]).
+-export([start_link/1]).
+-export([add_nodes/2]).
+-export([del_nodes/2]).
+-export([add_references/2]).
+-export([get_node/2]).
+-export([get_references/2]).
+-export([get_references/3]).
+-export([is_subtype/3]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
 -export([handle_info/2]).
+-export([terminate/2]).
 
 -ignore_xref([{?MODULE, start_link, 0}]).
 
@@ -31,6 +35,18 @@
 -include("opcua_internal.hrl").
 
 
+%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-record(node, {
+    id       :: opcua:node_id(),
+    instance :: #opcua_node{} | pid()
+}).
+
+-record(reference, {
+    index  :: {opcua:node_id(), opcua:node_id(), forward | inverse},
+    target :: opcua:node_id()
+}).
+
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -define(SUBTYPES_CACHE, opcua_address_space_subtypes_cache).
@@ -38,28 +54,34 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, undefined, []).
+create(Context) ->
+    opcua_address_space_sup:start_child(Context).
 
-add_nodes(Nodes) ->
-    gen_server:call(?MODULE, {add_nodes, Nodes}).
+destroy(Context) ->
+    gen_server:call(proc(Context), stop).
 
-del_nodes(NodeIds) ->
-    gen_server:call(?MODULE, {del_nodes, NodeIds}).
+start_link(Context) ->
+    gen_server:start_link(?MODULE, {Context}, []).
 
-add_references(References) ->
-    gen_server:call(?MODULE, {add_references, References}).
+add_nodes(Context, Nodes) ->
+    gen_server:call(proc(Context), {add_nodes, Nodes}).
 
-get_node(NodeId) ->
-    case digraph:vertex(persistent_term:get(?MODULE), NodeId) of
-        {NodeId, Node} -> Node;
-        _ -> undefined
+del_nodes(Context, NodeIds) ->
+    gen_server:call(proc(Context), {del_nodes, NodeIds}).
+
+add_references(Context, References) ->
+    gen_server:call(proc(Context), {add_references, References}).
+
+get_node(Context, NodeId) ->
+    case ets:lookup(persistent_term:get(key(Context, nodes)), NodeId) of
+        [#node{instance = Node}] -> Node;
+        []                       -> undefined
     end.
 
-get_references(OriginId) ->
-    get_references(OriginId, #{}).
+get_references(Context, OriginId) ->
+    get_references(Context, OriginId, #{}).
 
-get_references(OriginId, Opts) ->
+get_references(Context, OriginId, Opts) ->
     Graph = persistent_term:get(?MODULE),
     Subtypes = maps:get(include_subtypes, Opts, false),
     Direction = maps:get(direction, Opts, forward),
@@ -96,34 +118,56 @@ get_references(OriginId, Opts) ->
 
 %% @doc Returns if the given OPCUA type node id is a subtype of the second
 %% given OPCUA type node id.
--spec is_subtype(opcua:node_id(), opcua:node_id()) -> boolean().
-is_subtype(TypeId, TypeId) -> true;
-is_subtype(TypeId, SuperTypeId) ->
+-spec is_subtype(term(), opcua:node_id(), opcua:node_id()) -> boolean().
+is_subtype(Context, TypeId, TypeId) -> true;
+is_subtype(Context, TypeId, SuperTypeId) ->
     maps:is_key(TypeId, subtypes(SuperTypeId)).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(undefined) ->
-    G = digraph:new([cyclic, protected]),
-    persistent_term:put(?MODULE, G),
-    persistent_term:put(?SUBTYPES_CACHE, #{}),
-    {ok, G}.
+init({Context}) ->
+    NodesTable = ets:new(opcua_address_space_nodes, [
+        {keypos, #node.id}
+    ]),
+    ReferencesTable = ets:new(opcua_address_space_references, [
+        ordered_set,
+        {keypos, #reference.index}
+    ]),
 
-handle_call({add_nodes, Nodes}, _From, G) ->
-    [digraph:add_vertex(G, Node#opcua_node.node_id, Node) || Node <- Nodes],
-    {reply, ok, G};
-handle_call({del_nodes, NodeIds}, _From, G) ->
-    [digraph:del_vertex(G, NodeId) || NodeId <- NodeIds],
-    {reply, ok, G};
-handle_call({add_references, References}, _From, G) ->
-    [digraph:add_edge(G, N1, N2, Type) ||
-     #opcua_reference{
-        source_id = N1,
-        target_id = N2,
-        type_id = Type
-     } <- References],
-    {reply, ok, G}.
+    ProcKey = key(Context),
+    NodesKey = key(Context, nodes),
+    ReferencesKey = key(Context, references),
+    Keys = [ProcKey, NodesKey, ReferencesKey],
+
+    State = #{
+        nodes => NodesTable,
+        references => ReferencesTable,
+        keys => Keys
+    },
+
+    spawn_cleanup_proc(self(), Keys),
+
+    persistent_term:put(ProcKey, self()),
+    persistent_term:put(NodesKey, NodesTable),
+    persistent_term:put(ReferencesKey, ReferencesTable),
+
+    persistent_term:put(?SUBTYPES_CACHE, #{}), % FIXME: Remove?
+    {ok, State}.
+
+handle_call({add_nodes, Nodes}, _From, #{nodes := NodesTable} = State) ->
+    true = ets:insert_new(NodesTable, [#node{id = ID, instance = Node} ||
+        #opcua_node{node_id = ID} = Node <- Nodes
+    ]),
+    {reply, ok, State};
+handle_call({del_nodes, NodeIDs}, _From, #{nodes := NodesTable} = State) ->
+    [ets:delete(NodesTable, NodeID) || NodeID <- NodeIDs],
+    {reply, ok, State};
+handle_call({add_references, References}, _From, #{references := ReferencesTable} = State) ->
+    [ets:insert_new(ReferencesTable, R) || R <- expand_references(References)],
+    {reply, ok, State};
+handle_call(stop, From, State) ->
+    {stop, normal, maps:put(from, From, State)}.
 
 handle_cast({cache_subtypes, Type, Subtypes}, State) ->
     Cache = persistent_term:get(?SUBTYPES_CACHE),
@@ -135,8 +179,17 @@ handle_cast(Request, _State) ->
 handle_info(Info, _State) ->
     error({unknown_info, Info}).
 
+terminate(normal, #{from := From} = State) ->
+    true = ets:delete(maps:get(nodes, State)),
+    true = ets:delete(maps:get(references, State)),
+    cleanup_persitent_terms(maps:get(keys, State)),
+    gen_server:reply(From, ok).
+
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+cleanup_persitent_terms(Keys) ->
+    [persistent_term:erase(K) || K <- Keys].
 
 %% Returns a map where the keys are the node id of all the OPCUA subtypes
 %% of the given type id.
@@ -169,3 +222,27 @@ edge_to_ref({_, SourceNodeId, TargetNodeId, Type}) ->
         target_id = TargetNodeId,
         type_id = Type
     }.
+
+proc(Context) -> persistent_term:get(key(Context)).
+
+key(Context) -> {?MODULE, Context}.
+
+key(Context, Type) -> {?MODULE, {Context, Type}}.
+
+expand_references(References) ->
+    [expand_reference(R) || R <- References].
+
+expand_reference(#opcua_reference{type_id = TypeID} = Ref) ->
+    #reference{
+        index = {Ref#opcua_reference.source_id, TypeID, forward},
+        target = Ref#opcua_reference.target_id
+    }.
+
+spawn_cleanup_proc(Pid, Keys) ->
+    spawn(fun() ->
+        Ref = erlang:monitor(process, Pid),
+        receive
+            {'DOWN', Ref, process, Pid, _Reason} ->
+                cleanup_persitent_terms(Keys)
+        end
+    end).
