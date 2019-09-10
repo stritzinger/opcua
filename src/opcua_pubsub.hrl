@@ -142,8 +142,8 @@
 }).
 
 -record(writer_group, {
-    name = <<"demo">>,
-    enabled = false,
+    name = <<"demo writer group">>,
+    enabled = true,
     security_mode = none,
     security_group_id = <<"demo security group">>,
     security_key_services = [],
@@ -158,4 +158,20 @@
     transport_settings = #datagram_writer_group_transport{},
     message_settings = #uadp_writer_group_message{},
     data_set_writers = [#data_set_writer{}]
+}).
+
+-record(network_address_url, {
+    url = <<"opc.udp://224.0.0.22:4840/">>     
+}).
+
+-record(pub_sub_connection, {
+    name = <<"demo PubSub connection">>,
+    enabled = true,
+    publisher_id = 1,
+    transport_profile_uri = <<"http://opcfoundation.org/UA-Profile/Transport/pubsub-udp-uadp">>,
+    address = #network_address_url{},
+    connection_properties = [],
+    transport_settings,
+    writer_groups = [#writer_group{}],
+    reader_groups = []
 }).
