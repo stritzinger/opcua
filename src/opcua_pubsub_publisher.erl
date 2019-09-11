@@ -3,6 +3,8 @@
 -behaviour(gen_server).
 
 -include("opcua_pubsub.hrl").
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 -export([start_link/1]).
@@ -40,7 +42,7 @@ start_link(Args) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
 
 init([Url, WriterGroup, PublishedDataSets]) ->
-    {ok, {'opc.udp', _, Host, Port, _, _}} = http_uri:parse(Url),
+    #{host := Host, port := Port} = uri_string:parse(Url),
     {ok, ParsedIP} = inet:parse_address(binary_to_list(Host)),
     {ok, Sock} = gen_udp:open(Port, [binary, {active, true},
                                      {add_membership, {ParsedIP, {0,0,0,0}}}]), %% for testing we receive our own messages
@@ -139,11 +141,28 @@ encode_data_set_fields(DataSetFieldContentMask, FieldsMetaData, FieldSamples) ->
             [encode_data_set_field_raw_data(FMD, FS)
              || {FMD, FS} <- lists:zip(FieldsMetaData, FieldSamples)];
         _   ->
-            FieldSamples
+            Status = 0,
+            SourceTS = opcua_util:date_time(),
+            SourcePS = 0,
+            ServerTS = opcua_util:date_time(),
+            ServerPS = 0,
+            [encode_data_set_field_data_value(FMD, FS, Status, SourceTS, SourcePS, ServerTS, ServerPS)
+             || {FMD, FS} <- lists:zip(FieldsMetaData, FieldSamples)]
     end.
 
 encode_data_set_field_raw_data(#field_meta_data{built_in_type = Type}, FieldSample) ->
     element(1, opcua_codec_binary:encode(Type, FieldSample)).
+
+encode_data_set_field_data_value(#field_meta_data{built_in_type = Type}, FS,
+                                 Status, SourceTS, SourcePS, ServerTS, ServerPS) ->
+    Variant = opcua_codec:pack_variant(Type, FS),
+    DataValue = #opcua_data_value{value = Variant,
+                                  status = Status,
+                                  source_timestamp = SourceTS,
+                                  source_pico_seconds = SourcePS,
+                                  server_timestamp = ServerTS,
+                                  server_pico_seconds = ServerPS},
+    element(1, opcua_codec_binary:encode(data_value, DataValue)).
 
 build_data_set_message_header(CRef, #data_set_writer{}) ->
     %% currently we dont process the
