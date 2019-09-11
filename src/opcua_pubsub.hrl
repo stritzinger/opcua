@@ -2,7 +2,7 @@
     name = <<"system time">>,
     description,
     field_flags = [],
-    built_in_type = 7,
+    built_in_type = 13,
     data_type,
     value_rank = -1,
     array_dimensions = [],

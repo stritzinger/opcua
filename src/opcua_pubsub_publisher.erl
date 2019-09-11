@@ -109,8 +109,8 @@ init_samples([PDS | PDSs], Samples) ->
     init_samples(PDSs, maps:put(PDSName, Sample, Samples)).
 
 sample(_PV, _PVIdx) ->
-    %% for now just return a random integer
-    rand:uniform(16#FFFFFFFF).
+    %% for now just return a random date
+    opcua_util:date_time().
 
 init_publish_interval(PublishInterval) ->
     timer:send_interval(PublishInterval, self(), publish).
