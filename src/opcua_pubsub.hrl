@@ -108,7 +108,7 @@
 -record(data_set_writer, {
     name = <<"demo data set writer">>,
     enabled = false,
-    data_set_writer_id = 1,
+    data_set_writer_id = 62541,
     data_set_field_content_mask = [status_code, source_timestamp, server_timestamp,
                                    source_pico_seconds, server_picoseconds],
     key_frame_count = 10,
@@ -150,7 +150,7 @@
     security_key_services = [],
     max_network_message_size = -1,
     group_properties = [],
-    writer_group_id = 1,
+    writer_group_id = 100,
     publishing_interval = 100,
     keep_alive_time,
     priority,
@@ -162,13 +162,13 @@
 }).
 
 -record(network_address_url, {
-    url = <<"opc.udp://224.0.0.22:4444/">>     
+    url = <<"opc.udp://224.0.0.22:4840/">>     
 }).
 
 -record(pub_sub_connection, {
     name = <<"demo PubSub connection">>,
     enabled = true,
-    publisher_id = 1,
+    publisher_id = 2234,
     transport_profile_uri = <<"http://opcfoundation.org/UA-Profile/Transport/pubsub-udp-uadp">>,
     address = #network_address_url{},
     connection_properties = [],
