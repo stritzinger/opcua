@@ -79,7 +79,7 @@ handle_info(publish, State) ->
     send_network_message(NetworkTarget, NetworkMessage), 
     {noreply, State};
 handle_info({udp, _, _, _, NetworkMessage}, State) ->
-    io:format("RECEIVED NETWORK MESSAGE: \t~w~n", [NetworkMessage]),
+    io:format("RECEIVED NETWORK MESSAGE: \t~s~n", [opcua_util:bin_to_hex(NetworkMessage)]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -117,7 +117,7 @@ init_publish_interval(PublishInterval) ->
 
 send_network_message(#network_target{sock = Sock, ip = IP, port = Port}, NetworkMessage) ->
     gen_udp:send(Sock, IP, Port, NetworkMessage),
-    io:format("SENT NETWORK MESSAGE: \t\t~w~n", [iolist_to_binary(NetworkMessage)]).
+    io:format("SENT NETWORK MESSAGE: \t\t~s~n", [opcua_util:bin_to_hex(iolist_to_binary(NetworkMessage))]).
 
 encode(Spec, Data) ->
     element(1, opcua_codec_binary:encode(Spec, Data)).
@@ -133,7 +133,8 @@ build_data_set_message(CRef, DSW, PDS, Sample) ->
                         #data_set_meta_data.fields,
     MessageData = encode_data_set_fields(DataSetFieldContentMask, FieldsMetaData, FieldSamples),
     Header = build_data_set_message_header(CRef, DSW),
-    [Header, MessageData].
+    N = encode(uint16, length(FieldsMetaData)),
+    [Header, N, MessageData].
 
 encode_data_set_fields(DataSetFieldContentMask, FieldsMetaData, FieldSamples) ->
     case lists:member(raw_data, DataSetFieldContentMask) of
@@ -141,48 +142,37 @@ encode_data_set_fields(DataSetFieldContentMask, FieldsMetaData, FieldSamples) ->
             [encode_data_set_field_raw_data(FMD, FS)
              || {FMD, FS} <- lists:zip(FieldsMetaData, FieldSamples)];
         _   ->
-            Status = 0,
-            SourceTS = opcua_util:date_time(),
-            SourcePS = 0,
-            ServerTS = opcua_util:date_time(),
-            ServerPS = 0,
-            [encode_data_set_field_data_value(FMD, FS, Status, SourceTS, SourcePS, ServerTS, ServerPS)
+            [encode_data_set_field_variant(FMD, FS)
              || {FMD, FS} <- lists:zip(FieldsMetaData, FieldSamples)]
     end.
 
 encode_data_set_field_raw_data(#field_meta_data{built_in_type = Type}, FieldSample) ->
     element(1, opcua_codec_binary:encode(Type, FieldSample)).
 
-encode_data_set_field_data_value(#field_meta_data{built_in_type = Type}, FS,
-                                 Status, SourceTS, SourcePS, ServerTS, ServerPS) ->
+encode_data_set_field_variant(#field_meta_data{built_in_type = Type}, FS) ->
     Variant = opcua_codec:pack_variant(Type, FS),
-    DataValue = #opcua_data_value{value = Variant,
-                                  status = Status,
-                                  source_timestamp = SourceTS,
-                                  source_pico_seconds = SourcePS,
-                                  server_timestamp = ServerTS,
-                                  server_pico_seconds = ServerPS},
-    element(1, opcua_codec_binary:encode(data_value, DataValue)).
+    element(1, opcua_codec_binary:encode(variant, Variant)).
 
 build_data_set_message_header(CRef, #data_set_writer{}) ->
     %% currently we dont process the
     %% DataSetFieldContentMask here,
     %% just set some static flags
-    DataSetFlags1 = 2#00111111,
-    DataSetFlags2 = 2#00001100,
-    SequenceNumber = get_data_set_message_sequence_number(CRef),
+    DataSetFlags1 = 2#11100001,
+    DataSetFlags2 = 2#00010000,
+    %SequenceNumber = get_data_set_message_sequence_number(CRef),
     Timestamp = opcua_util:date_time(),
-    PicoSeconds = 0,
-    Status = 0,
-    Spec = [byte, byte, uint16, date_time, uint16, uint16],
-    Data = [DataSetFlags1, DataSetFlags2, SequenceNumber, Timestamp, PicoSeconds, Status],
+    ConfigurationVersionMajorVersion = 0,
+    ConfigurationVersionMinorVersion = 0,
+    Spec = [byte, byte, date_time, uint32, uint32],
+    Data = [DataSetFlags1, DataSetFlags2, Timestamp,
+            ConfigurationVersionMajorVersion, ConfigurationVersionMinorVersion],
     element(1, opcua_codec_binary:encode(Spec, Data)).
 
 get_data_set_message_sequence_number(CRef) ->
     get_sequence_number(CRef, 1).
 
-get_network_message_sequence_number(CRef) ->
-    get_sequence_number(CRef, 2).
+%get_network_message_sequence_number(CRef) ->
+%    get_sequence_number(CRef, 2).
 
 get_sequence_number(CRef, Idx) ->
     counters:add(CRef, Idx, 1),
@@ -192,33 +182,40 @@ get_sequence_number(CRef, Idx) ->
 build_network_message(CRef, WriterGroup = #writer_group{}, DataSetMessages) ->
     Header = build_network_message_header(WriterGroup),
     GroupHeader = build_network_message_group_header(CRef, WriterGroup),
-    ExtendedHeader = build_network_message_extended_header(WriterGroup),
-    SecurityHeader = build_network_message_security_header(WriterGroup),
-    [Header, GroupHeader, ExtendedHeader, SecurityHeader, DataSetMessages].
+    PayloadHeader = build_network_message_payload_header(WriterGroup),
+    %%ExtendedHeader = build_network_message_extended_header(WriterGroup),
+    %%SecurityHeader = build_network_message_security_header(WriterGroup),
+    [Header, GroupHeader, PayloadHeader, DataSetMessages].
 
 build_network_message_header(#writer_group{}) ->
-    UADPVersion = 2#0001,
-    UADPFlags = 2#00001001,
-    ExtendedFlags1 = 2#00000111,
-    ExtendedFlags2 = 2#00000000,
-    PublisherId = 1,
-    Spec = [byte, byte, byte, byte],
-    Data = [UADPVersion + UADPFlags, ExtendedFlags1, ExtendedFlags2, PublisherId],
+    UADPConfig = 2#11110001,
+    ExtendedFlags1 = 2#00000001,
+    PublisherId = 2234,
+    Spec = [byte, byte, uint16],
+    Data = [UADPConfig, ExtendedFlags1, PublisherId],
     encode(Spec, Data).
 
-build_network_message_group_header(CRef, #writer_group{writer_group_id = WriterGroupId}) ->
-    GroupFlags = 2#10010000,
-    SequenceNumber = get_network_message_sequence_number(CRef),
-    Spec = [byte, uint16, uint16],
-    Data = [GroupFlags, WriterGroupId, SequenceNumber],
+build_network_message_group_header(_CRef, #writer_group{writer_group_id = WriterGroupId}) ->
+    GroupFlags = 2#00000001,
+    %SequenceNumber = get_network_message_sequence_number(CRef),
+    Spec = [byte, uint16],
+    Data = [GroupFlags, WriterGroupId],
     encode(Spec, Data).
 
-build_network_message_extended_header(#writer_group{}) ->
-    Timestamp = opcua_util:date_time(),
-    PicoSeconds = 0,
-    Spec = [date_time, uint16],
-    Data = [Timestamp, PicoSeconds],
+build_network_message_payload_header(#writer_group{}) ->
+    MessagerCount = 1,
+    DataSetWriterId = 62541,
+    Spec = [byte, uint16],
+    Data = [MessagerCount, DataSetWriterId],
     encode(Spec, Data).
+
+
+%%build_network_message_extended_header(#writer_group{}) ->
+%%    Timestamp = opcua_util:date_time(),
+%%    PicoSeconds = 0,
+%%    Spec = [date_time, uint16],
+%%    Data = [Timestamp, PicoSeconds],
+%%    encode(Spec, Data).
 
 build_network_message_security_header(#writer_group{}) ->
     SecurityFlags = 2#00000000,
