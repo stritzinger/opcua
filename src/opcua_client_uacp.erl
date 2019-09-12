@@ -17,6 +17,7 @@
 -export([handshake/2]).
 -export([browse/4]).
 -export([read/5]).
+-export([close/2]).
 -export([can_produce/2]).
 -export([produce/2]).
 -export([handle_data/3]).
@@ -70,6 +71,16 @@ read(NodeId, Attribs, Opts, Conn, State) ->
             case proto_consume(State2, Conn, Requests) of
                 {error, _Reason, _State3} = Error -> Error;
                 {ok, State3} -> {async, Handle, State3}
+            end
+    end.
+
+close(Conn, State) ->
+    case session_close(State, Conn) of
+        {error, _Reason, _State2} = Error -> Error;
+        {ok, Requests, State2} ->
+            case proto_consume(State2, Conn, Requests) of
+                {error, _Reason, _State3} = Error -> Error;
+                {ok, State3} -> {ok, State3}
             end
     end.
 
@@ -130,13 +141,23 @@ handle_response(State, Conn, #uacp_message{type = acknowledge, payload = Payload
     State5 = proto_limit(State4, max_chunk_count, MaxChunkCount),
     State6 = State5#state{server_ver = ServerVersion},
     channel_open(State6, Conn);
+handle_response(#state{channel = undefined} = State, _Conn, _Response) ->
+    %% Called when closed and receiving a message, not sure what we should be doing
+    {ok, State};
 handle_response(State, Conn, Response) ->
     case channel_handle_response(State, Conn, Response) of
         {error, _Reason, _State2} = Error -> Error;
         {open, State2} -> session_create(State2, Conn);
-        {closed, State2} -> {error, bad_not_implemented, State2};
+        {closed, State2} ->
+            opcua_connection:notify(Conn, closed),
+            {ok, State2#state{channel = undefined}};
         {forward, Response2, State2} ->
-            session_handle_response(State2, Conn, Response2)
+            case session_handle_response(State2, Conn, Response2) of
+                {error, _Reason, _State3} = Error -> Error;
+                {ok, _Results, _Requests, _State3} = Result -> Result;
+                {closed, State3} ->
+                    channel_close(State3#state{sess = undefined}, Conn)
+            end
     end.
 
 
@@ -164,9 +185,18 @@ session_read(#state{channel = Channel, sess = Sess} = State, Conn, NodeId, Attri
             {ok, Handle, Requests, State#state{channel = Channel2, sess = Sess2}}
     end.
 
+session_close(#state{channel = Channel, sess = Sess} = State, Conn) ->
+    case opcua_client_session:close(Conn, Channel, Sess) of
+        {error, Reason} -> {error, Reason, State};
+        {ok, Requests, Channel2, Sess2} ->
+            {ok, Requests, State#state{channel = Channel2, sess = Sess2}}
+    end.
+
 session_handle_response(#state{channel = Channel, sess = Sess} = State, Conn, Response) ->
     case opcua_client_session:handle_response(Response, Conn, Channel, Sess) of
         {error, Reason} -> {error, Reason, State};
+        {closed, Channel2, Sess2} ->
+            {closed, State#state{channel = Channel2, sess = Sess2}};
         {ok, Results, Requests, Channel2, Sess2} ->
             {ok, Results, Requests, State#state{channel = Channel2, sess = Sess2}}
     end.
@@ -183,6 +213,13 @@ channel_open(#state{channel = undefined} = State, Conn) ->
                 {ok, Req, Channel2} ->
                     {ok, [], Req, State#state{channel = Channel2}}
             end
+    end.
+
+channel_close(#state{channel = Channel} = State, Conn) ->
+    case opcua_client_channel:close(Conn, Channel) of
+        {error, _Reason} = Error -> Error;
+        {ok, Req, Channel2} ->
+            {ok, [], Req, State#state{channel = Channel2}}
     end.
 
 channel_terminate(#state{channel = Channel}, Conn, Reason) ->

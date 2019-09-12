@@ -10,6 +10,7 @@
 -export([connect/1]).
 -export([browse/2, browse/3]).
 -export([read/3, read/4]).
+-export([close/1]).
 
 %% Startup functions
 -export([start_link/1]).
@@ -40,7 +41,6 @@
 -record(data, {
     socket                      :: inet:socket(),
     conn                        :: undefined | opcua:connection(),
-    from                        :: undefined | gen_statem:from(),
     proto                       :: term(),
     calls = #{}                 :: #{term() => gen_statem:from()}
 }).
@@ -76,6 +76,9 @@ read(Pid, NodeSpec, Attribs, Opts) when is_list(Attribs) ->
 read(Pid, NodeSpec, Attrib, Opts) ->
     [Result] = read(Pid, NodeSpec, [Attrib], Opts),
     Result.
+
+close(Pid) ->
+    gen_statem:call(Pid, close).
 
 
 %%% STARTUP FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -140,9 +143,29 @@ handle_event({call, From}, {browse, NodeId, Opts}, connected = State, Data) ->
     pack_command_result(From, State, proto_browse(Data, NodeId, Opts));
 handle_event({call, From}, {read, NodeId, Attribs, Opts}, connected = State, Data) ->
     pack_command_result(From, State, proto_read(Data, NodeId, Attribs, Opts));
-%% STATE: handshaking and connected
+handle_event({call, From}, close, connected = State, Data) ->
+    next_state_and_reply_later(closing, Data, on_closed, From,
+                               event_timeouts(State, Data));
+%% STATE: closing
+handle_event(enter, _OldState, closing = State, Data) ->
+    ?LOG_DEBUG("Client ~p entered closing", [self()]),
+    case proto_close(Data) of
+        {ok, Data2} ->
+            {keep_state, Data2, enter_timeouts(State, Data2)};
+        {error, Reason, Data2} ->
+            stop_and_reply(Reason, Data2, on_closed,
+                           {error, Reason}, {error, closed})
+    end;
+handle_event(info, {opcua_connection, closed}, closing, Data) ->
+    stop_and_reply(normal, Data, on_closed, ok, {error, closed});
+handle_event(state_timeout, abort, closing, Data) ->
+    stop_and_reply_all(normal, Data, {error, close_timeout});
+handle_event(info, {tcp_closed, Sock}, closing, #data{socket = Sock} = Data) ->
+    %% When closing the server may close the socket at any time
+    stop_and_reply(normal, Data, on_closed, ok, {error, closed});
+%% STATE: handshaking, connected and closing
 handle_event(timeout, produce, State, Data)
-  when State =:= handshaking; State =:= connected ->
+  when State =:= handshaking; State =:= connected; State =:= closing ->
     case proto_produce(Data) of
         {ok, Data2} ->
             {keep_state, Data2, event_timeouts(State, Data2)};
@@ -155,7 +178,7 @@ handle_event(timeout, produce, State, Data)
             stop(Reason, Data2)
     end;
 handle_event(info, {tcp, Sock, Input}, State, #data{socket = Sock} = Data)
-  when State =:= handshaking; State =:= connected ->
+  when State =:= handshaking; State =:= connected; State =:= closing ->
     ?LOG_DEBUG("Received: ~p", [Input]),
     case proto_handle_data(Data, Input) of
         {ok, Responses, Data2} ->
@@ -165,7 +188,7 @@ handle_event(info, {tcp, Sock, Input}, State, #data{socket = Sock} = Data)
             stop(Reason, Data2)
     end;
 handle_event(info, {tcp_passive, Sock}, State, #data{socket = Sock} = Data)
-  when State =:= handshaking; State =:= connected ->
+  when State =:= handshaking; State =:= connected; State =:= closing ->
     case conn_activate(Data) of
         ok ->
             {keep_state, Data, event_timeouts(State, Data)};
@@ -173,10 +196,10 @@ handle_event(info, {tcp_passive, Sock}, State, #data{socket = Sock} = Data)
             stop_and_reply_all(Reason, Data, {error, socket_error})
     end;
 handle_event(info, {tcp_closed, Sock}, State, #data{socket = Sock} = Data)
-  when State =:= handshaking; State =:= connected ->
+  when State =:= handshaking; State =:= connected; State =:= closing ->
     stop_and_reply_all(normal, Data, {error, socket_closed});
 handle_event(info, {tcp_error, Sock}, State, #data{socket = Sock} = Data)
-  when State =:= handshaking; State =:= connected ->
+  when State =:= handshaking; State =:= connected; State =:= closing ->
     stop_and_reply_all(tcp_error, Data, {error, socket_error});
 %% GENERIC STATE HANDLERS
 handle_event(enter, _OldState, NewState, Data) ->
@@ -235,6 +258,12 @@ proto_browse(#data{conn = Conn, proto = Proto} = Data, NodeId, Opts) ->
 proto_read(#data{conn = Conn, proto = Proto} = Data, NodeId, Attribs, Opts) ->
     case opcua_client_uacp:read(NodeId, Attribs, Opts, Conn, Proto) of
         {async, Handle, Proto2} -> {async, Handle, Data#data{proto = Proto2}};
+        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+    end.
+
+proto_close(#data{conn = Conn, proto = Proto} = Data) ->
+    case opcua_client_uacp:close(Conn, Proto) of
+        {ok, Proto2} -> {ok, Data#data{proto = Proto2}};
         {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
     end.
 
@@ -307,6 +336,15 @@ keep_state_reply_multi(#data{calls = Calls} = Data, Responses, Actions) ->
     end, {Actions, Calls}, Responses),
     {keep_state, Data#data{calls = Calls2}, Actions2}.
 
+stop_and_reply(Reason, #data{calls = Calls} = Data, Tag, MainResp, OtherResp) ->
+    %TODO: should probably cancel any pending request if possible
+    Actions = [{reply, F, OtherResp} || {T, F} <- maps:to_list(Calls), T =/= Tag],
+    Actions2 = case maps:find(Tag, Calls) of
+        error -> Actions;
+        {ok, From} -> [{reply, From, MainResp} | Actions]
+    end,
+    {stop_and_reply, Reason, Actions2, Data#data{calls = #{}}}.
+
 stop_and_reply_all(Reason, #data{calls = Calls} = Data, Response) ->
     %TODO: should probably cancel any pending request if possible
     Replies = [{reply, F, Response} || F <- maps:values(Calls)],
@@ -330,10 +368,13 @@ enter_timeouts({connecting, _, _} = State, Data) ->
     [{state_timeout, 10000, retry} | event_timeouts(State, Data)];
 enter_timeouts(handshaking = State, Data) ->
     [{state_timeout, 3000, abort} | event_timeouts(State, Data)];
+enter_timeouts(closing = State, Data) ->
+    [{state_timeout, 4000, abort} | event_timeouts(State, Data)];
 enter_timeouts(State, Data) ->
     event_timeouts(State, Data).
 
-event_timeouts(State, Data) when State =:= handshaking; State =:= connected ->
+event_timeouts(State, Data)
+  when State =:= handshaking; State =:= connected; State =:= closing ->
     #data{conn = Conn, proto = Proto} = Data,
     case opcua_client_uacp:can_produce(Conn, Proto) of
         true -> [{timeout, 0, produce}];

@@ -18,6 +18,7 @@
 -export([init/1]).
 -export([make_request/6]).
 -export([open/2]).
+-export([close/2]).
 -export([handle_response/3]).
 -export([terminate/3]).
 
@@ -70,6 +71,10 @@ open(Conn, State) ->
         requested_lifetime => 3600000
     },
     make_request(channel_open, ?NID_CHANNEL_OPEN_REQ, Payload,
+                 undefined, Conn, State).
+
+close(Conn, State) ->
+        make_request(channel_open, ?NID_CHANNEL_CLOSE_REQ, #{},
                  undefined, Conn, State).
 
 handle_response(#uacp_message{type = channel_open, sender = server,
