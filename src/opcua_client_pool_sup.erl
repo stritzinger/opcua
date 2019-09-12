@@ -19,7 +19,8 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_client(Opts) ->
-    supervisor:start_child(?MODULE, [Opts]).
+    {ok, Pid} = supervisor:start_child(?MODULE, [Opts]),
+    Pid.
 
 
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

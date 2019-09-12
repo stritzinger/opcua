@@ -49,18 +49,10 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 connect(EndpointSpec) ->
-    case opcua_util:parse_endpoint(EndpointSpec) of
-        {error, _Reason} = Error -> Error;
-        {ok, Endpoint} ->
-            case opcua_client_pool_sup:start_client(#{}) of
-                {error, _Reason} = Error -> Error;
-                {ok, Pid} ->
-                    case gen_statem:call(Pid, {connect, Endpoint}) of
-                        {error, _Reason} = Error -> Error;
-                        ok -> {ok, Pid}
-                    end
-            end
-    end.
+    Endpoint  = opcua_util:parse_endpoint(EndpointSpec),
+    Pid = opcua_client_pool_sup:start_client(#{}),
+    ok = gen_statem:call(Pid, {connect, Endpoint}),
+    Pid.
 
 browse(Pid, NodeSpec) ->
     browse(Pid, NodeSpec, #{}).
@@ -70,18 +62,20 @@ browse(Pid, NodeSpec, Opts) ->
         error -> Opts;
         {ok, TypeSpec} -> Opts#{type := opcua:node_id(TypeSpec)}
     end,
-    gen_statem:call(Pid, {browse, opcua:node_id(NodeSpec), FixedOpts}).
+    Command = {browse, opcua:node_id(NodeSpec), FixedOpts},
+    {ok, Result} = gen_statem:call(Pid, Command),
+    Result.
 
 read(Pid, NodeSpec, Attribs) ->
     read(Pid, NodeSpec, Attribs, #{}).
 
 read(Pid, NodeSpec, Attribs, Opts) when is_list(Attribs) ->
-    gen_statem:call(Pid, {read, opcua:node_id(NodeSpec), Attribs, Opts});
+    Command = {read, opcua:node_id(NodeSpec), Attribs, Opts},
+    {ok, Result} = gen_statem:call(Pid, Command),
+    Result;
 read(Pid, NodeSpec, Attrib, Opts) ->
-    case read(Pid, NodeSpec, [Attrib], Opts) of
-        {ok, [Result]} -> {ok, Result};
-        {error, _Reason} = Error -> Error
-    end.
+    [Result] = read(Pid, NodeSpec, [Attrib], Opts),
+    Result.
 
 close(Pid) ->
     gen_statem:call(Pid, close).

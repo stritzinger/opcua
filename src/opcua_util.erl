@@ -132,7 +132,7 @@ parse_endpoint({{A, B, C, D} = Ip, Port})
        is_integer(C), C >= 0, C < 256, is_integer(D), D >= 0, D < 256,
        is_integer(Port), Port >= 0, Port < 65536 ->
     Url = iolist_to_binary(io_lib:format("opc.tcp://~w.~w.~w.~w:~w", [A, B, C, D, Port])),
-    {ok, #opcua_endpoint{url = Url, host = Ip, port = Port}};
+    #opcua_endpoint{url = Url, host = Ip, port = Port};
 parse_endpoint(Url) when is_binary(Url) ->
     Opts = [
         {scheme_defaults, [{'opc.tcp', 4840}]},
@@ -141,18 +141,12 @@ parse_endpoint(Url) when is_binary(Url) ->
             (_)             -> {error, bad_scheme}
         end}
     ],
-    case http_uri:parse(Url, Opts) of
-         {ok, {_, <<>>, HostStr, Port, <<"/">>, <<>>}} ->
-            Host = case inet:parse_address(binary_to_list(HostStr)) of
-                {ok, Addr}      -> Addr;
-                {error, einval} -> HostStr
-            end,
-            {ok, #opcua_endpoint{url = Url, host = Host, port = Port}};
-        {ok, _} -> {error, bad_endpoint};
-        {error, _Reason} = Error -> Error
-    end;
-parse_endpoint(_Endpoint) ->
-    {error, bad_endpoint}.
+    {ok, {_, <<>>, HostStr, Port, <<"/">>, <<>>}} = http_uri:parse(Url, Opts),
+    Host = case inet:parse_address(binary_to_list(HostStr)) of
+        {ok, Addr}      -> Addr;
+        {error, einval} -> HostStr
+    end,
+    #opcua_endpoint{url = Url, host = Host, port = Port}.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
