@@ -62,8 +62,12 @@ get_references(OriginId) ->
 get_references(OriginId, Opts) ->
     Graph = persistent_term:get(?MODULE),
     Subtypes = maps:get(include_subtypes, Opts, false),
-    RefTypeId = maps:get(type, Opts, undefined),
     Direction = maps:get(direction, Opts, forward),
+    RefTypeId = case maps:get(type, Opts, undefined) of
+        undefined -> undefined;
+        ?UNDEF_NODE_ID -> undefined;
+        #opcua_node_id{} = NodeId -> NodeId
+    end,
     {GetEdgesFun, FilterFun} = case {RefTypeId, Subtypes, Direction} of
         {undefined, _, forward} ->
             {fun digraph:out_edges/2, fun(_) -> true end};

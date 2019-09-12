@@ -1,4 +1,4 @@
--module(opcua_sessions_sup).
+-module(opcua_server_session_pool_sup).
 
 -behaviour(supervisor).
 
@@ -7,6 +7,7 @@
 
 %% API functions
 -export([start_link/0]).
+-export([start_session/2]).
 
 %% Behaviour supervisor callback functions
 -export([init/1]).
@@ -22,18 +23,17 @@
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
+start_session(SessId, AuthToken) ->
+    supervisor:start_child(?SERVER, [SessId, AuthToken]).
+
 
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
-    SupFlags = #{strategy => one_for_all, intensity => 0, period => 1},
-    SessionManagerSpec = #{
-        id => opcua_session_manager,
-        start => {opcua_session_manager, start_link, [#{}]}
+    SupFlags = #{strategy => simple_one_for_one},
+    SessionSpec = #{
+        id => undefined,
+        restart => temporary,
+        start => {opcua_server_session, start_link, []}
     },
-    SessionSupSpec = #{
-        id => opcua_sessions_sup,
-        type => supervisor,
-        start => {opcua_session_sup, start_link, []}
-    },
-    {ok, {SupFlags, [SessionManagerSpec, SessionSupSpec]}}.
+    {ok, {SupFlags, [SessionSpec]}}.

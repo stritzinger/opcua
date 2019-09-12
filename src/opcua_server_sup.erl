@@ -1,4 +1,4 @@
--module(opcua_sup).
+-module(opcua_server_sup).
 
 -behaviour(supervisor).
 
@@ -20,12 +20,9 @@ start_link() ->
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
-    {ok, {#{strategy => one_for_one}, [
-        %TODO: figure out what is needed for the client and server
-        worker(opcua_address_space, []),
-        worker(opcua_database, [#{}]),
-        supervisor(opcua_server_sup, []),
-        supervisor(opcua_client_sup, [])
+    {ok, {#{strategy => one_for_all}, [
+        worker(opcua_server_registry, [#{}]),
+        supervisor(opcua_server_session_sup, [])
     ]}}.
 
 
