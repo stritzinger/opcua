@@ -30,6 +30,7 @@ basic_client_server_connection_test_() ->
                 #{browse_name := #opcua_qualified_name{name = <<"Types">>}},
                 #{browse_name := #opcua_qualified_name{name = <<"Views">>}}
             ], lists:sort(Refs)),
+            ?assertMatch(ok, opcua_client:close(Client)),
             application:stop(opcua)
         end}
     ]).

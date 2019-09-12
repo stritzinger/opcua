@@ -48,6 +48,8 @@
 -define(NID_CREATE_SESS_RES,            ?NNID(462)).
 -define(NID_ACTIVATE_SESS_REQ,          ?NNID(465)).
 -define(NID_ACTIVATE_SESS_RES,          ?NNID(468)).
+-define(NID_CLOSE_SESS_REQ,             ?NNID(471)).
+-define(NID_CLOSE_SESS_RES,             ?NNID(474)).
 -define(NID_BROWSE_REQ,                 ?NNID(525)).
 -define(NID_BROWSE_RES,                 ?NNID(528)).
 -define(NID_READ_REQ,                   ?NNID(629)).
