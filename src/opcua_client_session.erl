@@ -17,6 +17,7 @@
 -export([create/3]).
 -export([browse/5]).
 -export([read/6]).
+-export([close/3]).
 -export([handle_response/4]).
 
 
@@ -107,6 +108,13 @@ read(NodeId, Attribs, _Opts, Conn, Channel, #state{status = activated} = State) 
                              ?NID_READ_REQ, Payload),
     {ok, opcua_connection:handle(Conn, Request), [Request], Channel2, State2}.
 
+close(Conn, Channel, #state{status = activated} = State) ->
+    Payload = #{delete_subscriptions => true},
+    {ok, Request, Channel2, State2} =
+        channel_make_request(State, Channel, Conn,
+                             ?NID_CLOSE_SESS_REQ, Payload),
+    {ok, [Request], Channel2, State2}.
+
 handle_response(#uacp_message{node_id = NodeId, payload = Payload} = Msg, Conn,
                 Channel, #state{status = Status} = State) ->
     Handle = opcua_connection:handle(Conn, Msg),
@@ -162,6 +170,8 @@ handle_response(State, Channel, _Conn, activated, Handle, ?NID_READ_RES, Payload
     %TODO: Add option to allow per-attribute error instead of all-or-nothing
     #{results := Results} = Payload,
     {ok, [{Handle, unpack_read_results(Results)}], [], Channel, State};
+handle_response(State, Channel, _Conn, activated, _Handle, ?NID_CLOSE_SESS_RES, _Payload) ->
+    {closed, Channel, State};
 handle_response(State, Channel, _Conn, Status, _Handle, NodeId, Payload) ->
     ?LOG_WARNING("Unexpected message while ~w: ~p ~p", [Status, NodeId, Payload]),
     {ok, [], [], Channel, State}.
