@@ -15,7 +15,6 @@
 -export([get_node/2]).
 -export([get_references/2]).
 -export([get_references/3]).
--export([is_subtype/3]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -49,8 +48,13 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(SUBTYPES_CACHE, opcua_address_space_subtypes_cache).
+-define(BROWSE_DEFAULT_OPTS, #{
+    include_subtypes => false,
+    type             => undefined,
+    direction        => forward
+}).
 
+-define(is_node(N), is_record(N, opcua_node_id)).
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -73,55 +77,45 @@ add_references(Context, References) ->
     gen_server:call(proc(Context), {add_references, References}).
 
 get_node(Context, NodeId) ->
-    case ets:lookup(persistent_term:get(key(Context, nodes)), NodeId) of
+    case ets:lookup(table(Context, nodes), NodeId) of
         [#node{instance = Node}] -> Node;
         []                       -> undefined
     end.
 
-get_references(Context, OriginId) ->
-    get_references(Context, OriginId, #{}).
+get_references(Context, OriginNode) when ?is_node(OriginNode) ->
+    get_references(Context, OriginNode, #{}).
 
-get_references(Context, OriginId, Opts) ->
-    Graph = persistent_term:get(?MODULE),
-    Subtypes = maps:get(include_subtypes, Opts, false),
-    Direction = maps:get(direction, Opts, forward),
-    RefTypeId = case maps:get(type, Opts, undefined) of
-        undefined -> undefined;
-        ?UNDEF_NODE_ID -> undefined;
-        #opcua_node_id{} = NodeId -> NodeId
-    end,
-    {GetEdgesFun, FilterFun} = case {RefTypeId, Subtypes, Direction} of
-        {undefined, _, forward} ->
-            {fun digraph:out_edges/2, fun(_) -> true end};
-        {undefined, _, inverse} ->
-            {fun digraph:in_edges/2, fun(_) -> true end};
-        {undefined, _, _} ->
-            {fun digraph:edges/2, fun(_) -> true end};
-        {Id, false, forward} ->
-            {fun digraph:out_edges/2, fun({_, _, _, T}) -> T =:= Id end};
-        {Id, false, inverse} ->
-            {fun digraph:in_edges/2, fun({_, _, _, T}) -> T =:= Id end};
-        {Id, false, _} ->
-            {fun digraph:edges/2, fun({_, _, _, T}) -> T =:= Id end};
-        {Id, true, forward} ->
-            RefTypes = (subtypes(Id))#{Id => true},
-            {fun digraph:out_edges/2, fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end};
-        {Id, true, inverse} ->
-            RefTypes = (subtypes(Id))#{Id => true},
-            {fun digraph:in_edges/2, fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end};
-        {Id, true, _} ->
-            RefTypes = (subtypes(Id))#{Id => true},
-            {fun digraph:edges/2, fun({_, _, _, T}) -> maps:is_key(T, RefTypes) end}
-    end,
-    Edges = [digraph:edge(Graph, I) || I <- GetEdgesFun(Graph, OriginId)],
-    [edge_to_ref(E) || E <- Edges, FilterFun(E)].
+get_references(Context, OriginNode, Opts) when ?is_node(OriginNode) ->
+    #{direction := Dir} = FullOpts = maps:merge(?BROWSE_DEFAULT_OPTS, Opts),
+    Table = table(Context, references),
+    {TypeSpec, Filter} = type_filter(Context, FullOpts),
+    Index = {OriginNode, TypeSpec, spec_dir(Dir)},
+    Spec = [{#reference{index = Index, target = '_'}, [], ['$_']}],
+    [to_reference(R) || R <- ets:select(Table, Spec), Filter(R)].
 
-%% @doc Returns if the given OPCUA type node id is a subtype of the second
-%% given OPCUA type node id.
--spec is_subtype(term(), opcua:node_id(), opcua:node_id()) -> boolean().
-is_subtype(Context, TypeId, TypeId) -> true;
-is_subtype(Context, TypeId, SuperTypeId) ->
-    maps:is_key(TypeId, subtypes(SuperTypeId)).
+type_filter(Context, #{include_subtypes := true, type := Type})
+  when ?is_node(Type) ->
+    {
+        '_',
+        fun(#reference{index = {_, T, _}}) -> is_subtype(Context, T, Type) end
+    };
+type_filter(_Context, #{type := Type}) ->
+    {
+        spec_type(Type),
+        fun(_) -> true end
+    }.
+
+spec_type(undefined)                -> '_';
+spec_type(?UNDEF_NODE_ID)           -> '_';
+spec_type(Type) when ?is_node(Type) -> Type.
+
+spec_dir(both) -> '_';
+spec_dir(Dir)  -> Dir.
+
+to_reference(#reference{index = {Source, Type, forward}, target = Target}) ->
+    #opcua_reference{source_id = Source, type_id = Type, target_id = Target};
+to_reference(#reference{index = {Source, Type, inverse}, target = Target}) ->
+    #opcua_reference{source_id = Target, type_id = Type, target_id = Source}.
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -134,15 +128,19 @@ init({Context}) ->
         ordered_set,
         {keypos, #reference.index}
     ]),
+    SubtypesTable = ets:new(opcua_address_space_subtypes, []),
 
     ProcKey = key(Context),
     NodesKey = key(Context, nodes),
     ReferencesKey = key(Context, references),
+    SubtypesKey = key(Context, subtypes),
     Keys = [ProcKey, NodesKey, ReferencesKey],
 
     State = #{
+        context => Context,
         nodes => NodesTable,
         references => ReferencesTable,
+        subtypes => SubtypesTable,
         keys => Keys
     },
 
@@ -151,8 +149,8 @@ init({Context}) ->
     persistent_term:put(ProcKey, self()),
     persistent_term:put(NodesKey, NodesTable),
     persistent_term:put(ReferencesKey, ReferencesTable),
+    persistent_term:put(SubtypesKey, SubtypesTable),
 
-    persistent_term:put(?SUBTYPES_CACHE, #{}), % FIXME: Remove?
     {ok, State}.
 
 handle_call({add_nodes, Nodes}, _From, #{nodes := NodesTable} = State) ->
@@ -163,16 +161,12 @@ handle_call({add_nodes, Nodes}, _From, #{nodes := NodesTable} = State) ->
 handle_call({del_nodes, NodeIDs}, _From, #{nodes := NodesTable} = State) ->
     [ets:delete(NodesTable, NodeID) || NodeID <- NodeIDs],
     {reply, ok, State};
-handle_call({add_references, References}, _From, #{references := ReferencesTable} = State) ->
-    [ets:insert_new(ReferencesTable, R) || R <- expand_references(References)],
+handle_call({add_references, References}, _From, State) ->
+    insert_references(References, State),
     {reply, ok, State};
 handle_call(stop, From, State) ->
     {stop, normal, maps:put(from, From, State)}.
 
-handle_cast({cache_subtypes, Type, Subtypes}, State) ->
-    Cache = persistent_term:get(?SUBTYPES_CACHE),
-    persistent_term:put(?SUBTYPES_CACHE, Cache#{Type => Subtypes}),
-    {noreply, State};
 handle_cast(Request, _State) ->
     error({unknown_cast, Request}).
 
@@ -191,37 +185,7 @@ terminate(normal, #{from := From} = State) ->
 cleanup_persitent_terms(Keys) ->
     [persistent_term:erase(K) || K <- Keys].
 
-%% Returns a map where the keys are the node id of all the OPCUA subtypes
-%% of the given type id.
-subtypes(TypeNodeId) ->
-    Cache = persistent_term:get(?SUBTYPES_CACHE),
-    case maps:find(TypeNodeId, Cache) of
-        {ok, Value} -> Value;
-        error ->
-            Value = subtypes(TypeNodeId, #{}),
-            gen_server:cast(?MODULE, {cache_subtypes, TypeNodeId, Value}),
-            Value
-    end.
-
-subtypes(TypeNodeId, Acc) ->
-    RefOpts = #{
-        type => ?NNID(?REF_HAS_SUBTYPE),
-        direction => forward,
-        include_subtypes => false
-    },
-    lists:foldl(fun(#opcua_reference{target_id = Id}, Map) ->
-        case maps:is_key(Id, Map) of
-            false -> subtypes(Id, Map#{Id => true});
-            true -> Map
-        end
-    end, Acc, get_references(TypeNodeId, RefOpts)).
-
-edge_to_ref({_, SourceNodeId, TargetNodeId, Type}) ->
-    #opcua_reference{
-        source_id = SourceNodeId,
-        target_id = TargetNodeId,
-        type_id = Type
-    }.
+table(Context, Type) -> persistent_term:get(key(Context, Type)).
 
 proc(Context) -> persistent_term:get(key(Context)).
 
@@ -229,14 +193,47 @@ key(Context) -> {?MODULE, Context}.
 
 key(Context, Type) -> {?MODULE, {Context, Type}}.
 
-expand_references(References) ->
-    [expand_reference(R) || R <- References].
+insert_references([], _State) ->
+    [];
+insert_references([Ref|References], #{references := Table} = State) ->
+    #opcua_reference{
+        source_id = Source,
+        target_id = Target,
+        type_id = Type
+    } = Ref,
+    ets:insert_new(Table, [
+        #reference{index = {Source, Type, forward}, target = Target},
+        #reference{index = {Target, Type, inverse}, target = Source}
+    ]),
+    cache_subtypes(Type, Source, Target, State),
+    insert_references(References, State).
 
-expand_reference(#opcua_reference{type_id = TypeID} = Ref) ->
-    #reference{
-        index = {Ref#opcua_reference.source_id, TypeID, forward},
-        target = Ref#opcua_reference.target_id
-    }.
+cache_subtypes(?NNID(?REF_HAS_SUBTYPE), Source, Target, State) ->
+    Table = maps:get(subtypes, State),
+    % Add target to existing subtypes
+    SubTypes = case ets:lookup(Table, Source) of
+        [{Source, Map}] -> Map;
+        []              -> #{}
+    end,
+    ets:insert(Table, {Source, maps:put(Target, true, SubTypes)}),
+    % Add target to all super types as well
+    SuperTypes = get_references(maps:get(context, State), Source, #{
+        type => ?NNID(?REF_HAS_SUBTYPE),
+        direction => inverse
+    }),
+    lists:map(fun(#opcua_reference{source_id = S}) ->
+        cache_subtypes(?NNID(?REF_HAS_SUBTYPE), S, Target, State)
+    end, SuperTypes);
+cache_subtypes(_Type, _Source, _Target, _State) ->
+    ok.
+
+is_subtype(_Context, Type, Type) ->
+    true;
+is_subtype(Context, Type, SuperType) ->
+    case ets:lookup(table(Context, subtypes), SuperType) of
+        [{SuperType, SubTypes}] -> maps:is_key(Type, SubTypes);
+        []                      -> false
+    end.
 
 spawn_cleanup_proc(Pid, Keys) ->
     spawn(fun() ->
