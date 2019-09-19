@@ -95,7 +95,7 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
      #state{self_policy = Policy, token_id = TokenId} = State)
   when (Security =:= Policy orelse Security =:= TokenId),
        SeqNum =/= undefined, ReqId =/= undefined, Body =/= undefined ->
-    SeqHeader = opcua_protocol_codec:encode_sequence_header(SeqNum, ReqId),
+    SeqHeader = opcua_uacp_codec:encode_sequence_header(SeqNum, ReqId),
     {ok, Chunk#uacp_chunk{
         state = locked,
         body = [SeqHeader, Body]
@@ -106,7 +106,7 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
 
 decode_sequence_header(#uacp_chunk{body = Body} = Chunk) ->
     {{SeqNum, ReqId}, RemBody} =
-        opcua_protocol_codec:decode_sequence_header(Body),
+        opcua_uacp_codec:decode_sequence_header(Body),
     Chunk#uacp_chunk{
         sequence_num = SeqNum,
         request_id = ReqId,
