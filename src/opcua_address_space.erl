@@ -93,31 +93,6 @@ get_references(Context, OriginNode, Opts) when ?is_node(OriginNode) ->
     Spec = [{#reference{index = Index, target = '_'}, [], ['$_']}],
     [to_reference(R) || R <- ets:select(Table, Spec), Filter(R)].
 
-type_filter(Context, #{include_subtypes := true, type := Type})
-  when ?is_node(Type) ->
-    {
-        '_',
-        fun(#reference{index = {_, T, _}}) -> is_subtype(Context, T, Type) end
-    };
-type_filter(_Context, #{type := Type}) ->
-    {
-        spec_type(Type),
-        fun(_) -> true end
-    }.
-
-spec_type(undefined)                -> '_';
-spec_type(?UNDEF_NODE_ID)           -> '_';
-spec_type(Type) when ?is_node(Type) -> Type.
-
-spec_dir(both) -> '_';
-spec_dir(Dir)  -> Dir.
-
-to_reference(#reference{index = {Source, Type, forward}, target = Target}) ->
-    #opcua_reference{source_id = Source, type_id = Type, target_id = Target};
-to_reference(#reference{index = {Source, Type, inverse}, target = Target}) ->
-    #opcua_reference{source_id = Target, type_id = Type, target_id = Source}.
-
-
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init({Context}) ->
@@ -243,3 +218,27 @@ spawn_cleanup_proc(Pid, Keys) ->
                 cleanup_persitent_terms(Keys)
         end
     end).
+
+type_filter(Context, #{include_subtypes := true, type := Type})
+  when ?is_node(Type) ->
+    {
+        '_',
+        fun(#reference{index = {_, T, _}}) -> is_subtype(Context, T, Type) end
+    };
+type_filter(_Context, #{type := Type}) ->
+    {
+        spec_type(Type),
+        fun(_) -> true end
+    }.
+
+spec_type(undefined)                -> '_';
+spec_type(?UNDEF_NODE_ID)           -> '_';
+spec_type(Type) when ?is_node(Type) -> Type.
+
+spec_dir(both) -> '_';
+spec_dir(Dir)  -> Dir.
+
+to_reference(#reference{index = {Source, Type, forward}, target = Target}) ->
+    #opcua_reference{source_id = Source, type_id = Type, target_id = Target};
+to_reference(#reference{index = {Source, Type, inverse}, target = Target}) ->
+    #opcua_reference{source_id = Target, type_id = Type, target_id = Source}.
