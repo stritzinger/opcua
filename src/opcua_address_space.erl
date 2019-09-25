@@ -151,13 +151,13 @@ handle_info(Info, _State) ->
 terminate(normal, #{from := From} = State) ->
     true = ets:delete(maps:get(nodes, State)),
     true = ets:delete(maps:get(references, State)),
-    cleanup_persitent_terms(maps:get(keys, State)),
+    cleanup_persistent_terms(maps:get(keys, State)),
     gen_server:reply(From, ok).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cleanup_persitent_terms(Keys) ->
+cleanup_persistent_terms(Keys) ->
     [persistent_term:erase(K) || K <- Keys].
 
 table(Context, Type) -> persistent_term:get(key(Context, Type)).
@@ -215,7 +215,7 @@ spawn_cleanup_proc(Pid, Keys) ->
         Ref = erlang:monitor(process, Pid),
         receive
             {'DOWN', Ref, process, Pid, _Reason} ->
-                cleanup_persitent_terms(Keys)
+                cleanup_persistent_terms(Keys)
         end
     end).
 
