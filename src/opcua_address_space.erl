@@ -109,7 +109,7 @@ init({Context}) ->
     NodesKey = key(Context, nodes),
     ReferencesKey = key(Context, references),
     SubtypesKey = key(Context, subtypes),
-    Keys = [ProcKey, NodesKey, ReferencesKey],
+    Keys = [ProcKey, NodesKey, ReferencesKey, SubtypesKey],
 
     State = #{
         context => Context,
