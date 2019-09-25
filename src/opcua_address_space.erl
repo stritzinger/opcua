@@ -41,9 +41,9 @@
     instance :: #opcua_node{} | pid()
 }).
 
--record(reference, {
-    index  :: {opcua:node_id(), opcua:node_id(), forward | inverse},
-    target :: opcua:node_id()
+-record(refs, {
+    index   :: {opcua:node_id(), opcua:node_id(), forward | inverse},
+    targets :: opcua:node_id()
 }).
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -90,8 +90,8 @@ get_references(Context, OriginNode, Opts) when ?is_node(OriginNode) ->
     Table = table(Context, references),
     {TypeSpec, Filter} = type_filter(Context, FullOpts),
     Index = {OriginNode, TypeSpec, spec_dir(Dir)},
-    Spec = [{#reference{index = Index, target = '_'}, [], ['$_']}],
-    [to_reference(R) || R <- ets:select(Table, Spec), Filter(R)].
+    Spec = [{#refs{index = Index, targets = '_'}, [], ['$_']}],
+    lists:flatten([to_references(R) || R <- ets:select(Table, Spec), Filter(R)]).
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -101,7 +101,7 @@ init({Context}) ->
     ]),
     ReferencesTable = ets:new(opcua_address_space_references, [
         ordered_set,
-        {keypos, #reference.index}
+        {keypos, #refs.index}
     ]),
     SubtypesTable = ets:new(opcua_address_space_subtypes, []),
 
@@ -176,12 +176,18 @@ insert_references([Ref|References], #{references := Table} = State) ->
         target_id = Target,
         type_id = Type
     } = Ref,
-    ets:insert_new(Table, [
-        #reference{index = {Source, Type, forward}, target = Target},
-        #reference{index = {Target, Type, inverse}, target = Source}
-    ]),
+    insert_reference(Table, Source, Type, forward, Target),
+    insert_reference(Table, Target, Type, inverse, Source),
     cache_subtypes(Type, Source, Target, State),
     insert_references(References, State).
+
+insert_reference(Table, Source, Type, Direction, Target) ->
+    Key = {Source, Type, Direction},
+    Targets = case ets:lookup(Table, Key) of
+        [#refs{index = Key, targets = Ts}] -> Ts;
+        []                                 -> []
+    end,
+    ets:insert(Table, #refs{index = Key, targets = Targets ++ [Target]}).
 
 cache_subtypes(?NNID(?REF_HAS_SUBTYPE), Source, Target, State) ->
     Table = maps:get(subtypes, State),
@@ -223,7 +229,7 @@ type_filter(Context, #{include_subtypes := true, type := Type})
   when ?is_node(Type) ->
     {
         '_',
-        fun(#reference{index = {_, T, _}}) -> is_subtype(Context, T, Type) end
+        fun(#refs{index = {_, T, _}}) -> is_subtype(Context, T, Type) end
     };
 type_filter(_Context, #{type := Type}) ->
     {
@@ -238,7 +244,7 @@ spec_type(Type) when ?is_node(Type) -> Type.
 spec_dir(both) -> '_';
 spec_dir(Dir)  -> Dir.
 
-to_reference(#reference{index = {Source, Type, forward}, target = Target}) ->
-    #opcua_reference{source_id = Source, type_id = Type, target_id = Target};
-to_reference(#reference{index = {Source, Type, inverse}, target = Target}) ->
-    #opcua_reference{source_id = Target, type_id = Type, target_id = Source}.
+to_references(#refs{index = {Source, Type, forward}, targets = Targets}) ->
+    [#opcua_reference{source_id = Source, type_id = Type, target_id = T} || T <- Targets];
+to_references(#refs{index = {Source, Type, inverse}, targets = Targets}) ->
+    [#opcua_reference{source_id = T, type_id = Type, target_id = Source} || T <- Targets].
