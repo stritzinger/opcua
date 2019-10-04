@@ -100,6 +100,7 @@ code_change(_OldVsn, State, _Extra) ->
 load_nodesets() ->
     PrivDir = code:priv_dir(opcua),
     NodeSetDir = filename:join([PrivDir, "nodesets"]),
+    opcua_address_space:create(default),
     opcua_database_nodes:setup(NodeSetDir),
     ok.
 
