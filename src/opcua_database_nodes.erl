@@ -284,12 +284,12 @@ extract_encodings(NodesProplist) ->
 
 load_nodes(Dir) ->
     load_all_terms(Dir, "nodes", fun(Node) ->
-        opcua_address_space:add_nodes([Node])
+        opcua_address_space:add_nodes(default, [Node])
     end).
 
 load_references(Dir) ->
     load_all_terms(Dir, "references", fun(Reference) ->
-        opcua_address_space:add_references([Reference])
+        opcua_address_space:add_references(default, [Reference])
     end).
 
 load_data_type_schemas(Dir) ->

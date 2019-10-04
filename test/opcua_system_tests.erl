@@ -14,7 +14,6 @@
 basic_client_server_connection_test_() ->
     setup_teardown([
         {"basic client/server connection", fun() ->
-            application:ensure_all_started(opcua),
             Client = opcua_client:connect(<<"opc.tcp://127.0.0.1">>),
             ?assertMatch(#opcua_qualified_name{ns = 0, name = <<"Server">>},
                          opcua_client:read(Client, server, browse_name)),
@@ -30,8 +29,7 @@ basic_client_server_connection_test_() ->
                 #{browse_name := #opcua_qualified_name{name = <<"Types">>}},
                 #{browse_name := #opcua_qualified_name{name = <<"Views">>}}
             ], lists:sort(Refs)),
-            ?assertMatch(ok, opcua_client:close(Client)),
-            application:stop(opcua)
+            ?assertMatch(ok, opcua_client:close(Client))
         end}
     ]).
 
@@ -41,7 +39,14 @@ basic_client_server_connection_test_() ->
 setup_teardown(Tests) ->
     {
         foreach,
-        fun() -> application:ensure_all_started(opcua) end,
-        fun(_) -> application:stop(opcua) end,
+        fun() ->
+            error_logger:tty(false),
+            {ok, Apps} = application:ensure_all_started(opcua),
+            Apps
+        end,
+        fun(Apps) ->
+            [application:stop(A) || A <- Apps],
+            error_logger:tty(true)
+        end,
         Tests
     }.

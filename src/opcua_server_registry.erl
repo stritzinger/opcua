@@ -122,7 +122,7 @@ get_resolver_refs(NodeId, Opts) ->
 get_node(NodeId) ->
     case get_resolver_node(NodeId) of
         undefined ->
-            case opcua_address_space:get_node(NodeId) of
+            case opcua_address_space:get_node(default, NodeId) of
                 undefined -> undefined;
                 #opcua_node{} = Node -> {static, Node}
             end;
@@ -130,7 +130,7 @@ get_node(NodeId) ->
     end.
 
 get_references(static, NodeId, Opts) ->
-    opcua_address_space:get_references(NodeId, Opts);
+    opcua_address_space:get_references(default, NodeId, Opts);
 get_references(dynamic, NodeId, Opts) ->
     get_resolver_refs(NodeId, Opts).
 
@@ -205,7 +205,7 @@ setup_static_nodes() ->
         undefined -> ok;
         {ok, Mod} ->
             {ok, Nodes, Refs} = Mod:init(),
-            opcua_address_space:add_nodes(Nodes),
-            opcua_address_space:add_references(Refs),
+            opcua_address_space:add_nodes(default, Nodes),
+            opcua_address_space:add_references(default, Refs),
             ok
     end.

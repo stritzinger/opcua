@@ -24,10 +24,13 @@ t_test_() ->
      ]}.
 
 setup() ->
-    {ok, _} = application:ensure_all_started(opcua).
+    {ok, Apps} = application:ensure_all_started(opcua),
+    Apps.
 
-cleanup(_) ->
-    ok = application:stop(opcua).
+cleanup(Apps) ->
+    opcua_test_util:without_error_logger(fun() ->
+        [ok = application:stop(A) || A <- Apps]
+    end).
 
 %% This little helper does the major testing:
 %%
