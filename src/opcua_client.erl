@@ -51,7 +51,7 @@
 connect(EndpointSpec) ->
     Endpoint  = opcua_util:parse_endpoint(EndpointSpec),
     Pid = opcua_client_pool_sup:start_client(#{}),
-    ok = gen_statem:call(Pid, {connect, Endpoint}),
+    ok = gen_statem:call(Pid, {connect, Endpoint}, infinity),
     Pid.
 
 browse(Pid, NodeSpec) ->

@@ -1,5 +1,7 @@
 -module(opcua_client_session).
 
+%TODO: Allow server certificate validation.
+
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -include_lib("kernel/include/logger.hrl").
@@ -128,7 +130,7 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
         authentication_token := AuthToken,
         max_request_message_size := _MaxReqMsgSize,
         revised_session_timeout := _RevisedSessTimeout,
-        server_certificate := undefined,
+        server_certificate := _ServerCert,
         server_endpoints := _ServerEndpointDescription,
         server_nonce := _ServerNonce,
         server_signature := _ServerSig,

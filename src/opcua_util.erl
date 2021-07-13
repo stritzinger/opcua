@@ -134,18 +134,10 @@ parse_endpoint({{A, B, C, D} = Ip, Port})
     Url = iolist_to_binary(io_lib:format("opc.tcp://~w.~w.~w.~w:~w", [A, B, C, D, Port])),
     #opcua_endpoint{url = Url, host = Ip, port = Port};
 parse_endpoint(Url) when is_binary(Url) ->
-    Opts = [
-        {scheme_defaults, [{'opc.tcp', 4840}]},
-        {scheme_validation_fun, fun
-            (<<"opc.tcp">>) -> valid;
-            (_)             -> {error, bad_scheme}
-        end}
-    ],
-    {ok, {_, <<>>, HostStr, Port, <<"/">>, <<>>}} = http_uri:parse(Url, Opts),
-    Host = case inet:parse_address(binary_to_list(HostStr)) of
-        {ok, Addr}      -> Addr;
-        {error, einval} -> HostStr
-    end,
+    Map = #{host := BinHost} = uri_string:parse(Url),
+    <<"opc.tcp">> = maps:get(scheme, Map, <<"opc.tcp">>),
+    Port = maps:get(port, Map, 4840),
+    Host = binary_to_list(BinHost),
     #opcua_endpoint{url = Url, host = Host, port = Port}.
 
 
