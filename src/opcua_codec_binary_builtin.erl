@@ -46,6 +46,7 @@ encode(int64, Int64) -> <<Int64:64/little-signed-integer>>;
 encode(float, Float) -> <<Float:32/little-signed-float>>;
 encode(double, Double) -> <<Double:64/little-signed-float>>;
 encode(string, String) when String == undefined -> <<-1:32/little-signed-integer>>;
+encode(string, Atom) when is_atom(Atom) -> encode(string, atom_to_binary(Atom));
 encode(string, String) -> <<(byte_size(String)):32/little-signed-integer, String/binary>>;
 encode(date_time, Bin) -> encode(int64, Bin);
 encode(guid, Guid) -> encode_guid(Guid);

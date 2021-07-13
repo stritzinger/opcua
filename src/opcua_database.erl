@@ -45,7 +45,8 @@ lookup_schema(NodeSpec) ->
 -spec lookup_id(opcua:node_spec()) -> opcua:node_id().
 lookup_id(NodeSpec) ->
     case opcua_codec:node_id(NodeSpec) of
-        #opcua_node_id{type = numeric} = NodeId -> NodeId;
+        %TODO: Are we supposed to resolve non-numeric node ids ?
+        #opcua_node_id{} = NodeId -> NodeId;
         _ -> error(not_implemented)
     end.
 

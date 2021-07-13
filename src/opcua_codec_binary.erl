@@ -219,7 +219,7 @@ honor_dimensions(ObjectArray, DimArray) ->
 decode_data_value(<<0:2, Mask:6/bits, Bin/binary>>) ->
     Types = [
         {value, variant, undefined},
-        {status, status_code, 0},
+        {status, status_code, good},
         {source_timestamp, date_time, 0},
         {source_pico_seconds, uint16, 0},
         {server_timestamp, date_time, 0},

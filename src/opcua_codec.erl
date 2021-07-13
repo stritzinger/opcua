@@ -28,7 +28,11 @@ node_id(Name) when is_atom(Name), ?IS_BUILTIN_TYPE_NAME(Name) ->
 node_id(Name) when is_atom(Name) -> #opcua_node_id{type = string, value = Name};
 node_id(Name) when is_binary(Name) -> #opcua_node_id{type = string, value = Name};
 node_id({NS, Num}) when is_integer(NS), is_integer(Num), NS >= 0, Num > 0 ->
-    #opcua_node_id{ns = NS, value = Num}.
+    #opcua_node_id{ns = NS, value = Num};
+node_id({NS, Name}) when is_integer(NS), is_atom(Name), NS >= 0 ->
+    #opcua_node_id{type = string, ns = NS, value = Name};
+node_id({NS, Name}) when is_integer(NS), is_binary(Name), NS >= 0 ->
+    #opcua_node_id{type = string, ns = NS, value = Name}.
 
 -spec pack_variant(opcua:node_spec(), term()) -> opcua:variant().
 pack_variant(#opcua_node_id{ns = 0, type = numeric, value = Num}, Value)
