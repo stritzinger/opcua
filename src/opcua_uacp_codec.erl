@@ -102,7 +102,7 @@ encode_hello(Data) ->
     case opcua_codec_binary:encode(?HEL_SPEC, Data) of
         {Result, Extra} when Extra =:= #{} -> Result;
         {_Result, Extra} ->
-            ?LOG_ERROR("HELLO message decoding error; extra data: ~p", [Extra]),
+            ?LOG_ERROR("HELLO message encoding error; extra data: ~p", [Extra]),
             throw(bad_encoding_error)
     end.
 
