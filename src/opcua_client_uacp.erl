@@ -17,6 +17,7 @@
 -export([handshake/2]).
 -export([browse/4]).
 -export([read/5]).
+-export([write/5]).
 -export([close/2]).
 -export([can_produce/2]).
 -export([produce/2]).
@@ -66,6 +67,16 @@ browse(NodeId, Opts, Conn, State) ->
 
 read(NodeId, Attribs, Opts, Conn, State) ->
     case session_read(State, Conn, NodeId, Attribs, Opts) of
+        {error, _Reason, _State2} = Error -> Error;
+        {ok, Handle, Requests, State2} ->
+            case proto_consume(State2, Conn, Requests) of
+                {error, _Reason, _State3} = Error -> Error;
+                {ok, State3} -> {async, Handle, State3}
+            end
+    end.
+
+write(NodeId, AttribValuePairs, Opts, Conn, State) ->
+    case session_write(State, Conn, NodeId, AttribValuePairs, Opts) of
         {error, _Reason, _State2} = Error -> Error;
         {ok, Handle, Requests, State2} ->
             case proto_consume(State2, Conn, Requests) of
@@ -180,6 +191,15 @@ session_browse(#state{channel = Channel, sess = Sess} = State, Conn, NodeId, Opt
 
 session_read(#state{channel = Channel, sess = Sess} = State, Conn, NodeId, Attribs, Opts) ->
     case opcua_client_session:read(NodeId, Attribs, Opts, Conn, Channel, Sess) of
+        {error, Reason} -> {error, Reason, State};
+        {ok, Handle, Requests, Channel2, Sess2} ->
+            {ok, Handle, Requests, State#state{channel = Channel2, sess = Sess2}}
+    end.
+
+session_write(#state{channel = Channel, sess = Sess} = State, Conn, NodeId,
+              AttribValuePairs, Opts) ->
+    case opcua_client_session:write(NodeId, AttribValuePairs, Opts, Conn,
+                                    Channel, Sess) of
         {error, Reason} -> {error, Reason, State};
         {ok, Handle, Requests, Channel2, Sess2} ->
             {ok, Handle, Requests, State#state{channel = Channel2, sess = Sess2}}
