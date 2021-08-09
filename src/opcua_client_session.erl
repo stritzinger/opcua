@@ -19,6 +19,7 @@
 -export([create/3]).
 -export([browse/5]).
 -export([read/6]).
+-export([write/6]).
 -export([close/3]).
 -export([handle_response/4]).
 
@@ -110,6 +111,24 @@ read(NodeId, Attribs, _Opts, Conn, Channel, #state{status = activated} = State) 
                              ?NID_READ_REQ, Payload),
     {ok, opcua_connection:handle(Conn, Request), [Request], Channel2, State2}.
 
+write(NodeId, AttribValuePairs, _Opts, Conn, Channel,
+      #state{status = activated} = State) ->
+    %TODO: Add support multi-node batching and array slicing
+    Payload = #{
+        nodes_to_write => [
+            #{
+                node_id => NodeId,
+                attribute_id => opcua_database_attributes:id(Attr),
+                index_range => undefined,
+                value => pack_write_value(Val)
+            }
+        || {Attr, Val} <- AttribValuePairs]
+    },
+    {ok, Request, Channel2, State2} =
+        channel_make_request(State, Channel, Conn,
+                             ?NID_WRITE_REQ, Payload),
+    {ok, opcua_connection:handle(Conn, Request), [Request], Channel2, State2}.
+
 close(Conn, Channel, #state{status = activated} = State) ->
     Payload = #{delete_subscriptions => true},
     {ok, Request, Channel2, State2} =
@@ -172,6 +191,11 @@ handle_response(State, Channel, _Conn, activated, Handle, ?NID_READ_RES, Payload
     %TODO: Add option to allow per-attribute error instead of all-or-nothing
     #{results := Results} = Payload,
     {ok, [{Handle, unpack_read_results(Results)}], [], Channel, State};
+handle_response(State, Channel, _Conn, activated, Handle, ?NID_WRITE_RES, Payload) ->
+    %TODO: Add support for multi-node batching and error handling
+    %TODO: Add option to allow per-attribute error instead of all-or-nothing
+    #{results := Results} = Payload,
+    {ok, [{Handle, {ok, Results}}], [], Channel, State};
 handle_response(State, Channel, _Conn, activated, _Handle, ?NID_CLOSE_SESS_RES, _Payload) ->
     {closed, Channel, State};
 handle_response(State, Channel, _Conn, Status, _Handle, NodeId, Payload) ->
@@ -192,6 +216,14 @@ unpack_read_results([#opcua_data_value{status = good, value = Value} | Rest], Ac
     unpack_read_results(Rest, [Value | Acc]);
 unpack_read_results([#opcua_data_value{status = Status} | _], _Acc) ->
     {error, Status}.
+
+pack_write_value(#opcua_variant{} = Var) ->
+    % #opcua_data_value{status = good, value = Var};
+    #opcua_data_value{status = undefined, value = Var};
+pack_write_value(Val) when is_integer(Val) ->
+    % #opcua_data_value{status = good,
+    %     value = #opcua_variant{type = int32, value = Val}}.
+    #opcua_data_value{status= undefined, value = #opcua_variant{type = int32, value = Val}}.
 
 channel_make_request(State, Channel, Conn, NodeId, Payload) ->
     {ok, Req, Channel2} =

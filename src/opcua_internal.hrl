@@ -54,6 +54,8 @@
 -define(NID_BROWSE_RES,                 ?NNID(528)).
 -define(NID_READ_REQ,                   ?NNID(629)).
 -define(NID_READ_RES,                   ?NNID(632)).
+-define(NID_WRITE_REQ,                  ?NNID(671)).
+-define(NID_WRITE_RES,                  ?NNID(674)).
 -define(NID_ANONYMOUS_IDENTITY_TOKEN,   ?NNID(319)).
 
 

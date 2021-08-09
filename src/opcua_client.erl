@@ -10,6 +10,7 @@
 -export([connect/1]).
 -export([browse/2, browse/3]).
 -export([read/3, read/4]).
+-export([write/3, write/4]).
 -export([close/1]).
 
 %% Startup functions
@@ -75,6 +76,17 @@ read(Pid, NodeSpec, Attribs, Opts) when is_list(Attribs) ->
     Result;
 read(Pid, NodeSpec, Attrib, Opts) ->
     [Result] = read(Pid, NodeSpec, [Attrib], Opts),
+    Result.
+
+write(Pid, NodeSpec, AttribValuePairs) ->
+    write(Pid, NodeSpec, AttribValuePairs, #{}).
+
+write(Pid, NodeSpec, AttribValuePairs, Opts) when is_list(AttribValuePairs) ->
+    Command = {write, opcua:node_id(NodeSpec), AttribValuePairs, Opts},
+    {ok, Result} = gen_statem:call(Pid, Command),
+    Result;
+write(Pid, NodeSpec, AttribValuePair, Opts) ->
+    [Result] = write(Pid, NodeSpec, [AttribValuePair], Opts),
     Result.
 
 close(Pid) ->
@@ -143,6 +155,8 @@ handle_event({call, From}, {browse, NodeId, Opts}, connected = State, Data) ->
     pack_command_result(From, State, proto_browse(Data, NodeId, Opts));
 handle_event({call, From}, {read, NodeId, Attribs, Opts}, connected = State, Data) ->
     pack_command_result(From, State, proto_read(Data, NodeId, Attribs, Opts));
+handle_event({call, From}, {write, NodeId, AVPairs, Opts}, connected = State, Data) ->
+    pack_command_result(From, State, proto_write(Data, NodeId, AVPairs, Opts));
 handle_event({call, From}, close, connected = State, Data) ->
     next_state_and_reply_later(closing, Data, on_closed, From,
                                event_timeouts(State, Data));
@@ -257,6 +271,12 @@ proto_browse(#data{conn = Conn, proto = Proto} = Data, NodeId, Opts) ->
 
 proto_read(#data{conn = Conn, proto = Proto} = Data, NodeId, Attribs, Opts) ->
     case opcua_client_uacp:read(NodeId, Attribs, Opts, Conn, Proto) of
+        {async, Handle, Proto2} -> {async, Handle, Data#data{proto = Proto2}};
+        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+    end.
+
+proto_write(#data{conn = Conn, proto = Proto} = Data, NodeId, AVPairs, Opts) ->
+    case opcua_client_uacp:write(NodeId, AVPairs, Opts, Conn, Proto) of
         {async, Handle, Proto2} -> {async, Handle, Data#data{proto = Proto2}};
         {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
     end.
