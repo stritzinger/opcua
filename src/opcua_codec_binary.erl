@@ -172,7 +172,7 @@ decode_extension_object(_, _, _) ->
 
 decode_variant(<<0:6, Bin/binary>>) ->
     {undefined, Bin};
-decode_variant(<<DimFlag:1/bits, ArrayFlag:1/bits, TypeId:6/little-unsigned-integer, Bin/binary>>) ->
+decode_variant(<<ArrayFlag:1/bits, DimFlag:1/bits, TypeId:6/little-unsigned-integer, Bin/binary>>) ->
     decode_variant(TypeId, DimFlag, ArrayFlag, Bin);
 decode_variant(_) ->
     throw(bad_decoding_error).
@@ -183,7 +183,7 @@ decode_variant(TypeId, <<0:1>>, <<0:1>>, Bin) ->
     {#opcua_variant{type = TypeName, value = Value}, Bin2};
 decode_variant(TypeId, <<0:1>>, <<1:1>>, Bin) ->
     TypeName = opcua_codec:builtin_type_name(TypeId),
-    {Array, Bin1} = decode_array(TypeName, Bin),
+    {_, Array, Bin1} = decode_array(TypeName, Bin),
     {#opcua_variant{type = TypeName, value = Array}, Bin1};
 decode_variant(TypeId, <<1:1>>, <<1:1>>, Bin) ->
     TypeName = opcua_codec:builtin_type_name(TypeId),
@@ -191,30 +191,40 @@ decode_variant(TypeId, <<1:1>>, <<1:1>>, Bin) ->
     {#opcua_variant{type = TypeName, value = MultiArray}, Bin1}.
 
 decode_multi_array(Type, Bin) ->
-    {ObjectArray, T} = decode_array(Type, Bin),
-    {DimArray, T1} = decode_array(int32, T),
-    {honor_dimensions(ObjectArray, DimArray), T1}.
+    {L, ObjectArray, Bin2} = decode_array(Type, Bin),
+    {_, DimArray, Bin3} = decode_array(int32, Bin2),
+    ExpSize = lists:foldl(fun(V, A) -> A * V end, 1, DimArray),
+    case L =:= ExpSize of
+        false -> throw(bad_decoding_error);
+        true -> {honor_dimensions(L, ObjectArray, DimArray), Bin3}
+    end.
 
 decode_array(Type, Bin) ->
-    {Length, T} = decode_builtin(int32, Bin),
-    decode_array(Type, T, Length).
+    {Length, Bin2} = decode_builtin(int32, Bin),
+    decode_array(Type, Bin2, Length).
 
-decode_array(_Type, _Array, -1) ->
+decode_array(_Type, _Bin, -1) ->
     undefined;
-decode_array(Type, Array, N) ->
-    decode_array(Type, Array, N, []).
+decode_array(Type, Bin, N) ->
+    decode_array(Type, Bin, N, N, []).
 
-decode_array(_Type, T, 0, Acc) ->
-    {lists:reverse(Acc), T};
-decode_array(Type, Array, N, Acc) ->
-    {Elem, T} = decode_type(Type, Array),
-    decode_array(Type, T, N-1, [Elem|Acc]).
+decode_array(_Type, Bin, L, 0, Acc) ->
+    {L, lists:reverse(Acc), Bin};
+decode_array(Type, Bin, L, N, Acc) ->
+    {Elem, Bin2} = decode_type(Type, Bin),
+    decode_array(Type, Bin2, L, N - 1, [Elem|Acc]).
 
-honor_dimensions(ObjectArray, DimArray) ->
-    lists:reverse(lists:foldl(fun(Dim, {Array, ArrayList}) ->
-        {El, NewArray} = lists:split(Dim, Array),
-        {NewArray, [El|ArrayList]}
-    end, {[], ObjectArray}, DimArray)).
+honor_dimensions(L, ObjectArray, [L]) -> ObjectArray;
+honor_dimensions(ArrayLen, ObjectArray, [Dim | Rest]) ->
+    DimSize = ArrayLen div Dim,
+    [honor_dimensions(DimSize, E, Rest)
+     || E <- lists_nsplit(ObjectArray, DimSize, Dim, [])].
+
+lists_nsplit([], _, 0, Acc) ->
+    lists:reverse(Acc);
+lists_nsplit(L, S, C, Acc) ->
+    {E, L2} = lists:split(S, L),
+    lists_nsplit(L2, S, C - 1, [E | Acc]).
 
 decode_data_value(<<0:2, Mask:6/bits, Bin/binary>>) ->
     Types = [
