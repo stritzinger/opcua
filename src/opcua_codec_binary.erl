@@ -14,6 +14,7 @@
 -export([decode/2]).
 -export([encode/2]).
 
+
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec decode(opcua:codec_spec(), binary()) -> {term(), binary()}.
@@ -402,10 +403,12 @@ encode_extension_object(#opcua_extension_object{}) ->
 encode_variant(#opcua_variant{type = Type, value = MultiArray})
   when is_list(MultiArray) ->
     TypeId = opcua_codec:builtin_type_id(Type),
-    {Length, Value, Dims} = build_variant_value(Type, MultiArray),
-    case Length of
-        0 -> <<0:2, TypeId:6>>;
-        Length when Length > 0 ->
+    case pack_array(Type, MultiArray) of
+        {0, _, _} -> <<0:2, TypeId:6>>;
+        {Length, Value, [Length]} ->
+            LengthData = encode_builtin(int32, Length),
+            [<<1:1, 0:1, TypeId:6>>, LengthData, Value];
+        {Length, Value, Dims} ->
             LengthData = encode_builtin(int32, Length),
             DimLengthData = encode_builtin(int32, length(Dims)),
             DimsData = [encode_builtin(int32, Dim) || Dim <- Dims],
@@ -416,22 +419,37 @@ encode_variant(#opcua_variant{type = Type, value = Value}) ->
     BinValue = encode_builtin(Type, Value),
     [<<0:2, TypeId:6>>, BinValue].
 
-build_variant_value(Type, MultiArray) ->
-    build_variant_value(Type, MultiArray, 0, [], []).
+pack_array(Type, Values) ->
+    {L, Acc, Dims} = pack_array(Type, Values, []),
+    {L, lists:reverse(Acc), Dims}.
 
-build_variant_value(_Type, [], Length, ValueAcc, DimsAcc) ->
-    {Length, lists:reverse(ValueAcc), lists:reverse(DimsAcc)};
-build_variant_value(Type, [Elem | Rest], Length, ValueAcc, DimsAcc) ->
-    {ArrayLength, ArrayData} = case Elem of
-        Elem when is_list(Elem) ->
-            ElemData = [V || {V, _} <- [encode_type(Type, E) || E <- Elem]],
-            {length(Elem), ElemData};
+pack_array(Type, [Row | Rest] = Values, Acc)
+  when is_list(Row) ->
+    Dim = length(Values),
+    {DimLen, Acc2, SubDims} = pack_array(Type, Row, Acc),
+    {Len, Acc3} = pack_array_rows(Type, Rest, DimLen, Acc2, DimLen, SubDims),
+    {Len, Acc3, [Dim | SubDims]};
+pack_array(Type, Values, Acc) ->
+    pack_array_values(Type, Values, 0, Acc).
+
+pack_array_rows(_Type, [], Len, Acc, _ExpLen, _ExpDims) ->
+    {Len, Acc};
+pack_array_rows(Type, [Row | Rest], Len, Acc, ExpLen, ExpDims)
+  when is_list(Row) ->
+    case pack_array(Type, Row, Acc) of
+        {ExpLen, Acc2, ExpDims} ->
+            pack_array_rows(Type, Rest, Len + ExpLen, Acc2, ExpLen, ExpDims);
         _ ->
-            {ElemData, _} = encode_type(Type, Elem),
-            {1, ElemData}
-    end,
-    build_variant_value(Type, Rest, Length + ArrayLength,
-                        [ArrayData | ValueAcc], [ArrayLength | DimsAcc]).
+            throw({bad_encoding_error, malformed_array})
+    end;
+pack_array_rows(_Type, _Values, _Len, _Acc, _ExpLen, _ExpDims) ->
+    throw({bad_encoding_error, malformed_array}).
+
+pack_array_values(_Type, [], Count, Acc) ->
+    {Count, Acc, [Count]};
+pack_array_values(Type, [Val | Rest], Count, Acc) ->
+    {Data, _} = encode_type(Type, Val),
+    pack_array_values(Type, Rest, Count + 1, [Data | Acc]).
 
 encode_data_value(DataValue) ->
     #opcua_data_value{
