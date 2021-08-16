@@ -218,12 +218,8 @@ unpack_read_results([#opcua_data_value{status = Status} | _], _Acc) ->
     {error, Status}.
 
 pack_write_value(#opcua_variant{} = Var) ->
-    % #opcua_data_value{status = good, value = Var};
-    #opcua_data_value{status = undefined, value = Var};
-pack_write_value(Val) when is_integer(Val) ->
-    % #opcua_data_value{status = good,
-    %     value = #opcua_variant{type = int32, value = Val}}.
-    #opcua_data_value{status= undefined, value = #opcua_variant{type = int32, value = Val}}.
+    %TODO: Figure out a way to use cached type definition to do type inference
+    #opcua_data_value{status = undefined, value = Var}.
 
 channel_make_request(State, Channel, Conn, NodeId, Payload) ->
     {ok, Req, Channel2} =
