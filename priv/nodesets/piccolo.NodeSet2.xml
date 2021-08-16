@@ -1,0 +1,95 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<UANodeSet xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:uax="http://opcfoundation.org/UA/2008/02/Types.xsd" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://opcfoundation.org/UA/2011/03/UANodeSet.xsd">
+  <NamespaceUris>
+    <Uri>urn:BeckhoffAutomation:TcOpcUaServer</Uri>
+    <Uri>http://opcfoundation.org/UA/DI/</Uri>
+    <Uri>http://PLCopen.org/OpcUa/IEC61131-3/</Uri>
+    <Uri>urn:BeckhoffAutomation:Ua:PLC1</Uri>
+    <Uri>urn:BeckhoffAutomation:Ua:Types:GlobalTypes</Uri>
+    <Uri>urn:BeckhoffAutomation:Ua:HA</Uri>
+    <Uri>urn:BeckhoffAutomation:Ua:AC</Uri>
+    <Uri>http://Beckhoff.com/TwinCAT/TF6100/Server/Configuration</Uri>
+  </NamespaceUris>
+  <Aliases>
+    <Alias Alias="Boolean">i=1</Alias>
+    <Alias Alias="Byte">i=3</Alias>
+    <Alias Alias="Int16">i=4</Alias>
+    <Alias Alias="UInt16">i=5</Alias>
+    <Alias Alias="Int32">i=6</Alias>
+    <Alias Alias="UInt32">i=7</Alias>
+    <Alias Alias="UInt64">i=9</Alias>
+    <Alias Alias="String">i=12</Alias>
+    <Alias Alias="DateTime">i=13</Alias>
+    <Alias Alias="ByteString">i=15</Alias>
+    <Alias Alias="NodeId">i=17</Alias>
+    <Alias Alias="LocalizedText">i=21</Alias>
+    <Alias Alias="Structure">i=22</Alias>
+    <Alias Alias="BaseDataType">i=24</Alias>
+    <Alias Alias="Image">i=30</Alias>
+    <Alias Alias="Organizes">i=35</Alias>
+    <Alias Alias="HasEncoding">i=38</Alias>
+    <Alias Alias="HasTypeDefinition">i=40</Alias>
+    <Alias Alias="HasSubtype">i=45</Alias>
+  </Aliases>
+  <UADataType NodeId="ns=4;s=&lt;StructuredDataType&gt;:DataStruct_OpCon_MDT" BrowseName="4:DataStruct_OpCon_MDT">
+    <DisplayName>DataStruct_OpCon_MDT</DisplayName>
+    <References>
+      <Reference ReferenceType="HasEncoding">ns=4;s=&lt;StructuredDataType&gt;:DataStruct_OpCon_MDT__DefaultBinary</Reference>
+      <Reference ReferenceType="HasSubtype" IsForward="false">i=22</Reference>
+    </References>
+    <Definition Name="4:DataStruct_OpCon_MDT">
+      <Field Name="WPCNo" DataType="UInt16">
+        <Description>WT Nummer</Description>
+      </Field>
+      <Field Name="strTypeNo" DataType="String">
+        <Description>Sachnummer</Description>
+      </Field>
+      <Field Name="State" DataType="Byte">
+        <Description>StatusBits</Description>
+      </Field>
+      <Field Name="OriginCell" DataType="Byte">
+        <Description>Herkunfts-Zelle</Description>
+      </Field>
+      <Field Name="OriginWorkpos" DataType="Byte">
+        <Description>Herkunfts-WP</Description>
+      </Field>
+      <Field Name="DestCell" DataType="Byte">
+        <Description> Ziel-Zelle</Description>
+      </Field>
+      <Field Name="DestWorkpos" DataType="Byte">
+        <Description>Ziel-WP</Description>
+      </Field>
+      <Field Name="ErrorNo" DataType="Int16">
+        <Description>Fehlernummer</Description>
+      </Field>
+      <Field Name="RepeatCounter" DataType="Byte">
+        <Description>Wiederholzähler</Description>
+      </Field>
+      <Field Name="DateTime" DataType="DateTime">
+        <Description>Produktionsdaten Datum Zeit</Description>
+      </Field>
+      <Field Name="ChgOverWpcNo" DataType="Byte">
+        <Description>Rüst-WT-Nummer</Description>
+      </Field>
+      <Field Name="Identifier" DataType="String">
+        <Description>UID (Identifier)</Description>
+      </Field>
+      <Field Name="WPCNoExter" DataType="UInt16">
+        <Description>Wt-Nummer von Hauptbandumlauf Variable wird nur im inneren Umlauf verwendet</Description>
+      </Field>
+      <Field Name="StatorAngel" DataType="Byte">
+        <Description> Stator Winkel</Description>
+      </Field>
+      <Field Name="Winding" DataType="Byte">
+        <Description>Herkunft Wickelmaschine</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UAObject NodeId="ns=4;s=&lt;StructuredDataType&gt;:DataStruct_OpCon_MDT__DefaultBinary" BrowseName="Default Binary" SymbolicName="DefaultBinary">
+    <DisplayName>Default Binary</DisplayName>
+    <References>
+      <Reference ReferenceType="HasEncoding" IsForward="false">ns=4;s=&lt;StructuredDataType&gt;:DataStruct_OpCon_MDT</Reference>
+      <Reference ReferenceType="HasTypeDefinition">i=76</Reference>
+    </References>
+  </UAObject>
+</UANodeSet>

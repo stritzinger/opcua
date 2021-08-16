@@ -14,7 +14,8 @@
 
 %% API Functions
 -export([setup/1]).
--export([parse/1]).
+-export([parse/0]).
+-export([parse/2]).
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -45,32 +46,42 @@ setup(Dir) ->
     ?LOG_INFO("Loading OPCUA encoding specifications..."),
     load_encodings(Dir).
 
-parse(File) ->
-    {XML, []} = xmerl_scan:file(File, [{space, normalize}]),
-    Root = filename:rootname(File),
-    NodesProplist = parse_node_set(xml_to_simple(XML)),
+parse() ->
+    Root = filename:join([code:priv_dir(opcua), "nodesets"]),
+    Files = filelib:wildcard(filename:join([Root, "*.xml"])),
+    parse(Root, Files).
+
+parse(DestDir, Files) ->
+    parse(DestDir, Files, #{}, []).
+
+parse(DestDir, [], _Meta, Nodes) ->
+    NodesProplist = lists:reverse(Nodes),
     DataTypesSchemas = extract_data_type_schemas(NodesProplist),
     Encodings = extract_encodings(NodesProplist),
-    Nodes = extract_nodes(NodesProplist),
+    NodeSpecs = extract_nodes(NodesProplist),
     References = extract_references(NodesProplist),
     ?LOG_INFO("Saving OPCUA data type schemas..."),
-    write_terms(Root, "data_type_schemas", DataTypesSchemas),
+    write_terms(DestDir, "data_type_schemas", DataTypesSchemas),
     ?LOG_INFO("Saving OPCUA encoding specifications..."),
-    write_terms(Root, "encodings", Encodings),
+    write_terms(DestDir, "encodings", Encodings),
     ?LOG_INFO("Saving OPCUA nodes..."),
-    write_terms(Root, "nodes", Nodes),
+    write_terms(DestDir, "nodes", NodeSpecs),
     ?LOG_INFO("Saving OPCUA references..."),
-    write_terms(Root, "references", References),
-    ok.
+    write_terms(DestDir, "references", References),
+    ok;
+parse(DestDir, [File | Files], Meta, Nodes) ->
+    ?LOG_INFO("Parsing OPCUA nodeset file ~s...", [File]),
+    {XML, []} = xmerl_scan:file(File, [{space, normalize}]),
+    {Meta2, Nodes2} = parse_node_set(xml_to_simple(XML), Meta, Nodes),
+    parse(DestDir, Files, Meta2, Nodes2).
 
 
 %%% XML SAX PARSER CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-parse_node_set({<<"UANodeSet">>, _Attrs, Content}) ->
+parse_node_set({<<"UANodeSet">>, _Attrs, Content}, Meta, Nodes) ->
     Aliases = parse_aliases(get_value([<<"Aliases">>], Content)),
-    Meta = #{aliases => Aliases},
-    {Meta, Nodes} = lists:foldl(fun parse_node/2, {Meta, []}, Content),
-    lists:reverse(Nodes).
+    Meta2 = Meta#{aliases => maps:merge(maps:get(aliases, Meta, #{}), Aliases)},
+    lists:foldl(fun parse_node/2, {Meta2, Nodes}, Content).
 
 parse_aliases(Aliases) ->
     maps:from_list([{Name, parse(node_id, ID, #{aliases => #{}})} || {<<"Alias">>, #{<<"Alias">> := Name}, [ID]} <- Aliases]).
@@ -149,6 +160,13 @@ parse_node_class({<<"UAMethod">>, Attrs, _Content}, Meta) ->
 parse(node_id, <<"i=", Bin/binary>>, _Meta) ->
     {ID, <<>>} = string:to_integer(Bin),
     #opcua_node_id{ns = 0, type = numeric, value = ID};
+parse(node_id, <<"s=", Bin/binary>>, _Meta) ->
+    #opcua_node_id{ns = 0, type = string, value = Bin};
+parse(node_id, <<"ns=", Bin/binary>>, Meta) ->
+    [NSBin, Rest] = binary:split(Bin, <<";">>),
+    {NS, <<>>} = string:to_integer(NSBin),
+    NID = parse(node_id, Rest, Meta),
+    NID#opcua_node_id{ns = NS};
 parse(node_id, Alias, #{aliases := Aliases}) ->
     maps:get(Alias, Aliases);
 parse(boolean, <<"true">>, _Meta) ->
