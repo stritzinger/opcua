@@ -67,15 +67,15 @@ browse(Pid, NodeSpec, Opts) ->
     {ok, Result} = gen_statem:call(Pid, Command),
     Result.
 
-read(Pid, NodeSpec, Attribs) ->
-    read(Pid, NodeSpec, Attribs, #{}).
+read(Pid, NodeSpec, AttribSpecs) ->
+    read(Pid, NodeSpec, AttribSpecs, #{}).
 
-read(Pid, NodeSpec, Attribs, Opts) when is_list(Attribs) ->
-    Command = {read, opcua:node_id(NodeSpec), Attribs, Opts},
+read(Pid, NodeSpec, AttribSpecs, Opts) when is_list(AttribSpecs) ->
+    Command = {read, opcua:node_id(NodeSpec), AttribSpecs, Opts},
     {ok, Result} = gen_statem:call(Pid, Command),
     Result;
-read(Pid, NodeSpec, Attrib, Opts) ->
-    [Result] = read(Pid, NodeSpec, [Attrib], Opts),
+read(Pid, NodeSpec, AttribSpec, Opts) ->
+    [Result] = read(Pid, NodeSpec, [AttribSpec], Opts),
     Result.
 
 write(Pid, NodeSpec, AttribValuePairs) ->
@@ -153,9 +153,12 @@ handle_event(enter, _OldState, connected = State, Data) ->
     keep_state_and_reply(Data, on_ready, ok, enter_timeouts(State, Data));
 handle_event({call, From}, {browse, NodeId, Opts}, connected = State, Data) ->
     pack_command_result(From, State, proto_browse(Data, NodeId, Opts));
-handle_event({call, From}, {read, NodeId, Attribs, Opts}, connected = State, Data) ->
-    pack_command_result(From, State, proto_read(Data, NodeId, Attribs, Opts));
-handle_event({call, From}, {write, NodeId, AVPairs, Opts}, connected = State, Data) ->
+handle_event({call, From}, {read, NodeId, AttribSpecs, Opts},
+             connected = State, Data) ->
+    Result = proto_read(Data, NodeId, AttribSpecs, Opts),
+    pack_command_result(From, State, Result);
+handle_event({call, From}, {write, NodeId, AVPairs, Opts},
+             connected = State, Data) ->
     pack_command_result(From, State, proto_write(Data, NodeId, AVPairs, Opts));
 handle_event({call, From}, close, connected = State, Data) ->
     next_state_and_reply_later(closing, Data, on_closed, From,
