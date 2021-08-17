@@ -100,11 +100,11 @@ read(NodeId, Attribs, _Opts, Conn, Channel, #state{status = activated} = State) 
         nodes_to_read => [
             #{
                 node_id => NodeId,
-                attribute_id => opcua_database_attributes:id(Attr),
-                index_range => undefined,
+                attribute_id => opcua_database_attributes:id(spec_attr(Spec)),
+                index_range => spec_range(Spec),
                 data_encoding => ?UNDEF_QUALIFIED_NAME
             }
-        || Attr <- Attribs]
+        || Spec <- Attribs]
     },
     {ok, Request, Channel2, State2} =
         channel_make_request(State, Channel, Conn,
@@ -143,6 +143,13 @@ handle_response(#uacp_message{node_id = NodeId, payload = Payload} = Msg, Conn,
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+spec_attr(Attr) when is_atom(Attr) -> Attr;
+spec_attr({Attr, _Range}) when is_atom(Attr) -> Attr.
+
+spec_range(Attr) when is_atom(Attr) -> undefined;
+spec_range({Attr, Index}) when is_atom(Attr), is_integer(Index), Index >= 0 ->
+    integer_to_binary(Index).
 
 handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, ResPayload) ->
     #{
