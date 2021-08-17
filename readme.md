@@ -34,15 +34,21 @@ Batch read:
 
 With array index:
 
-	`opcua_client:read(Client, {4, <<"OPCUA.array1">>}, {value, 2}).
+	`opcua_client:read(Client, {4, <<"OPCUA.array1">>}, {value, 2}).`
 
 With multidimensional array index:
 
-	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, [1, 0, 3]}).
+	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, [1, 0, 3]}).`
 
 Batch read with indexes:
 
-	`opcua_client:read(Client, {4, <<"OPCUA.array1">>}, [{value, 0}, {value, 5}]).
+	`opcua_client:read(Client, {4, <<"OPCUA.array1">>}, [{value, 0}, {value, 5}]).`
+
+With array range:
+
+	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, {1,4}}).`
+	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, [0,{0,3},{2,4}]}).`
+
 
 === Writing Attributes
 
@@ -58,11 +64,11 @@ Full array write:
 
 With array index:
 
-	`opcua_client:write(Client, {4, <<"OPCUA.array1">>}, {{value, 2}, true}).
+	`opcua_client:write(Client, {4, <<"OPCUA.array1">>}, {{value, 2}, true}).`
 
 With multidimensional array index:
 
-	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {{value, [1, 0, 3]}, false}).
+	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {{value, [1, 0, 3]}, false}).`
 
 
 

@@ -151,6 +151,9 @@ spec_range(Attr) when is_atom(Attr) ->
     undefined;
 spec_range({_Attr, Index}) when is_integer(Index), Index >= 0 ->
     integer_to_binary(Index);
+spec_range({_Attr, {From, To}})
+  when is_integer(From), From >= 0, is_integer(To), To >= 0 ->
+    iolist_to_binary([integer_to_binary(From), $:, integer_to_binary(To)]);
 spec_range({Attr, Dims}) when is_list(Dims) ->
     Ranges = [spec_range({Attr, Spec}) || Spec <- Dims],
     iolist_to_binary(lists:join($,, Ranges)).
