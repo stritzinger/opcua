@@ -147,9 +147,13 @@ handle_response(#uacp_message{node_id = NodeId, payload = Payload} = Msg, Conn,
 spec_attr(Attr) when is_atom(Attr) -> Attr;
 spec_attr({Attr, _Range}) when is_atom(Attr) -> Attr.
 
-spec_range(Attr) when is_atom(Attr) -> undefined;
-spec_range({Attr, Index}) when is_atom(Attr), is_integer(Index), Index >= 0 ->
-    integer_to_binary(Index).
+spec_range(Attr) when is_atom(Attr) ->
+    undefined;
+spec_range({_Attr, Index}) when is_integer(Index), Index >= 0 ->
+    integer_to_binary(Index);
+spec_range({Attr, Dims}) when is_list(Dims) ->
+    Ranges = [spec_range({Attr, Spec}) || Spec <- Dims],
+    iolist_to_binary(lists:join($,, Ranges)).
 
 handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, ResPayload) ->
     #{
