@@ -118,11 +118,11 @@ write(NodeId, AttribValuePairs, _Opts, Conn, Channel,
         nodes_to_write => [
             #{
                 node_id => NodeId,
-                attribute_id => opcua_database_attributes:id(Attr),
-                index_range => undefined,
+                attribute_id => opcua_database_attributes:id(spec_attr(Spec)),
+                index_range => spec_range(Spec),
                 value => pack_write_value(Val)
             }
-        || {Attr, Val} <- AttribValuePairs]
+        || {Spec, Val} <- AttribValuePairs]
     },
     {ok, Request, Channel2, State2} =
         channel_make_request(State, Channel, Conn,
