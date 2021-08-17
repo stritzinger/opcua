@@ -56,5 +56,14 @@ Full array write:
 
 	`opcua_client:write(Client, {4, <<"OPCUA.array1">>}, {value, {opcua_variant, boolean, [false,true,false,true,false,true,false,true,false,true]}}).`
 
+With array index:
+
+	`opcua_client:write(Client, {4, <<"OPCUA.array1">>}, {{value, 2}, true}).
+
+With multidimensional array index:
+
+	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {{value, [1, 0, 3]}, false}).
+
+
 
 == Server
