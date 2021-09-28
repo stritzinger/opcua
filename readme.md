@@ -49,6 +49,10 @@ With array range:
 	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, {1,4}}).`
 	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, [0,{0,3},{2,4}]}).`
 
+With expanded arrays of structs (server dependent):
+
+	`opcua_client:read(Client, {4, <<"OPCUA.array3[1]">>}, value).`
+
 
 === Writing Attributes
 
@@ -70,6 +74,9 @@ With multidimensional array index:
 
 	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {{value, [1, 0, 3]}, false}).`
 
+With expanded arrays of structs (server dependent):
+
+	`opcua_client:write(Client, {4, <<"OPCUA.array3[1]">>}, {value, {opcua_variant, extension_object, {opcua_extension_object, {opcua_node_id, 4, string, <<"<StructuredDataType>:DataStruct_OpCon_MDT">>}, byte_string, #{chg_over_wpc_no => 0, date_time => 0, dest_cell => 0, dest_workpos => 0, error_no => 0, identifier => <<"foobar">>, origin_cell => 0, origin_workpos => 0, repeat_counter => 0, state => 0, stator_angel => 0, str_type_no => <<>>, w_p_c_no => 0, w_p_c_no_exter => 0, winding => 0}}}}).`
 
 
 == Server
