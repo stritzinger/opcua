@@ -10,6 +10,7 @@
 -export([connect/1]).
 -export([browse/2, browse/3]).
 -export([read/3, read/4]).
+-export([batch_read/3]).
 -export([write/3, write/4]).
 -export([close/1]).
 
@@ -71,11 +72,16 @@ read(Pid, NodeSpec, AttribSpecs) ->
     read(Pid, NodeSpec, AttribSpecs, #{}).
 
 read(Pid, NodeSpec, AttribSpecs, Opts) when is_list(AttribSpecs) ->
-    Command = {read, opcua:node_id(NodeSpec), AttribSpecs, Opts},
-    {ok, Result} = gen_statem:call(Pid, Command),
-    Result;
+    batch_read(Pid, [{NodeSpec, AttribSpecs}], Opts);
 read(Pid, NodeSpec, AttribSpec, Opts) ->
-    [Result] = read(Pid, NodeSpec, [AttribSpec], Opts),
+    [Result] = batch_read(Pid, [{NodeSpec, [AttribSpec]}], Opts),
+    Result.
+
+batch_read(Pid, ReadSpecs, Opts) when is_list(ReadSpecs) ->
+    MkList = fun(L) when is_list(L) -> L; (A) when is_atom(A) -> [A] end,
+    PrepedSpecs = [{opcua:node_id(N), MkList(A)} || {N, A} <- ReadSpecs],
+    Command = {read, PrepedSpecs, Opts},
+    {ok, Result} = gen_statem:call(Pid, Command),
     Result.
 
 write(Pid, NodeSpec, AttribValuePairs) ->
@@ -153,9 +159,9 @@ handle_event(enter, _OldState, connected = State, Data) ->
     keep_state_and_reply(Data, on_ready, ok, enter_timeouts(State, Data));
 handle_event({call, From}, {browse, NodeId, Opts}, connected = State, Data) ->
     pack_command_result(From, State, proto_browse(Data, NodeId, Opts));
-handle_event({call, From}, {read, NodeId, AttribSpecs, Opts},
+handle_event({call, From}, {read, ReadSpecs, Opts},
              connected = State, Data) ->
-    Result = proto_read(Data, NodeId, AttribSpecs, Opts),
+    Result = proto_read(Data, ReadSpecs, Opts),
     pack_command_result(From, State, Result);
 handle_event({call, From}, {write, NodeId, AVPairs, Opts},
              connected = State, Data) ->
@@ -272,8 +278,8 @@ proto_browse(#data{conn = Conn, proto = Proto} = Data, NodeId, Opts) ->
         {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
     end.
 
-proto_read(#data{conn = Conn, proto = Proto} = Data, NodeId, Attribs, Opts) ->
-    case opcua_client_uacp:read(NodeId, Attribs, Opts, Conn, Proto) of
+proto_read(#data{conn = Conn, proto = Proto} = Data, ReadSpecs, Opts) ->
+    case opcua_client_uacp:read(ReadSpecs, Opts, Conn, Proto) of
         {async, Handle, Proto2} -> {async, Handle, Data#data{proto = Proto2}};
         {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
     end.
