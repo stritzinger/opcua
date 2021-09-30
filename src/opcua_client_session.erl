@@ -18,7 +18,7 @@
 -export([auth_token/1]).
 -export([create/3]).
 -export([browse/5]).
--export([read/6]).
+-export([read/5]).
 -export([write/6]).
 -export([close/3]).
 -export([handle_response/4]).
@@ -92,20 +92,24 @@ browse(NodeId, Opts, Conn, Channel, #state{status = activated} = State) ->
                              ?NID_BROWSE_REQ, Payload),
     {ok, opcua_connection:handle(Conn, Request), [Request], Channel2, State2}.
 
-read(NodeId, Attribs, _Opts, Conn, Channel, #state{status = activated} = State) ->
-    %TODO: Add support multi-node batching and options for  age, timestamp and array slicing
+read(ReadSpecs, _Opts, Conn, Channel, #state{status = activated} = State) ->
+    %TODO: Add support for options for age, timestamp and array slicing
     Payload = #{
         max_age => 0,
         timestamps_to_return => source,
         nodes_to_read => [
-            #{
-                node_id => NodeId,
-                attribute_id => opcua_database_attributes:id(spec_attr(Spec)),
-                index_range => spec_range(Spec),
-                data_encoding => ?UNDEF_QUALIFIED_NAME
-            }
-        || Spec <- Attribs]
+            lists:append([
+                #{
+                    node_id => NodeId,
+                    attribute_id => opcua_database_attributes:id(spec_attr(Spec)),
+                    index_range => spec_range(Spec),
+                    data_encoding => ?UNDEF_QUALIFIED_NAME
+                }
+            || Spec <- Attribs])
+        || {NodeId, Attribs} <- ReadSpecs]
     },
+    logger:debug("READ SPECS: ~p", [ReadSpecs]),
+    logger:debug("PAYLOAD: ~p", [Payload]),
     {ok, Request, Channel2, State2} =
         channel_make_request(State, Channel, Conn,
                              ?NID_READ_REQ, Payload),
