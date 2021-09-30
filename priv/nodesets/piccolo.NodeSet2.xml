@@ -31,64 +31,29 @@
     <Alias Alias="HasTypeDefinition">i=40</Alias>
     <Alias Alias="HasSubtype">i=45</Alias>
   </Aliases>
-  <UADataType NodeId="ns=4;s=&lt;StructuredDataType&gt;:DataStruct_OpCon_MDT" BrowseName="4:DataStruct_OpCon_MDT">
-    <DisplayName>DataStruct_OpCon_MDT</DisplayName>
+<UADataType NodeId="ns=4;s=&lt;StructuredDataType&gt;:StationTagReaderDataStruct" BrowseName="4:StationTagReaderDataStruct">
+    <DisplayName>StationTagReaderDataStruct</DisplayName>
     <References>
-      <Reference ReferenceType="HasEncoding">ns=4;s=&lt;StructuredDataType&gt;:DataStruct_OpCon_MDT__DefaultBinary</Reference>
+      <Reference ReferenceType="HasEncoding">ns=4;s=&lt;StructuredDataType&gt;:StationTagReaderDataStruct__DefaultBinary</Reference>
       <Reference ReferenceType="HasSubtype" IsForward="false">i=22</Reference>
     </References>
-    <Definition Name="4:DataStruct_OpCon_MDT">
-      <Field Name="WPCNo" DataType="UInt16">
-        <Description>WT Nummer</Description>
-      </Field>
-      <Field Name="strTypeNo" DataType="String">
-        <Description>Sachnummer</Description>
-      </Field>
-      <Field Name="State" DataType="Byte">
-        <Description>StatusBits</Description>
-      </Field>
-      <Field Name="OriginCell" DataType="Byte">
-        <Description>Herkunfts-Zelle</Description>
-      </Field>
-      <Field Name="OriginWorkpos" DataType="Byte">
-        <Description>Herkunfts-WP</Description>
-      </Field>
-      <Field Name="DestCell" DataType="Byte">
-        <Description> Ziel-Zelle</Description>
-      </Field>
-      <Field Name="DestWorkpos" DataType="Byte">
-        <Description>Ziel-WP</Description>
-      </Field>
-      <Field Name="ErrorNo" DataType="Int16">
-        <Description>Fehlernummer</Description>
-      </Field>
-      <Field Name="RepeatCounter" DataType="Byte">
-        <Description>Wiederholzähler</Description>
-      </Field>
-      <Field Name="DateTime" DataType="DateTime">
-        <Description>Produktionsdaten Datum Zeit</Description>
-      </Field>
-      <Field Name="ChgOverWpcNo" DataType="Byte">
-        <Description>Rüst-WT-Nummer</Description>
-      </Field>
-      <Field Name="Identifier" DataType="String">
-        <Description>UID (Identifier)</Description>
-      </Field>
-      <Field Name="WPCNoExter" DataType="UInt16">
-        <Description>Wt-Nummer von Hauptbandumlauf Variable wird nur im inneren Umlauf verwendet</Description>
-      </Field>
-      <Field Name="StatorAngel" DataType="Byte">
-        <Description> Stator Winkel</Description>
-      </Field>
-      <Field Name="Winding" DataType="Byte">
-        <Description>Herkunft Wickelmaschine</Description>
-      </Field>
+    <Definition Name="4:StationTagReaderDataStruct">
+      <Field Name="PartOK" DataType="Boolean"></Field>
+      <Field Name="PartNOK" DataType="Boolean"></Field>
+      <Field Name="WPCEmpty" DataType="Boolean"></Field>
+      <Field Name="ChangeOverRequest" DataType="Boolean"></Field>
+      <Field Name="strTypeNo" DataType="String"></Field>
+      <Field Name="DestCell" DataType="Byte"></Field>
+      <Field Name="DestWorkpos" DataType="Byte"></Field>
+      <Field Name="ChgOverWpcNo" DataType="Byte"></Field>
+      <Field Name="Identifier" DataType="String"></Field>
+      <Field Name="WPCNo" DataType="UInt16"></Field>
     </Definition>
   </UADataType>
-  <UAObject NodeId="ns=4;s=&lt;StructuredDataType&gt;:DataStruct_OpCon_MDT__DefaultBinary" BrowseName="Default Binary" SymbolicName="DefaultBinary">
+  <UAObject NodeId="ns=4;s=&lt;StructuredDataType&gt;:StationTagReaderDataStruct__DefaultBinary" BrowseName="Default Binary" SymbolicName="DefaultBinary">
     <DisplayName>Default Binary</DisplayName>
     <References>
-      <Reference ReferenceType="HasEncoding" IsForward="false">ns=4;s=&lt;StructuredDataType&gt;:DataStruct_OpCon_MDT</Reference>
+      <Reference ReferenceType="HasEncoding" IsForward="false">ns=4;s=&lt;StructuredDataType&gt;:StationTagReaderDataStruct</Reference>
       <Reference ReferenceType="HasTypeDefinition">i=76</Reference>
     </References>
   </UAObject>
