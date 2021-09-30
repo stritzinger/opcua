@@ -108,8 +108,6 @@ read(ReadSpecs, _Opts, Conn, Channel, #state{status = activated} = State) ->
             || Spec <- Attribs])
         || {NodeId, Attribs} <- ReadSpecs]
     },
-    logger:debug("READ SPECS: ~p", [ReadSpecs]),
-    logger:debug("PAYLOAD: ~p", [Payload]),
     {ok, Request, Channel2, State2} =
         channel_make_request(State, Channel, Conn,
                              ?NID_READ_REQ, Payload),
