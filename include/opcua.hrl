@@ -66,8 +66,8 @@
     value                       :: term(),
     status = good               :: atom() | pos_integer(),
     source_timestamp = 0        :: non_neg_integer(),
-    source_pico_seconds = 0     :: non_neg_integer(),
     server_timestamp = 0        :: non_neg_integer(),
+    source_pico_seconds = 0     :: non_neg_integer(),
     server_pico_seconds = 0     :: non_neg_integer()
 }).
 

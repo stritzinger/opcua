@@ -28,6 +28,9 @@
 -export([parse_range/1]).
 -export([parse_endpoint/1]).
 
+%% Debug functions
+-export([decode_client_message/1]).
+
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -139,6 +142,21 @@ parse_endpoint(Url) when is_binary(Url) ->
     Port = maps:get(port, Map, 4840),
     Host = binary_to_list(BinHost),
     #opcua_endpoint{url = Url, host = Host, port = Port}.
+
+
+%%% DEBUG FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+decode_client_message(Data) ->
+    TokenId = <<1,2,3,4>>,
+    Policy = #uacp_security_policy{policy_url = ?POLICY_NONE},
+    {ok, Sec} = opcua_security:init_client(Policy),
+    Sec2 = opcua_security:token_id(TokenId, Sec),
+    {[Chunk], <<>>} = opcua_uacp_codec:decode_chunks(Data),
+    Chunk2 = Chunk#uacp_chunk{security = TokenId},
+    {ok, Chunk3, _Sec3} = opcua_security:unlock(Chunk2, Sec2),
+    #uacp_chunk{message_type = MsgType, body = Body} = Chunk3,
+    {NodeId, Payload} = opcua_uacp_codec:decode_payload(MsgType, Body),
+    {NodeId, Payload}.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
