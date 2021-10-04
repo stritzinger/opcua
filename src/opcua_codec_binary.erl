@@ -232,8 +232,8 @@ decode_data_value(<<0:2, Mask:6/bits, Bin/binary>>) ->
         {value, variant, undefined},
         {status, status_code, good},
         {source_timestamp, date_time, 0},
-        {source_pico_seconds, uint16, 0},
         {server_timestamp, date_time, 0},
+        {source_pico_seconds, uint16, 0},
         {server_pico_seconds, uint16, 0}
     ],
     RecordInfo = {opcua_data_value, record_info(fields, opcua_data_value)},
