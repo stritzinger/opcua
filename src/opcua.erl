@@ -345,7 +345,12 @@ set_value(VarSpec, Value) ->
 
 start(_StartType, _StartArgs) ->
     {ok, Pid} = opcua_sup:start_link(),
-    {ok, _} = opcua_server_ranch_protocol:start_listener(),
+    case application:get_env(start_server) of
+        {ok, false} ->
+            ok;
+        _ ->
+            {ok, _} = opcua_server_ranch_protocol:start_listener()
+    end,
     {ok, Pid}.
 
 stop(_State) ->

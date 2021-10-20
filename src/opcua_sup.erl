@@ -20,12 +20,17 @@ start_link() ->
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
-    {ok, {#{strategy => one_for_one}, [
+    Childs = [
         supervisor(opcua_address_space_sup, []),
         worker(opcua_database, [#{}]),
-        supervisor(opcua_server_sup, []),
+        % ,
         supervisor(opcua_client_sup, [])
-    ]}}.
+    ],
+    Childs2 = case application:get_env(start_server) of
+        {ok, false} -> Childs;
+        _ -> Childs ++ [supervisor(opcua_server_sup, [])]
+    end,
+    {ok, {#{strategy => one_for_one}, Childs2}}.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

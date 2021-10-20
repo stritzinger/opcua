@@ -107,6 +107,29 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% get_resolver_node(?NNID(?OBJ_SERVER_STATUS)) ->
+%     #opcua_node{
+%         node_id = ?NNID(?OBJ_SERVER_STATUS),
+%         browse_name = <<"ServerStatus">>,
+%         display_name = <<"ServerStatus">>,
+%         node_class = #opcua_variable{
+%             data_type = ?NNID(?OBJ_SERVER_STATUS_TYPE)
+%             value = #{
+%                 build_info => #{
+%                     build_date => 132580457880000000,build_number => <<"156">>,
+%                     manufacturer_name => <<"Beckhoff Automation">>,
+%                     product_name => <<"TcOpcUaServer">>,
+%                     product_uri => <<"urn:BeckhoffAutomation:TcOpcUaServer">>,
+%                     software_version => <<"3.2.0.156">>
+%                 },
+%                 current_time => 132791958415602133,
+%                 seconds_till_shutdown => 0,
+%                 shutdown_reason => #opcua_localized_text{},
+%                 start_time => 132791945216195939,
+%                 state => running
+%             }
+%         }
+%     };
 get_resolver_node(NodeId) ->
     case application:get_env(opcua, resolver) of
         undefined -> undefined;
@@ -150,7 +173,7 @@ static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir,
         false -> BaseOpts
     end,
     Refs = get_references(Mode, NodeId, Opts),
-    ResRefs = [post_process_ref(R) || R <- Refs],
+    ResRefs = post_process_refs(Refs),
     ?LOG_DEBUG("    -> ~p", [ResRefs]),
     #{status => good, references => ResRefs};
 static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
@@ -172,35 +195,49 @@ static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} 
 static_perform(_Mode, _Node, _Command) ->
     {error, bad_not_implemented}.
 
-post_process_ref(Ref) ->
+post_process_refs(Refs) ->
+    post_process_refs(Refs, []).
+
+
+post_process_refs([], Acc) ->
+    lists:reverse(Acc);
+post_process_refs([Ref | Refs], Acc) ->
     #opcua_reference{
         type_id = RefId,
         target_id = TargetId
     } = Ref,
-    {TargetMode, TargetNode} = get_node(TargetId),
-    RefOpts = #{
-        type => ?NNID(?REF_HAS_TYPE_DEFINITION),
-        direction => forward,
-        include_subtypes => true
-    },
-    TargetRefs = get_references(TargetMode, TargetId, RefOpts),
-    TypeDef = case TargetRefs of
-        [] -> ?UNDEF_EXT_NODE_ID;
-        [#opcua_reference{target_id = TypeId} | _] -> ?XID(TypeId)
-    end,
-    BaseObj = #{
-        type => RefId,
-        type_definition => TypeDef
-    },
-    Fields = [node_id, browse_name, display_name, node_class],
-    lists:foldl(fun(Key, Map) ->
-            Map#{Key => opcua_node:attribute(Key, TargetNode)}
-    end, BaseObj, Fields).
+    % Filtering out references to nodes we don't know about.
+    % e.g. if the hard-coded server node is not defined by the OPCUA server
+    case get_node(TargetId) of
+        undefined ->
+            post_process_refs(Refs, Acc);
+        {TargetMode, TargetNode} ->
+            RefOpts = #{
+                type => ?NNID(?REF_HAS_TYPE_DEFINITION),
+                direction => forward,
+                include_subtypes => true
+            },
+            TargetRefs = get_references(TargetMode, TargetId, RefOpts),
+            TypeDef = case TargetRefs of
+                [] -> ?UNDEF_EXT_NODE_ID;
+                [#opcua_reference{target_id = TypeId} | _] -> ?XID(TypeId)
+            end,
+            BaseObj = #{
+                type => RefId,
+                type_definition => TypeDef
+            },
+            Fields = [node_id, browse_name, display_name, node_class],
+            Ref2 = lists:foldl(fun(Key, Map) ->
+                    Map#{Key => opcua_node:attribute(Key, TargetNode)}
+            end, BaseObj, Fields),
+            post_process_refs(Refs, [Ref2 | Acc])
+    end.
 
 
 %-- HARDCODED MODEL ------------------------------------------------------------
 
 setup_static_nodes() ->
+    % setup_server_node(),
     case application:get_env(opcua, resolver) of
         undefined -> ok;
         {ok, Mod} ->
@@ -209,3 +246,31 @@ setup_static_nodes() ->
             opcua_address_space:add_references(default, Refs),
             ok
     end.
+
+% setup_server_node() ->
+%     opcua_address_space:add_nodes(default, [
+%         #opcua_node{
+%             node_id = ?OBJ_SERVER,
+%             browse_name = <<"Server">>,
+%             display_name = <<"Server">>,
+%             node_class = #opcua_object{}
+%         }
+%     ]),
+%     opcua_address_space:add_references(default, [
+%         #opcua_reference{
+%             type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
+%             source_id = ?NNID(?OBJ_SERVER),
+%             target_id = ?NNID(?OBJ_SERVER_TYPE)
+%         },
+%         #opcua_reference{
+%             type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
+%             source_id = ?NNID(?OBJ_SERVER_STATUS),
+%             target_id = ?NNID(?OBJ_SERVER_STATUS_TYPE)
+%         },
+%         #opcua_reference{
+%             type_id = ?NNID(?REF_HAS_COMPONENT),
+%             source_id = ?NNID(?OBJ_SERVER),
+%             target_id = ?NNID(?OBJ_SERVER_STATUS)
+%         }
+%     ]),
+%     ok.
