@@ -129,7 +129,7 @@ init({Context}) ->
     {ok, State}.
 
 handle_call({add_nodes, Nodes}, _From, #{nodes := NodesTable} = State) ->
-    true = ets:insert_new(NodesTable, [#node{id = ID, instance = Node} ||
+    true = ets:insert(NodesTable, [#node{id = ID, instance = Node} ||
         #opcua_node{node_id = ID} = Node <- Nodes
     ]),
     {reply, ok, State};
@@ -148,11 +148,14 @@ handle_cast(Request, _State) ->
 handle_info(Info, _State) ->
     error({unknown_info, Info}).
 
-terminate(normal, #{from := From} = State) ->
+terminate(_Reason, State) ->
     true = ets:delete(maps:get(nodes, State)),
     true = ets:delete(maps:get(references, State)),
     cleanup_persistent_terms(maps:get(keys, State)),
-    gen_server:reply(From, ok).
+    case State of
+        #{from := From} ->  gen_server:reply(From, ok);
+        _ -> ok
+    end.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

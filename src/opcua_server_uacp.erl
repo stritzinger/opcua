@@ -201,6 +201,7 @@ proto_handle_data(#state{channel = Channel, proto = Proto} = State, Conn, Data) 
     end.
 
 proto_consume(#state{channel = Channel, proto = Proto} = State, Conn, Msg) ->
+    ?LOG_DEBUG("Sending message ~p", [Msg]),
     case opcua_uacp:consume(Msg, Conn, Channel, Proto) of
         {error, Reason, Channel2, Proto2} ->
             {error, Reason, State#state{channel = Channel2, proto = Proto2}};

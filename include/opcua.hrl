@@ -28,6 +28,10 @@
 -define(OBJ_ROOT_FOLDER,            84).
 -define(OBJ_OBJECTS_FOLDER,         85).
 -define(OBJ_SERVER,                 2253).
+-define(OBJ_SERVER_STATUS,          2256).
+
+-define(OBJ_SERVER_TYPE,            2004).
+-define(OBJ_SERVER_STATUS_TYPE,     2138).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

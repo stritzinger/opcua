@@ -226,8 +226,6 @@ unpack_read_results(Result) ->
 
 unpack_read_results([], Acc) ->
     {ok, lists:reverse(Acc)};
-unpack_read_results([#opcua_data_value{status = good, value = #opcua_variant{value = Value}} | Rest], Acc) ->
-    unpack_read_results(Rest, [Value | Acc]);
 unpack_read_results([#opcua_data_value{status = good, value = Value} | Rest], Acc) ->
     unpack_read_results(Rest, [Value | Acc]);
 unpack_read_results([#opcua_data_value{status = Status} | _], _Acc) ->
