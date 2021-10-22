@@ -7,7 +7,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API
--export([connect/1]).
+-export([connect/1, connect/2]).
 -export([browse/2, browse/3]).
 -export([read/3, read/4]).
 -export([batch_read/3]).
@@ -33,14 +33,10 @@
 -include("opcua_internal.hrl").
 
 
-%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--define(DEFAULT_MAX_RETRY,      3).
-
-
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(data, {
+    opts                        :: map(),
     socket                      :: inet:socket(),
     conn                        :: undefined | opcua:connection(),
     proto                       :: term(),
@@ -51,10 +47,16 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 connect(EndpointSpec) ->
+    connect(EndpointSpec, #{}).
+
+connect(EndpointSpec, Opts) ->
     Endpoint  = opcua_util:parse_endpoint(EndpointSpec),
     Pid = opcua_client_pool_sup:start_client(#{}),
-    ok = gen_statem:call(Pid, {connect, Endpoint}, infinity),
-    Pid.
+    FullOpts = prepare_connect_options(Opts),
+    case gen_statem:call(Pid, {connect, Endpoint, FullOpts}, infinity) of
+        {error, _Reason} = Error -> Error;
+        ok -> {ok, Pid}
+    end.
 
 browse(Pid, NodeSpec) ->
     browse(Pid, NodeSpec, #{}).
@@ -117,14 +119,16 @@ init(_Opts) ->
 callback_mode() -> [handle_event_function, state_enter].
 
 %% STATE: disconnected
-handle_event({call, From}, {connect, Endpoint}, disconnected = State,
+handle_event({call, From}, {connect, Endpoint, Opts}, disconnected = State,
              #data{conn = undefined} = Data) ->
-    next_state_and_reply_later({connecting, 0, Endpoint}, Data, on_ready, From,
-                               event_timeouts(State, Data));
+    Data2 = Data#data{opts = Opts},
+    next_state_and_reply_later({connecting, 0, Endpoint}, Data2, on_ready, From,
+                               event_timeouts(State, Data2));
 %% STATE: {connecting, N, Endpoint}
 handle_event(enter, _OldState, {connecting, N, _} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered ~p", [self(), State]),
-    case N =< ?DEFAULT_MAX_RETRY of
+    #data{opts = #{connect_retry := MaxRetry}} = Data,
+    case MaxRetry =:= infinity orelse N =< MaxRetry of
         true  ->
             {keep_state, Data, enter_timeouts(State, Data)};
         false ->
@@ -245,6 +249,12 @@ terminate(Reason, State, Data) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+prepare_connect_options(Opts) ->
+    maps:merge(#{
+        connect_retry => 3,
+        connect_timeout => infinity
+    }, Opts).
+
 pack_command_result(From, State, {error, Reason, Data}) ->
     {keep_state, Data, [{reply, From, {error, Reason}} | enter_timeouts(State, Data)]};
 pack_command_result(From, State, {async, Handle, Data}) ->
@@ -302,12 +312,13 @@ proto_terminate(#data{conn = Conn, proto = Proto}, Reason) ->
 
 %== Connection Managment =======================================================
 
-conn_init(#data{socket = undefined} = Data, Endpoint)
+conn_init(#data{opts = CliOpts, socket = undefined} = Data, Endpoint)
   when Endpoint =/= undefined ->
+    #{connect_timeout := Timeout} = CliOpts,
     #opcua_endpoint{host = Host, port = Port, url = Url} = Endpoint,
     ?LOG_DEBUG("Connecting to ~s", [Url]),
     Opts = [binary, {active, false}, {packet, raw}],
-    case gen_tcp:connect(Host, Port, Opts) of
+    case gen_tcp:connect(Host, Port, Opts, Timeout) of
         {error, _Reason} = Error -> Error;
         {ok, Socket} ->
             PeerNameRes = inet:peername(Socket),
