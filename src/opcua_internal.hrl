@@ -69,11 +69,6 @@
 
 %-- Codec Records --------------------------------------------------------------
 
--record(opcua_variant, {
-    type                        :: opcua:builtin_type(),
-    value                       :: term()
-}).
-
 -record(opcua_diagnostic_info, {
     symbolic_id                 :: integer(),
     namespace_uri               :: integer(),

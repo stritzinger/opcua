@@ -75,6 +75,11 @@
     server_pico_seconds = 0     :: non_neg_integer()
 }).
 
+-record(opcua_variant, {
+    type                        :: opcua:builtin_type(),
+    value                       :: term()
+}).
+
 
 %-- Node Model Records ---------------------------------------------------------
 
