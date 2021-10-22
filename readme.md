@@ -6,7 +6,7 @@
 
 e.g.
 
-	`Client = opcua_client:connect(<<"opc.tcp://172.16.48.6:4840">>).`
+	`{ok, Client} = opcua_client:connect(<<"opc.tcp://172.16.48.6:4840">>).`
 
 
 === Browsing Nodes
