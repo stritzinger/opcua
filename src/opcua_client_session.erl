@@ -98,15 +98,13 @@ read(ReadSpecs, _Opts, Conn, Channel, #state{status = activated} = State) ->
         max_age => 0,
         timestamps_to_return => source,
         nodes_to_read => [
-            lists:append([
-                #{
-                    node_id => NodeId,
-                    attribute_id => opcua_database_attributes:id(spec_attr(Spec)),
-                    index_range => spec_range(Spec),
-                    data_encoding => ?UNDEF_QUALIFIED_NAME
-                }
-            || Spec <- Attribs])
-        || {NodeId, Attribs} <- ReadSpecs]
+            #{
+                node_id => NodeId,
+                attribute_id => opcua_database_attributes:id(spec_attr(Spec)),
+                index_range => spec_range(Spec),
+                data_encoding => ?UNDEF_QUALIFIED_NAME
+            }
+        || {NodeId, Attribs} <- ReadSpecs, Spec <- Attribs]
     },
     {ok, Request, Channel2, State2} =
         channel_make_request(State, Channel, Conn,
