@@ -37,6 +37,9 @@
 setup(Dir) ->
     opcua_database_encodings:setup(),
     opcua_database_data_types:setup(),
+    opcua_database_namespaces:setup(),
+    ?LOG_INFO("Loading OPCUA namespaces..."),
+    load_namespaces(Dir),
     ?LOG_INFO("Loading OPCUA nodes..."),
     load_nodes(Dir),
     ?LOG_INFO("Loading OPCUA references..."),
@@ -52,14 +55,17 @@ parse() ->
     parse(Root, Files).
 
 parse(DestDir, Files) ->
-    parse(DestDir, Files, #{}, []).
+    Namespaces = #{0 => <<"http://opcfoundation.org/UA/">>},
+    Meta = #{namespaces => Namespaces},
+    parse(DestDir, Files, Meta, []).
 
-parse(DestDir, [], _Meta, Nodes) ->
+parse(DestDir, [], Meta, Nodes) ->
     NodesProplist = lists:reverse(Nodes),
     DataTypesSchemas = extract_data_type_schemas(NodesProplist),
     Encodings = extract_encodings(NodesProplist),
     NodeSpecs = extract_nodes(NodesProplist),
     References = extract_references(NodesProplist),
+    Namespaces = maps:to_list(maps:get(namespaces, Meta, #{})),
     ?LOG_INFO("Saving OPCUA data type schemas..."),
     write_terms(DestDir, "data_type_schemas", DataTypesSchemas),
     ?LOG_INFO("Saving OPCUA encoding specifications..."),
@@ -68,6 +74,8 @@ parse(DestDir, [], _Meta, Nodes) ->
     write_terms(DestDir, "nodes", NodeSpecs),
     ?LOG_INFO("Saving OPCUA references..."),
     write_terms(DestDir, "references", References),
+    ?LOG_INFO("Saving OPCUA namespaces..."),
+    write_terms(DestDir, "namespaces", Namespaces),
     ok;
 parse(DestDir, [File | Files], Meta, Nodes) ->
     ?LOG_INFO("Parsing OPCUA nodeset file ~s...", [File]),
@@ -79,9 +87,17 @@ parse(DestDir, [File | Files], Meta, Nodes) ->
 %%% XML SAX PARSER CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 parse_node_set({<<"UANodeSet">>, _Attrs, Content}, Meta, Nodes) ->
+    Namespaces = parse_namespaces(get_value([<<"NamespaceUris">>], Content, [])),
     Aliases = parse_aliases(get_value([<<"Aliases">>], Content)),
-    Meta2 = Meta#{aliases => maps:merge(maps:get(aliases, Meta, #{}), Aliases)},
+    Meta2 = Meta#{
+        namespaces => maps:merge(maps:get(namespaces, Meta, #{}), Namespaces),
+        aliases => maps:merge(maps:get(aliases, Meta, #{}), Aliases)
+    },
     lists:foldl(fun parse_node/2, {Meta2, Nodes}, Content).
+
+parse_namespaces(Namespaces) ->
+    URIs = [URI || {<<"Uri">>, _, [URI]} <- Namespaces],
+    maps:from_list(lists:zip(lists:seq(1, length(URIs)), URIs)).
 
 parse_aliases(Aliases) ->
     maps:from_list([{Name, parse(node_id, ID, #{aliases => #{}})} || {<<"Alias">>, #{<<"Alias">> := Name}, [ID]} <- Aliases]).
@@ -299,6 +315,11 @@ extract_encodings(NodesProplist) ->
             target_id = TargetNodeId
         } <- References
     ].
+
+load_namespaces(Dir) ->
+    load_all_terms(Dir, "namespaces", fun({ID, URI}) ->
+        opcua_database_namespaces:store(ID, URI)
+    end).
 
 load_nodes(Dir) ->
     load_all_terms(Dir, "nodes", fun(Node) ->

@@ -10,6 +10,7 @@
 
 -define(UNDEF_NODE_ID, #opcua_node_id{ns = 0, type = numeric, value = 0}).
 -define(UNDEF_QUALIFIED_NAME, #opcua_qualified_name{ns = 0, name = undefined}).
+-define(UNDEF_LOCALIZED_TEXT, #opcua_localized_text{}).
 
 
 %-- OPCUA Standard Node Id Numbers ---------------------------------------------
