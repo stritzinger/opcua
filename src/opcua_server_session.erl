@@ -389,7 +389,6 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
         direction = Direction,
         opts = BrowseOpts
     },
-    logger:debug("!!!!!! Perform ~p ~p", [NodeId, Command]),
     case opcua_server_registry:perform(NodeId, [Command]) of
         [{error, Reason}] ->
             Status = opcua_database_status_codes:name(Reason, bad_internal_error),
@@ -400,7 +399,6 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
             },
             view_browse(Data, BrowseOpts, Rest, [BrowseResult | Acc]);
         [CommandResult] ->
-            logger:debug("!!!!!! Perform result: ~p ~p", [CommandResult]),
             BrowseResult = #{
                 status_code => maps:get(status, CommandResult, good),
                 continuation_point => undefined,

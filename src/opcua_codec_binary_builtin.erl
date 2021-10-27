@@ -183,7 +183,8 @@ encode_expanded_node_id(#opcua_expanded_node_id{node_id = #opcua_node_id{ns = NS
               undefined -> {0, <<>>};
               _ -> {16#40, encode(uint32, ServerIndex)}
           end,
-    <<Mask:8, Rest/binary>> = encode_node_id(NodeId#opcua_node_id{ns = NS2}),
+    EncNodeId = encode_node_id(NodeId#opcua_node_id{ns = NS2}),
+    <<Mask:8, Rest/binary>> = iolist_to_binary(EncNodeId),
     [<<(Mask + NamespaceUriFlag + ServerIndexFlag):8>>, Rest,
      BinNamespaceUri, BinServerIndex];
 encode_expanded_node_id(#opcua_expanded_node_id{node_id = NodeSpec} = ExtNodeId) ->

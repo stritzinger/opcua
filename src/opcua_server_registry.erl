@@ -33,6 +33,7 @@
 -define(SERVER, ?MODULE).
 -define(MAX_SECURE_CHANNEL_ID, 4294967295).
 -define(FIRST_CUSTOM_NODE_ID,  50000).
+-define(DEFAULT_RESOLVER, opcua_server_default_resolver).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -70,12 +71,15 @@ perform(NodeSpec, Commands) ->
 
 init(Opts) ->
     ?LOG_DEBUG("OPCUA registry process starting with options: ~p", [Opts]),
+    ResMod = application:get_env(opcua, resolver, ?DEFAULT_RESOLVER),
+    {ok, Vals, Nodes, Refs, ResState} = ResMod:init(),
+    persistent_term:put({?MODULE, resolver}, {ResMod, ResState}),
     NextSecureChannelId = crypto:bytes_to_integer(crypto:strong_rand_bytes(4)),
     State = #state{next_secure_channel_id = NextSecureChannelId},
-    {ok, State, {continue, undefined}}.
+    {ok, State, {continue, {Vals, Nodes, Refs}}}.
 
-handle_continue(_, State) ->
-    setup_static_nodes(),
+handle_continue({Vals, Nodes, Refs}, State) ->
+    setup_static_data(Vals, Nodes, Refs),
     {noreply, State}.
 
 handle_call(next_node_id, _From, #state{next_node_id = NextId} = State) ->
@@ -107,55 +111,31 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% get_resolver_node(?NNID(?OBJ_SERVER_STATUS)) ->
-%     #opcua_node{
-%         node_id = ?NNID(?OBJ_SERVER_STATUS),
-%         browse_name = <<"ServerStatus">>,
-%         display_name = <<"ServerStatus">>,
-%         node_class = #opcua_variable{
-%             data_type = ?NNID(?OBJ_SERVER_STATUS_TYPE)
-%             value = #{
-%                 build_info => #{
-%                     build_date => 132580457880000000,build_number => <<"156">>,
-%                     manufacturer_name => <<"Beckhoff Automation">>,
-%                     product_name => <<"TcOpcUaServer">>,
-%                     product_uri => <<"urn:BeckhoffAutomation:TcOpcUaServer">>,
-%                     software_version => <<"3.2.0.156">>
-%                 },
-%                 current_time => 132791958415602133,
-%                 seconds_till_shutdown => 0,
-%                 shutdown_reason => #opcua_localized_text{},
-%                 start_time => 132791945216195939,
-%                 state => running
-%             }
-%         }
-%     };
-get_resolver_node(NodeId) ->
-    case application:get_env(opcua, resolver) of
-        undefined -> undefined;
-        {ok, Mod} -> Mod:get_node(NodeId)
-    end.
-
-get_resolver_refs(NodeId, Opts) ->
-    case application:get_env(opcua, resolver) of
-        undefined -> [];
-        {ok, Mod} -> Mod:get_references(NodeId, Opts)
-    end.
-
 get_node(NodeId) ->
-    case get_resolver_node(NodeId) of
+    case resolver_get_node(NodeId) of
         undefined ->
             case opcua_address_space:get_node(default, NodeId) of
                 undefined -> undefined;
-                #opcua_node{} = Node -> {static, Node}
+                #opcua_node{node_class =
+                        #opcua_variable{data_type = T, value = V} = C} = N ->
+                    case resolver_get_value(NodeId, T, V) of
+                        undefined ->
+                            {static, N};
+                        V2 ->
+                            C2 = C#opcua_variable{value = V2},
+                            {dynamic, N#opcua_node{node_class = C2}}
+                    end;
+                #opcua_node{} = Node ->
+                    {static, Node}
             end;
-        #opcua_node{} = Node -> {dynamic, Node}
+        #opcua_node{} = Node ->
+            {dynamic, Node}
     end.
 
 get_references(static, NodeId, Opts) ->
     opcua_address_space:get_references(default, NodeId, Opts);
 get_references(dynamic, NodeId, Opts) ->
-    get_resolver_refs(NodeId, Opts).
+    resolver_get_references(NodeId, Opts).
 
 next_secure_channel_id(#state{next_secure_channel_id = ?MAX_SECURE_CHANNEL_ID} = State) ->
     {1, State#state{next_secure_channel_id = 2}};
@@ -165,7 +145,7 @@ next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
 
 static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = SubTypes}) ->
     #opcua_node{node_id = NodeId} = Node,
-    ?LOG_DEBUG("Browsing node ~w's ~w and ~w references; with subtypes: ~w...",
+    ?LOG_INFO("Browsing node ~w's ~w and ~w references; with subtypes: ~w...",
                [NodeId#opcua_node_id.value, BaseId#opcua_node_id.value, Dir, SubTypes]),
     BaseOpts = #{type => BaseId, direction => Dir},
     Opts = case SubTypes of
@@ -174,23 +154,30 @@ static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir,
     end,
     Refs = get_references(Mode, NodeId, Opts),
     ResRefs = post_process_refs(Refs),
-    ?LOG_DEBUG("    -> ~p", [ResRefs]),
+    ?LOG_DEBUG("    Browsing result -> ~p", [ResRefs]), 
     #{status => good, references => ResRefs};
 static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
-    ?LOG_DEBUG("Reading node ~w's attribute ~w...",
+    ?LOG_INFO("Reading node ~w's attribute ~w...",
                [(Node#opcua_node.node_id)#opcua_node_id.value, Attr]),
     Result = try {opcua_node:attribute_type(Attr, Node),
                   opcua_node:attribute(Attr, Node)} of
         {AttrType, AttrValue} ->
-            Value = opcua_codec:pack_variant(AttrType, AttrValue),
-            #opcua_data_value{value = Value}
+            try opcua_codec:pack_variant(AttrType, AttrValue) of
+                Value -> #opcua_data_value{value = Value}
+            catch
+                _:Reason ->
+                    ?LOG_ERROR("Error while packing attribute ~w with type ~w and value ~p from node ~w: ~p",
+                       [Attr, AttrType, AttrValue,
+                        (Node#opcua_node.node_id)#opcua_node_id.value, Reason]),
+                    #opcua_data_value{status = bad_internal_error}
+            end
     catch
         _:Reason ->
             ?LOG_ERROR("Error while reading attribute ~w from node ~w: ~p",
                        [Attr, (Node#opcua_node.node_id)#opcua_node_id.value, Reason]),
-            #opcua_data_value{status = Reason}
+            #opcua_data_value{status = bad_internal_error}
     end,
-    ?LOG_DEBUG("    -> ~p", [Result]),
+    ?LOG_DEBUG("    Read result -> ~p", [Result]),
     Result;
 static_perform(_Mode, _Node, _Command) ->
     {error, bad_not_implemented}.
@@ -233,44 +220,23 @@ post_process_refs([Ref | Refs], Acc) ->
             post_process_refs(Refs, [Ref2 | Acc])
     end.
 
+resolver_get_node(NodeId) ->
+    {ResMod, ResState} = persistent_term:get({?MODULE, resolver}),
+    ResMod:get_node(ResState, NodeId).
+
+resolver_get_references(NodeId, Opts) ->
+    {ResMod, ResState} = persistent_term:get({?MODULE, resolver}),
+    ResMod:get_references(ResState, NodeId, Opts).
+
+resolver_get_value(NodeId, DataType, CurrVal) ->
+    {ResMod, ResState} = persistent_term:get({?MODULE, resolver}),
+    ResMod:get_value(ResState, NodeId, DataType, CurrVal).
+
 
 %-- HARDCODED MODEL ------------------------------------------------------------
 
-setup_static_nodes() ->
-    % setup_server_node(),
-    case application:get_env(opcua, resolver) of
-        undefined -> ok;
-        {ok, Mod} ->
-            {ok, Nodes, Refs} = Mod:init(),
-            opcua_address_space:add_nodes(default, Nodes),
-            opcua_address_space:add_references(default, Refs),
-            ok
-    end.
-
-% setup_server_node() ->
-%     opcua_address_space:add_nodes(default, [
-%         #opcua_node{
-%             node_id = ?OBJ_SERVER,
-%             browse_name = <<"Server">>,
-%             display_name = <<"Server">>,
-%             node_class = #opcua_object{}
-%         }
-%     ]),
-%     opcua_address_space:add_references(default, [
-%         #opcua_reference{
-%             type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
-%             source_id = ?NNID(?OBJ_SERVER),
-%             target_id = ?NNID(?OBJ_SERVER_TYPE)
-%         },
-%         #opcua_reference{
-%             type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
-%             source_id = ?NNID(?OBJ_SERVER_STATUS),
-%             target_id = ?NNID(?OBJ_SERVER_STATUS_TYPE)
-%         },
-%         #opcua_reference{
-%             type_id = ?NNID(?REF_HAS_COMPONENT),
-%             source_id = ?NNID(?OBJ_SERVER),
-%             target_id = ?NNID(?OBJ_SERVER_STATUS)
-%         }
-%     ]),
-%     ok.
+setup_static_data(Vals, Nodes, Refs) ->
+    lists:foreach(fun({K, V}) -> opcua:set_value(K, V) end, Vals),
+    opcua_address_space:add_nodes(default, Nodes),
+    opcua_address_space:add_references(default, Refs),
+    ok.

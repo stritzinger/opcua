@@ -92,13 +92,10 @@ init(Parent, Ref, Socket, Transport, Opts) ->
     ], Opts),
     PeerNameRes = Transport:peername(Socket),
     SockNameRes = Transport:sockname(Socket),
-    logger:info("11111"),
     UACPRes = opcua_server_uacp:init(ProtoOpts),
     case {PeerNameRes, SockNameRes, UACPRes} of
         {{ok, PeerName}, {ok, {SockAddr, _} = SockName}, {ok, Proto}} ->
-            logger:info("22222"),
             Endpoint = opcua_util:parse_endpoint({SockAddr, 4840}),
-            logger:info("33333"),
             State = #state{
                 parent = Parent,
                 ref = Ref,
