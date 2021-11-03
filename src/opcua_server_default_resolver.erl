@@ -9,28 +9,6 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(BOOLEAN,                                    ?NNID(1)).
--define(SBYTE,                                      ?NNID(2)).
--define(BYTE,                                       ?NNID(3)).
--define(INT16,                                      ?NNID(4)).
--define(UINT16,                                     ?NNID(5)).
--define(INT32,                                      ?NNID(6)).
--define(UINT32,                                     ?NNID(7)).
--define(INT64,                                      ?NNID(8)).
--define(UINT64,                                     ?NNID(9)).
--define(FLOAT,                                      ?NNID(10)).
--define(DOUBLE,                                     ?NNID(11)).
--define(DATE_TIME,                                  ?NNID(13)).
--define(STRING,                                     ?NNID(12)).
--define(BYTE_STRING,                                ?NNID(15)).
--define(GUID,                                       ?NNID(14)).
--define(XML_ELEMENT,                                ?NNID(16)).
--define(NODE_ID,                                    ?NNID(17)).
--define(EXPANDED_NODE_ID,                           ?NNID(18)).
--define(QUALIFIED_NAME,                             ?NNID(20)).
--define(LOCALIZED_TEXT,                             ?NNID(21)).
--define(STATUS_CODE,                                ?NNID(19)).
-
 -define(SERVER_SERVER_ARRAY,                        ?NNID(2254)).
 -define(SERVER_NAMESPACE_ARRAY,                     ?NNID(2255)).
 -define(SERVER_SERVICE_LEVEL,                       ?NNID(2267)).
@@ -93,7 +71,7 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init() ->
-    State = #state{start_time = erlang:system_time()},
+    State = #state{start_time = current_filetime()},
     Values = [{ID, static_value(State, ID)} || ID <- [
         ?SERVER_SERVER_ARRAY,
         ?SERVER_NAMESPACE_ARRAY,
@@ -141,7 +119,8 @@ get_node(_State, _NodeId) -> undefined.
 get_references(_State, _NodeId, _Opts) -> [].
 
 get_value(_State, ?SERVER_LOCAL_TIME, _Type, _val) ->
-    erlang:system_time();
+    %TODO: Figure out how to get this in a clean way
+    #{offset => 1, daylight_saving_in_offset => true};
 get_value(State, ?SERVER_STATUS, _Type, _Val) ->
     (static_map(State, #{
         start_time => ?SERVER_STATUS_START_TIME,
@@ -149,60 +128,24 @@ get_value(State, ?SERVER_STATUS, _Type, _Val) ->
         seconds_till_shutdown => ?SERVER_STATUS_SECONDS_TILL_SHUTDOWN,
         shutdown_reason => ?SERVER_STATUS_SHUTDOWN_REASON
     }))#{
-        current_time => erlang:system_time(),
+        current_time => current_filetime(),
         state => running
     };
 get_value(_State, ?SERVER_STATUS_CURRENT_TIME, _Type, _Val) ->
-    erlang:system_time();
+    current_filetime();
 get_value(_State, ?SERVER_STATUS_STATE, _Type, _Val) ->
     running;
-get_value(_State, _NodeId, ?BOOLEAN, undefined) ->
-    false;
-get_value(_State, _NodeId, ?SBYTE, undefined) ->
-    0;
-get_value(_State, _NodeId, ?BYTE, undefined) ->
-    0;
-get_value(_State, _NodeId, ?INT16, undefined) ->
-    0;
-get_value(_State, _NodeId, ?UINT16, undefined) ->
-    0;
-get_value(_State, _NodeId, ?INT32, undefined) ->
-    0;
-get_value(_State, _NodeId, ?UINT32, undefined) ->
-    0;
-get_value(_State, _NodeId, ?INT64, undefined) ->
-    0;
-get_value(_State, _NodeId, ?UINT64, undefined) ->
-    0;
-get_value(_State, _NodeId, ?FLOAT, undefined) ->
-    0.0;
-get_value(_State, _NodeId, ?DOUBLE, undefined) ->
-    0.0;
-get_value(_State, _NodeId, ?DATE_TIME, undefined) ->
-    0;
-get_value(_State, _NodeId, ?STRING, undefined) ->
-    <<"">>;
-get_value(_State, _NodeId, ?BYTE_STRING, undefined) ->
-    <<"">>;
-get_value(_State, _NodeId, ?GUID, undefined) ->
-    <<"">>;
-get_value(_State, _NodeId, ?XML_ELEMENT, undefined) ->
-    <<"">>;
-get_value(_State, _NodeId, ?NODE_ID, undefined) ->
-    ?UNDEF_NODE_ID;
-get_value(_State, _NodeId, ?EXPANDED_NODE_ID, undefined) ->
-    ?XID(?UNDEF_NODE_ID);
-get_value(_State, _NodeId, ?QUALIFIED_NAME, undefined) ->
-    ?UNDEF_QUALIFIED_NAME;
-get_value(_State, _NodeId, ?LOCALIZED_TEXT, undefined) ->
-    ?UNDEF_LOCALIZED_TEXT;
-get_value(_State, _NodeId, ?STATUS_CODE, undefined) ->
-    good;
 get_value(_State, _NodeId, _Type, _Value) ->
     undefined.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+current_filetime() ->
+    posix_nano_to_filetime(erlang:system_time(nanosecond)).
+
+posix_nano_to_filetime(V) ->
+    (V + (134774*24*60*60*1000*1000*1000)) div 100.
 
 static_map(State, Fields) ->
     maps:map(fun(_Key, Val) -> static_value(State, Val) end, Fields).

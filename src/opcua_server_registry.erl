@@ -145,20 +145,20 @@ next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
 
 static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = SubTypes}) ->
     #opcua_node{node_id = NodeId} = Node,
-    ?LOG_INFO("Browsing node ~w's ~w and ~w references; with subtypes: ~w...",
-               [NodeId#opcua_node_id.value, BaseId#opcua_node_id.value, Dir, SubTypes]),
+    ?LOG_DEBUG("Browsing node ~s ~w references ~s~s...",
+               [opcua_node:format(NodeId), Dir, opcua_node:format(BaseId),
+                if SubTypes -> " and subtypes"; true -> "" end]),
     BaseOpts = #{type => BaseId, direction => Dir},
     Opts = case SubTypes of
         true -> BaseOpts#{include_subtypes => true};
         false -> BaseOpts
     end,
     Refs = get_references(Mode, NodeId, Opts),
-    ResRefs = post_process_refs(Refs),
-    ?LOG_DEBUG("    Browsing result -> ~p", [ResRefs]), 
+    ResRefs = post_process_refs(NodeId, Refs),
     #{status => good, references => ResRefs};
 static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
-    ?LOG_INFO("Reading node ~w's attribute ~w...",
-               [(Node#opcua_node.node_id)#opcua_node_id.value, Attr]),
+    ?LOG_DEBUG("Reading node ~s attribute ~w...",
+               [opcua_node:format(Node), Attr]),
     Result = try {opcua_node:attribute_type(Attr, Node),
                   opcua_node:attribute(Attr, Node)} of
         {AttrType, AttrValue} ->
@@ -166,38 +166,51 @@ static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} 
                 Value -> #opcua_data_value{value = Value}
             catch
                 _:Reason ->
-                    ?LOG_ERROR("Error while packing attribute ~w with type ~w and value ~p from node ~w: ~p",
-                       [Attr, AttrType, AttrValue,
-                        (Node#opcua_node.node_id)#opcua_node_id.value, Reason]),
+                    ?LOG_ERROR("Error while packing node ~s attribute ~w with type ~s and value ~p: ~p",
+                       [opcua_node:format(Node), Attr,
+                        opcua_node:format(AttrType), AttrValue, Reason]),
                     #opcua_data_value{status = bad_internal_error}
             end
     catch
+        _:bad_attribute_id_invalid = Reason ->
+            ?LOG_DEBUG("Error while reading node ~s attribute ~w: ~p",
+                       [opcua_node:format(Node), Attr, Reason]),
+            #opcua_data_value{status = Reason};
         _:Reason ->
-            ?LOG_ERROR("Error while reading attribute ~w from node ~w: ~p",
-                       [Attr, (Node#opcua_node.node_id)#opcua_node_id.value, Reason]),
-            #opcua_data_value{status = bad_internal_error}
+            Status = case opcua_database_status_codes:is_name(Reason) of
+                true -> Reason;
+                false -> bad_internal_error
+            end,
+            ?LOG_ERROR("Error while reading node ~s attribute ~w: ~p",
+                       [opcua_node:format(Node), Attr, Reason]),
+            #opcua_data_value{status = Status}
     end,
-    ?LOG_DEBUG("    Read result -> ~p", [Result]),
     Result;
 static_perform(_Mode, _Node, _Command) ->
     {error, bad_not_implemented}.
 
-post_process_refs(Refs) ->
-    post_process_refs(Refs, []).
 
 
-post_process_refs([], Acc) ->
+post_process_refs(NodeId, Refs) ->
+    post_process_refs(NodeId, Refs, []).
+
+post_process_refs(_NodeId, [], Acc) ->
     lists:reverse(Acc);
-post_process_refs([Ref | Refs], Acc) ->
-    #opcua_reference{
-        type_id = RefId,
-        target_id = TargetId
-    } = Ref,
+post_process_refs(NodeId, [Ref | Refs], Acc) ->
+    %TODO: Add support for symetric references
+    %TODO: Add support for field mask
+    %TODO: Add support for class mask
+    {IsForward, TargetId, RefId} = case Ref of
+        #opcua_reference{type_id = R, source_id = NodeId, target_id = Id} ->
+            {true, Id, R};
+        #opcua_reference{type_id = R, source_id = Id, target_id = NodeId} ->
+            {false, Id, R}
+    end,
     % Filtering out references to nodes we don't know about.
     % e.g. if the hard-coded server node is not defined by the OPCUA server
     case get_node(TargetId) of
         undefined ->
-            post_process_refs(Refs, Acc);
+            post_process_refs(NodeId, Refs, Acc);
         {TargetMode, TargetNode} ->
             RefOpts = #{
                 type => ?NNID(?REF_HAS_TYPE_DEFINITION),
@@ -211,13 +224,14 @@ post_process_refs([Ref | Refs], Acc) ->
             end,
             BaseObj = #{
                 type => RefId,
+                is_forward => IsForward,
                 type_definition => TypeDef
             },
             Fields = [node_id, browse_name, display_name, node_class],
             Ref2 = lists:foldl(fun(Key, Map) ->
                     Map#{Key => opcua_node:attribute(Key, TargetNode)}
             end, BaseObj, Fields),
-            post_process_refs(Refs, [Ref2 | Acc])
+            post_process_refs(NodeId, Refs, [Ref2 | Acc])
     end.
 
 resolver_get_node(NodeId) ->
