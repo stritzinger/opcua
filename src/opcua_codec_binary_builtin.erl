@@ -5,63 +5,114 @@
 
 -export([encode/2, decode/2]).
 
-decode(boolean, <<0, T/binary>>) -> {false, T};
-decode(boolean, <<_Bin:1/binary, T/binary>>) -> {true, T};
-decode(byte, <<Byte:8, T/binary>>) -> {Byte, T};
-decode(sbyte, <<SByte:8/signed-integer, T/binary>>) -> {SByte, T};
-decode(uint16, <<UInt16:16/little-unsigned-integer, T/binary>>) -> {UInt16, T};
-decode(uint32, <<UInt32:32/little-unsigned-integer, T/binary>>) -> {UInt32, T};
-decode(uint64, <<UInt64:64/little-unsigned-integer, T/binary>>) -> {UInt64, T};
-decode(int16, <<Int16:16/little-signed-integer, T/binary>>) -> {Int16, T};
-decode(int32, <<Int32:32/little-signed-integer, T/binary>>) -> {Int32, T};
-decode(int64, <<Int64:64/little-signed-integer, T/binary>>) -> {Int64, T};
-decode(float, <<Float:32/little-signed-float, T/binary>>) -> {Float, T};
-decode(double, <<Double:64/little-unsigned-float, T/binary>>) -> {Double, T};
-decode(string, <<Int32:32/little-signed-integer, T/binary>>) when Int32 == -1 -> {undefined, T};
-decode(string, <<Int32:32/little-signed-integer, String:Int32/binary, T/binary>>) -> {String, T};
-decode(date_time, Bin) -> decode(int64, Bin);
-decode(guid, Bin) -> decode_guid(Bin);
-decode(xml, Bin) -> decode(string, Bin);
+decode(boolean, <<0, T/binary>>) ->
+    {false, T};
+decode(boolean, <<_Bin:1/binary, T/binary>>) ->
+    {true, T};
+decode(byte, <<Byte:8, T/binary>>) ->
+    {Byte, T};
+decode(sbyte, <<SByte:8/signed-integer, T/binary>>) ->
+    {SByte, T};
+decode(uint16, <<UInt16:16/little-unsigned-integer, T/binary>>) ->
+    {UInt16, T};
+decode(uint32, <<UInt32:32/little-unsigned-integer, T/binary>>) ->
+    {UInt32, T};
+decode(uint64, <<UInt64:64/little-unsigned-integer, T/binary>>) ->
+    {UInt64, T};
+decode(int16, <<Int16:16/little-signed-integer, T/binary>>) ->
+    {Int16, T};
+decode(int32, <<Int32:32/little-signed-integer, T/binary>>) ->
+    {Int32, T};
+decode(int64, <<Int64:64/little-signed-integer, T/binary>>) ->
+    {Int64, T};
+decode(float, <<Float:32/little-signed-float, T/binary>>) ->
+    {Float, T};
+decode(double, <<Double:64/little-unsigned-float, T/binary>>) ->
+    {Double, T};
+decode(string, <<Int32:32/little-signed-integer, T/binary>>)
+  when Int32 == -1 ->
+    {undefined, T};
+decode(string, <<Int32:32/little-signed-integer,
+                 String:Int32/binary, T/binary>>) ->
+    {String, T};
+decode(date_time, Bin) ->
+    decode(int64, Bin);
+decode(guid, Bin) ->
+    decode_guid(Bin);
+decode(xml, Bin) ->
+    decode(string, Bin);
 decode(status_code, Bin) ->
     {Code, Rest} = decode(uint32, Bin),
     {opcua_database_status_codes:name(Code, Code), Rest};
-decode(byte_string, Bin) -> decode(string, Bin);
-decode(node_id, <<Mask:8, Bin/binary>>) -> decode_node_id(Mask, Bin);
-decode(expanded_node_id, <<Mask:8, Bin/binary>>) -> decode_expanded_node_id(Mask, Bin);
-decode(diagnostic_info, <<Mask:1/binary, Bin/binary>>) -> decode_diagnostic_info(Mask, Bin);
-decode(qualified_name, Bin) -> decode_qualified_name(Bin);
-decode(localized_text, <<Mask:1/binary, Bin/binary>>) -> decode_localized_text(Mask, Bin);
-decode(_Type, _Bin) -> throw(bad_decoding_error).
+decode(byte_string, Bin) ->
+    decode(string, Bin);
+decode(node_id, <<Mask:8, Bin/binary>>) ->
+    decode_node_id(Mask, Bin);
+decode(expanded_node_id, <<Mask:8, Bin/binary>>) ->
+    decode_expanded_node_id(Mask, Bin);
+decode(diagnostic_info, <<Mask:1/binary, Bin/binary>>) ->
+    decode_diagnostic_info(Mask, Bin);
+decode(qualified_name, Bin) ->
+    decode_qualified_name(Bin);
+decode(localized_text, <<Mask:1/binary, Bin/binary>>) ->
+    decode_localized_text(Mask, Bin);
+decode(_Type, _Bin) ->
+    throw(bad_decoding_error).
 
-encode(boolean, false) -> <<0:8>>;
-encode(boolean, true) -> <<1:8>>;
-encode(byte, Byte) -> <<Byte:8>>;
-encode(sbyte, SByte) -> <<SByte:8/signed-integer>>;
-encode(uint16, UInt16) -> <<UInt16:16/little-unsigned-integer>>;
-encode(uint32, UInt32) -> <<UInt32:32/little-unsigned-integer>>;
-encode(uint64, UInt64) -> <<UInt64:64/little-unsigned-integer>>;
-encode(int16, Int16) -> <<Int16:16/little-signed-integer>>;
-encode(int32, Int32) -> <<Int32:32/little-signed-integer>>;
-encode(int64, Int64) -> <<Int64:64/little-signed-integer>>;
-encode(float, Float) -> <<Float:32/little-signed-float>>;
-encode(double, Double) -> <<Double:64/little-signed-float>>;
-encode(string, String) when String == undefined -> <<-1:32/little-signed-integer>>;
-encode(string, Atom) when is_atom(Atom) -> encode(string, atom_to_binary(Atom));
-encode(string, String) -> <<(byte_size(String)):32/little-signed-integer, String/binary>>;
-encode(date_time, Bin) -> encode(int64, Bin);
-encode(guid, Guid) -> encode_guid(Guid);
-encode(xml, Bin) -> encode(string, Bin);
+encode(boolean, false) ->
+    <<0:8>>;
+encode(boolean, true) ->
+    <<1:8>>;
+encode(byte, Byte) when is_integer(Byte) ->
+    <<Byte:8>>;
+encode(sbyte, SByte) when is_integer(SByte)->
+    <<SByte:8/signed-integer>>;
+encode(uint16, UInt16) when is_integer(UInt16)->
+    <<UInt16:16/little-unsigned-integer>>;
+encode(uint32, UInt32) when is_integer(UInt32)->
+    <<UInt32:32/little-unsigned-integer>>;
+encode(uint64, UInt64) when is_integer(UInt64)->
+    <<UInt64:64/little-unsigned-integer>>;
+encode(int16, Int16) when is_integer(Int16)->
+    <<Int16:16/little-signed-integer>>;
+encode(int32, Int32) when is_integer(Int32)->
+    <<Int32:32/little-signed-integer>>;
+encode(int64, Int64) when is_integer(Int64)->
+    <<Int64:64/little-signed-integer>>;
+encode(float, Float) when is_float(Float)->
+    <<Float:32/little-signed-float>>;
+encode(double, Double) when is_float(Double) ->
+    <<Double:64/little-signed-float>>;
+encode(string, String) when String == undefined ->
+    <<-1:32/little-signed-integer>>;
+encode(string, Atom) when is_atom(Atom) ->
+    encode(string, atom_to_binary(Atom));
+encode(string, String) when is_binary(String) ->
+    <<(byte_size(String)):32/little-signed-integer, String/binary>>;
+encode(date_time, DateTime) when is_integer(DateTime) ->
+    encode(int64, DateTime);
+encode(guid, Guid) when is_binary(Guid) ->
+    encode_guid(Guid);
+encode(xml, Bin) when is_binary(Bin) ->
+    encode(string, Bin);
 encode(status_code, Atom) when is_atom(Atom) ->
     encode(uint32, opcua_database_status_codes:code(Atom));
 encode(status_code, UInt32) when is_integer(UInt32), UInt32 >= 0 ->
     encode(uint32, UInt32);
-encode(byte_string, Bin) -> encode(string, Bin);
-encode(node_id, NodeId) -> encode_node_id(NodeId);
-encode(expanded_node_id, ExpandedNodeId) -> encode_expanded_node_id(ExpandedNodeId);
-encode(diagnostic_info, DiagnosticInfo) -> encode_diagnostic_info(DiagnosticInfo);
-encode(qualified_name, QualifiedName) -> encode_qualified_name(QualifiedName);
-encode(localized_text, LocalizedText) -> encode_localized_text(LocalizedText);
-encode(Type, Value) -> throw({bad_encoding_error, Type, Value}).
+encode(byte_string, Bin) ->
+    encode(string, Bin);
+encode(node_id, NodeId) ->
+    encode_node_id(NodeId);
+encode(expanded_node_id, ExpandedNodeId) ->
+    encode_expanded_node_id(ExpandedNodeId);
+encode(diagnostic_info, DiagnosticInfo) ->
+    encode_diagnostic_info(DiagnosticInfo);
+encode(qualified_name, QualifiedName) ->
+    encode_qualified_name(QualifiedName);
+encode(localized_text, LocalizedText) ->
+    encode_localized_text(LocalizedText);
+encode(Type, Value) ->
+    throw({bad_encoding_error, Type, Value}).
 
 
 %% internal

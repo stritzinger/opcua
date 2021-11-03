@@ -67,7 +67,7 @@ negotiate_limit(A, B) when is_integer(A), A > 0, is_integer(B), B > 0 -> min(A, 
 
 handle_requests(State, _Conn, []) -> {ok, State};
 handle_requests(State, Conn, [Msg | Rest]) ->
-    ?LOG_DEBUG("Handling request ~p", [Msg]),
+    ?DUMP("Received message: ~p", [Msg]),
     case handle_request(State, Conn, Msg) of
         {error, _Reason, _State2} = Error -> Error;
         {ok, State2} ->
@@ -201,7 +201,7 @@ proto_handle_data(#state{channel = Channel, proto = Proto} = State, Conn, Data) 
     end.
 
 proto_consume(#state{channel = Channel, proto = Proto} = State, Conn, Msg) ->
-    ?LOG_DEBUG("Sending message ~p", [Msg]),
+    ?DUMP("Sending message: ~p", [Msg]),
     case opcua_uacp:consume(Msg, Conn, Channel, Proto) of
         {error, Reason, Channel2, Proto2} ->
             {error, Reason, State#state{channel = Channel2, proto = Proto2}};

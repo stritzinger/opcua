@@ -119,7 +119,7 @@ handle_responses(State, _Conn, Msgs) ->
 handle_responses(State, _Conn, [], Acc) ->
     {ok, lists:append(Acc), State};
 handle_responses(State, Conn, [Msg | Rest], Acc) ->
-    ?LOG_DEBUG("Handling response ~p", [Msg]),
+    ?DUMP("Receiving message: ~p", [Msg]),
     case handle_response(State, Conn, Msg) of
         {error, _Reason, _State2} = Error -> Error;
         {ok, State2} ->
@@ -299,5 +299,6 @@ proto_consume_loop(Proto, Channel, Conn, [Msg | Rest]) ->
             proto_consume_loop(Proto2, Channel2, Conn, Rest)
     end;
 proto_consume_loop(Proto, Channel, Conn, Msg) ->
+    ?DUMP("Sending message: ~p", [Msg]),
     opcua_uacp:consume(Msg, Conn, Channel, Proto).
 

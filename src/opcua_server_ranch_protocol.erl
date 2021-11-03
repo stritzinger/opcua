@@ -131,7 +131,7 @@ loop_consume(State) ->
     end,
     receive
         {OK, S, Input} ->
-            ?LOG_DEBUG("Received: ~p", [Input]),
+            ?DUMP("Received data: ~p", [Input]),
             case opcua_server_uacp:handle_data(Input, Conn, Proto) of
                 {ok, Proto2} ->
                     loop_produce(State#state{proto = Proto2}, fun loop/1);
@@ -169,7 +169,7 @@ loop_produce(State, Cont) ->
             Cont(State#state{proto = Proto2});
         {ok, Output, Proto2} ->
             State2 = State#state{proto = Proto2},
-            ?LOG_DEBUG("Sending:  ~p", [Output]),
+            ?DUMP("Sending data:  ~p", [Output]),
             case T:send(S, Output) of
                 ok -> Cont(State2);
                 {error, Reason} ->
@@ -182,8 +182,10 @@ handle_error(State, Kind, Reason, Msg) ->
     terminate(State, {Kind, Reason, Msg}).
 
 terminate(undefined, Reason) ->
+    ?LOG_WARNING("Connection terminated: ~w", [Reason]),
     exit({shutdown, Reason});
 terminate(State, Reason) ->
+    ?LOG_WARNING("Connection terminated: ~w", [Reason]),
     State2 = terminate_produce(State),
     State3 = terminate_linger(State2),
     #state{conn = Conn, proto = Proto} = State3,

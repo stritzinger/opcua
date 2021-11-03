@@ -206,7 +206,7 @@ handle_event(timeout, produce, State, Data)
     end;
 handle_event(info, {tcp, Sock, Input}, State, #data{socket = Sock} = Data)
   when State =:= handshaking; State =:= connected; State =:= closing ->
-    ?LOG_DEBUG("Received: ~p", [Input]),
+    ?DUMP("Received Data: ~p", [Input]),
     case proto_handle_data(Data, Input) of
         {ok, Responses, Data2} ->
             keep_state_reply_multi(Data2, Responses,
@@ -340,7 +340,7 @@ conn_activate(#data{socket = Socket}) ->
     inet:setopts(Socket, [{active, 5}]).
 
 conn_send(#data{socket = Socket}, Packet) ->
-    ?LOG_DEBUG("Sending ~p", [Packet]),
+    ?DUMP("Sending Data: ~p", [Packet]),
     gen_tcp:send(Socket, Packet).
 
 conn_close(#data{socket = undefined}) -> ok;

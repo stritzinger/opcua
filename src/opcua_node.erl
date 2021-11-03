@@ -9,12 +9,43 @@
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-export([format/1]).
 -export([class/1]).
 -export([attribute/2]).
 -export([attribute_type/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+format(Builtin)
+  when is_atom(Builtin) ->
+    Builtin;
+format(V)
+  when is_integer(V) ->
+    iolist_to_binary(io_lib:format("i=~w", [V]));
+format({N, V})
+  when is_integer(N), is_integer(V) ->
+    iolist_to_binary(io_lib:format("ns=~w;i=~w", [N, V]));
+format(V)
+  when is_binary(V) ->
+    iolist_to_binary(io_lib:format("s=~s", [V]));
+format({N, V})
+  when is_integer(N), is_binary(V) ->
+    iolist_to_binary(io_lib:format("ns=~w;s=~s", [N, V]));
+format(#opcua_node_id{ns = 0, type = numeric, value = V})
+  when is_integer(V) ->
+    iolist_to_binary(io_lib:format("i=~w", [V]));
+format(#opcua_node_id{ns = N, type = numeric, value = V})
+  when is_integer(N), is_integer(V) ->
+    iolist_to_binary(io_lib:format("ns=~w;i=~w", [N, V]));
+format(#opcua_node_id{ns = 0, type = string, value = V})
+  when is_binary(V) ->
+    iolist_to_binary(io_lib:format("s=~s", [V]));
+format(#opcua_node_id{ns = N, type = string, value = V})
+  when is_integer(N), is_binary(V) ->
+    iolist_to_binary(io_lib:format("ns=~w;s=~s", [N, V]));
+format(#opcua_node{node_id = Id}) ->
+    format(Id).
 
 class(#opcua_node{node_class = #opcua_object{}})         -> object;
 class(#opcua_node{node_class = #opcua_variable{}})       -> variable;
@@ -30,13 +61,17 @@ attribute(node_id, #opcua_node{node_id = NodeId}) ->
     NodeId;
 attribute(node_class, Node) ->
     class(Node);
-attribute(browse_name, #opcua_node{node_id = ?NID_NS(NS), browse_name = V}) ->
+attribute(browse_name, #opcua_node{node_id = ?NID_NS(NS), browse_name = V})
+  when V =:= undefined; is_binary(V) ->
     #opcua_qualified_name{ns = NS, name = V};
-attribute(display_name, #opcua_node{display_name = undefined, browse_name = V}) ->
+attribute(display_name, #opcua_node{display_name = undefined, browse_name = V})
+  when V =:= undefined; is_binary(V) ->
     #opcua_localized_text{text = V};
-attribute(display_name, #opcua_node{display_name = V}) ->
+attribute(display_name, #opcua_node{display_name = V})
+  when V =:= undefined; is_binary(V) ->
     #opcua_localized_text{text = V};
-attribute(description, #opcua_node{description = V}) ->
+attribute(description, #opcua_node{description = V})
+  when V =:= undefined; is_binary(V) ->
     #opcua_localized_text{text = V};
 % attribute(write_mask, #opcua_node{write_mask = V}) -> V;
 % attribute(user_write_mask, #opcua_node{user_write_mask = V}) -> V;
@@ -46,8 +81,20 @@ attribute(description, #opcua_node{description = V}) ->
 % %% Object Node Class Attributes
 % attribute(event_notifier, #opcua_node{node_class = #opcua_object{event_notifier = V}}) -> V;
 %% Variable Node Class Attributes
-attribute(value, #opcua_node{node_class = #opcua_variable{value = V}}) -> V;
-attribute(data_type, #opcua_node{node_class = #opcua_variable{data_type = V}}) -> V;
+attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= string; T =:= byte_string; T =:= xml -> undefined;
+attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= node_id -> ?UNDEF_NODE_ID;
+attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= expanded_node_id -> ?UNDEF_EXT_NODE_ID;
+attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= localized_text -> ?UNDEF_LOCALIZED_TEXT;
+attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= qualified_name -> ?UNDEF_QUALIFIED_NAME;
+attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= extension_object -> ?UNDEF_EXT_OBJ;
+attribute(value, #opcua_node{node_class = #opcua_variable{value = V}})
+  when V =/= undefined -> V;
 % attribute(value_rank, #opcua_node{node_class = #opcua_variable{value_rank = V}}) -> V;
 % attribute(array_dimensions, #opcua_node{node_class = #opcua_variable{array_dimensions = V}}) -> V;
 % attribute(access_level, #opcua_node{node_class = #opcua_variable{access_level = V}}) -> V;

@@ -1,6 +1,13 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-define(DUMP_IO, false).
+-if(?DUMP_IO =:= true).
+-define(DUMP(FMT, ARGS), ?LOG_DEBUG(FMT, ARGS)).
+-else.
+-define(DUMP(FMT, ARGS), ok).
+-endif.
+
 -define(UNDEF_EXT_NODE_ID,
     #opcua_expanded_node_id{node_id = ?UNDEF_NODE_ID,
                             namespace_uri = undefined,
