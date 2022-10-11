@@ -60,7 +60,7 @@ create(Conn, Channel, #state{status = undefined} = State) ->
         session_name => <<"Stritzinger OPCUA Session 1">>,
         client_nonce => opcua_util:nonce(),
         client_certificate => undefined,
-        requested_session_timeout => 3600000,
+        requested_session_timeout => 3600000.0,
         max_response_message_size => 0
     },
     channel_make_request(State#state{status = creating}, Channel, Conn,
