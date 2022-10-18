@@ -42,9 +42,7 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init(_Conn, _Mode, _Policy, _Identity) ->
-    %TODO: add support for mode, policy and identity
-    Policy = #uacp_security_policy{policy_url = ?POLICY_NONE},
-    security_init(#state{}, Policy).
+    security_init(#state{}, ?POLICY_NONE).
 
 make_request(Type, NodeId, Payload, Sess, Conn, State)
   when Type =:= channel_open; Type =:= channel_close; Type =:= channel_message ->
@@ -72,6 +70,10 @@ open(Conn, State) ->
         client_nonce => undefined,
         requested_lifetime => 3600000
     },
+    % TODO: Apply Asimmetric encryption at this step
+    %
+    %
+    %
     make_request(channel_open, ?NID_CHANNEL_OPEN_REQ, Payload,
                  undefined, Conn, State).
 
@@ -92,6 +94,10 @@ handle_response(#uacp_message{type = channel_open, sender = server,
                              node_id = ?NID_CHANNEL_OPEN_RES,
                              payload = Payload}, _Conn, State) ->
     %TODO: validate that the payload match the current security
+    %
+    % THIS IS THE SECUDER MESSAGE RESPONCE
+    % -> Derivate secrets for simmetric encryption
+    %
     ?LOG_DEBUG("Secure channel opened: ~p", [Payload]),
     #{security_token := #{channel_id := ChannelId, token_id := TokenId}} = Payload,
     {open, security_token_id(State#state{channel_id = ChannelId}, TokenId)};

@@ -24,15 +24,16 @@
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(POLICY_MATCH, #uacp_security_policy{policy_url = ?POLICY_NONE}).
+% -define(POLICY_MATCH, #uacp_security_policy{policy_uri = ?POLICY_NONE}).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(state, {
     token_id :: pos_integer(),
-    peer_policy :: undefined | opcua:security_policy(),
-    self_policy :: undefined | opcua:security_policy(),
+    security_policy :: undefined | opcua:security_policy(),
+    peer_security_data :: undefined | opcua:security_data(),
+    self_security_data :: undefined | opcua:security_data(),
     peer_seq :: undefined | non_neg_integer(),
     self_seq :: undefined | non_neg_integer()
 }).
@@ -40,18 +41,18 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init_client(?POLICY_MATCH = Policy) ->
-    {ok, #state{self_policy = Policy}};
+init_client(?POLICY_NONE) ->
+    {ok, #state{self_security_data = #uacp_chunk_security{policy_uri = ?POLICY_NONE}}};
 init_client(_Policy) ->
     {error, bad_security_policy_rejected}.
 
-init_server(?POLICY_MATCH = Policy, undefined) ->
+init_server(?POLICY_NONE, undefined) ->
     TokenId = generate_token_id([0]),
-    {ok, #state{self_policy = Policy, token_id = TokenId}};
-init_server(?POLICY_MATCH = Policy,
+    {ok, #state{self_security_data = #uacp_chunk_security{policy_uri = ?POLICY_NONE}, token_id = TokenId}};
+init_server(?POLICY_NONE,
     #state{token_id = OldTokenId}) ->
     NewTokenId = generate_token_id([0, OldTokenId]),
-    {ok, #state{self_policy = Policy, token_id = NewTokenId}};
+    {ok, #state{self_security_data = #uacp_chunk_security{policy_uri = ?POLICY_NONE}, token_id = NewTokenId}};
 init_server(_Policy, _ParentState) ->
     {error, bad_security_policy_rejected}.
 
@@ -60,15 +61,15 @@ token_id(#state{token_id = TokenId}) -> TokenId.
 token_id(TokenId, #state{token_id = undefined} = State) ->
     State#state{token_id = TokenId}.
 
-unlock(#uacp_chunk{message_type = channel_open, security = ?POLICY_MATCH = Policy} = Chunk, State) ->
-    validate_peer_sequence(State#state{peer_policy = Policy}, decode_sequence_header(Chunk));
+unlock(#uacp_chunk{message_type = channel_open, security = SecData} = Chunk, #state{self_security_data = SecData} = State) ->
+    validate_peer_sequence(State#state{peer_security_data = SecData}, decode_sequence_header(Chunk));
 unlock(#uacp_chunk{security = TokenId} = Chunk, #state{token_id = TokenId} = State) ->
     validate_peer_sequence(State, decode_sequence_header(Chunk));
 unlock(_Chunk, _State) ->
     {error, bad_security_checks_failed}.
 
 setup(#uacp_chunk{state = unlocked, message_type = Type, security = undefined} = Chunk,
-           #state{self_policy = Policy, token_id = TokenId} = State) ->
+           #state{self_security_data = Policy, token_id = TokenId} = State) ->
     Security = case Type of
         channel_open -> Policy;
         channel_message -> TokenId;
@@ -78,7 +79,7 @@ setup(#uacp_chunk{state = unlocked, message_type = Type, security = undefined} =
 
 prepare(#uacp_chunk{state = unlocked, security = Security, header_size = HSize,
                     unlocked_size = USize, request_id = ReqId, body = Body} = Chunk,
-        #state{self_policy = Policy, token_id = TokenId} = State)
+        #state{self_security_data = Policy, token_id = TokenId} = State)
   when (Security =:= TokenId orelse Security =:= Policy),
        HSize =/= undefined, USize =/= undefined,
        ReqId =/= undefined, Body =/= undefined ->
@@ -92,7 +93,7 @@ prepare(#uacp_chunk{state = unlocked, security = Security, header_size = HSize,
 
 lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
                  request_id = ReqId, body = Body} = Chunk,
-     #state{self_policy = Policy, token_id = TokenId} = State)
+     #state{self_security_data = Policy, token_id = TokenId} = State)
   when (Security =:= Policy orelse Security =:= TokenId),
        SeqNum =/= undefined, ReqId =/= undefined, Body =/= undefined ->
     SeqHeader = opcua_uacp_codec:encode_sequence_header(SeqNum, ReqId),

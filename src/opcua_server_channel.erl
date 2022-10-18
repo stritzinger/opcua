@@ -82,8 +82,8 @@ unlock(#uacp_chunk{state = locked, chunk_type = final,
                    message_type = channel_open, channel_id = ChunkChannelId} = Chunk,
        _Conn, #state{channel_id = ServerChannelId, temp_sec = undefined} = State)
   when ChunkChannelId =:= 0; ChunkChannelId =:= ServerChannelId ->
-    #uacp_chunk{security = SecPolicy} = Chunk,
-    case security_init(State, SecPolicy) of
+    #uacp_chunk{security = #uacp_chunk_security{policy_uri = PolicyUri}} = Chunk,
+    case security_init(State, PolicyUri) of
         {error, _Reason} = Error -> Error;
         {ok, State2} -> security_unlock(State2, Chunk)
     end;

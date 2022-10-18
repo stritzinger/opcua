@@ -119,7 +119,7 @@ convert_name(Name) when is_binary(Name) ->
     convert_name(binary_to_list(Name));
 convert_name([FirstLetter|Rest]) ->
     list_to_atom(
-      string:lowercase([FirstLetter]) ++ 
+      string:lowercase([FirstLetter]) ++
         lists:flatten(
           lists:map(fun(Char) ->
               case string:uppercase([Char]) of
@@ -157,7 +157,7 @@ policy_type(_) -> unsupported.
 
 decode_client_message(Data) ->
     TokenId = <<1,2,3,4>>,
-    Policy = #uacp_security_policy{policy_url = ?POLICY_NONE},
+    Policy = #uacp_security_policy{policy_uri = ?POLICY_NONE},
     {ok, Sec} = opcua_security:init_client(Policy),
     Sec2 = opcua_security:token_id(TokenId, Sec),
     {[Chunk], <<>>} = opcua_uacp_codec:decode_chunks(Data),
