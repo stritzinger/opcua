@@ -5,6 +5,8 @@
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 -include_lib("public_key/include/public_key.hrl").
 
 
@@ -32,12 +34,16 @@
 -record(state, {
     table :: ets:table(),
     aliases :: ets:table(),
+    subjects :: ets:table(),
     read_only = false
 }).
 
 -record(entry, {
     id :: binary(),
     aliases :: [atom()],
+    issuer :: public_key:issuer_name(),
+    subject :: public_key:issuer_name(),
+    validity :: term(),
     thumbprint :: binary(),
     capabilities :: [opcua_keychain:capabilities()],
     cert_der :: binary(),
@@ -45,9 +51,7 @@
     key_der :: undefined | binary(),
     key_rec :: undefined | term(),
     is_trusted = false :: boolean()
-
 }).
-
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -57,19 +61,21 @@ new() ->
 new(Parent) ->
     opcua_keychain:new(Parent, ?MODULE, []).
 
-
 %%% BEHAVIOUR opcua_keychain CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init(_Args) ->
     Table = ets:new(keychain_data, [set, protected, {keypos, #entry.id}]),
     Aliases = ets:new(keychain_alias_lookup, [bag, protected, {keypos, 1}]),
-    {ok, #state{table = Table, aliases = Aliases}}.
+    Subjects = ets:new(keychain_subject_lookup, [bag, protected, {keypos, 1}]),
+    {ok, #state{table = Table, aliases = Aliases, subjects = Subjects}}.
 
 shareable(#state{read_only = true} = State) -> State;
 shareable(State) -> State#state{read_only = true}.
 
 lookup(#state{aliases = Aliases}, alias, Alias) ->
-    [I || {_, I} <- ets:lookup(Aliases, Alias)].
+    lookup_or_fail(Aliases, Alias);
+lookup(#state{subjects = Subjects}, subject, Subject) ->
+    lookup_or_fail(Subjects, Subject).
 
 info(#state{table = Table}, Ident) ->
     case ets:lookup(Table, Ident) of
@@ -131,6 +137,9 @@ add_certificate(#state{table = Table} = State, CertDer, Opts) ->
                     Entry = #entry{
                         id = Id,
                         aliases = Aliases,
+                        issuer = opcua_keychain:certificate_issuer(CertRec),
+                        subject = opcua_keychain:certificate_subject(CertRec),
+                        validity = opcua_keychain:certificate_validity(CertRec),
                         thumbprint = CertThumbprint,
                         capabilities = CertCaps,
                         cert_der = CertDer,
@@ -140,8 +149,8 @@ add_certificate(#state{table = Table} = State, CertDer, Opts) ->
                     ets:insert(Table, Entry),
                     update_lookups(State, Entry),
                     {ok, get_info(Entry), State};
-                _ ->
-                    {error, already_exists}
+                [Entry] ->
+                    {already_exists, Entry#entry.id}
             end
     catch
         error:{badmatch, _} ->
@@ -155,7 +164,7 @@ add_private(#state{table = Table} = State, KeyDer) ->
         KeyRec ->
             Id = opcua_keychain:private_key_id(KeyRec),
             case ets:lookup(Table, Id) of
-                [] -> {error, certificate_not_found};
+                [] -> {error, entry_not_found};
                 [Entry] ->
                     Entry2 = Entry#entry{key_der = KeyDer, key_rec = KeyRec},
                     ets:insert(Table, Entry2),
@@ -169,7 +178,7 @@ add_private(#state{table = Table} = State, KeyDer) ->
 trust(#state{read_only = true}, _Ident) -> {error, read_only};
 trust(#state{table = Table} = State, Ident) ->
     case ets:lookup(Table, Ident) of
-        [] -> {error, certificate_not_found};
+        [] -> {error, entry_not_found};
         [Entry] ->
             Entry2 = Entry#entry{is_trusted = true},
             ets:insert(Table, Entry2),
@@ -190,24 +199,38 @@ add_alias(#state{table = Table} = State, Ident, Alias) ->
             end
     end.
 
-
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-get_info(#entry{id = Id, aliases = Aliases, thumbprint = Thumb,
-                capabilities = Caps, key_der = undefined,
-                is_trusted = IsTrusted}) ->
-    #{id => Id, aliases => Aliases, thumbprint => Thumb, capabilities => Caps,
+lookup_or_fail(Table, Key) ->
+    case [I || {_, I} <- ets:lookup(Table, Key)] of
+        [] -> not_found;
+        Results -> Results
+    end.
+
+get_info(#entry{id = Id, aliases = Aliases, issuer = Issuer, subject = Subject,
+                validity = Validity, thumbprint = Thumb, capabilities = Caps,
+                key_der = undefined, is_trusted = IsTrusted}) ->
+    #{id => Id, aliases => Aliases, issuer => Issuer, subject => Subject,
+      validity => Validity, thumbprint => Thumb, capabilities => Caps,
       is_trusted => IsTrusted, has_private => false};
-get_info(#entry{id = Id, aliases = Aliases, thumbprint = Thumb,
-                capabilities = Caps, is_trusted = IsTrusted}) ->
-    #{id => Id, aliases => Aliases, thumbprint => Thumb, capabilities => Caps,
+get_info(#entry{id = Id, aliases = Aliases,issuer = Issuer, subject = Subject,
+                validity = Validity, thumbprint = Thumb, capabilities = Caps,
+                is_trusted = IsTrusted}) ->
+    #{id => Id, aliases => Aliases, issuer => Issuer, subject => Subject,
+      validity => Validity, thumbprint => Thumb, capabilities => Caps,
       is_trusted => IsTrusted, has_private => true}.
 
-update_lookups(#state{aliases = Table}, #entry{id = Id, aliases = Aliases}) ->
-    update_alias_lookups(Table, Aliases, Id),
+update_lookups(#state{aliases = AliasesTable, subjects = Subjects},
+               #entry{id = Id, aliases = Aliases, subject = Subject}) ->
+    update_alias_lookups(AliasesTable, Aliases, Id),
+    update_subject_lookups(Subjects, Subject, Id),
     ok.
 
 update_alias_lookups(_Table, [], _Id) -> ok;
 update_alias_lookups(Table, [Alias | Aliases], Id) ->
     ets:insert(Table, {Alias, Id}),
     update_alias_lookups(Table, Aliases, Id).
+
+
+update_subject_lookups(Subjects, Subject, Id) ->
+    ets:insert(Subjects, {Subject, Id}).

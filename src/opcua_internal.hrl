@@ -45,9 +45,25 @@
 
 -define(IS_BUILTIN_TYPE_ID(T), is_integer(T), T > 0, T =< 25).
 
+% Algorithms URIs
+-define(RSA_SHA256,<<"http://www.w3.org/2001/04/xmldsig-more#rsa-sha256">>).
+-define(RSA_OAEP,<<"http://www.w3.org/2001/04/xmlenc#rsa-oaep">>).
+-define(AES_128,<<"http://www.w3.org/2001/04/xmlenc#aes128-cbc">>).
+-define(AES_256,<<"http://www.w3.org/2001/04/xmlenc#aes256-cbc">>).
+
+% Security Policies URIs
 -define(POLICY_NONE, <<"http://opcfoundation.org/UA/SecurityPolicy#None">>).
--define(POLICY_BASIC256SHA256, <<"http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256">>).
--define(TRANSPORT_PROFILE_BINARY, <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>).
+-define(POLICY_BASIC256SHA256,
+                <<"http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256">>).
+-define(POLICY_AES128_SHA256_RSAOAEP,
+        <<"http://opcfoundation.org/UA/SecurityPolicy#Aes128_Sha256_RsaOaep">>).
+% To support RSASSA-PSS scheme we may use:
+% https://github.com/potatosalad/erlang-crypto_rsassa_pss
+-define(POLICY_AES256_SHA256_RSAPSS,
+         <<"http://opcfoundation.org/UA/SecurityPolicy#Aes256_Sha256_RsaPss">>).
+
+-define(TRANSPORT_PROFILE_BINARY,
+        <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>).
 
 -define(NID_HAS_COMPONENT,              ?NNID(47)).
 -define(NID_HAS_PROPERTY,               ?NNID(46)).
@@ -83,11 +99,10 @@
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--record(opcua_endpoint, {
+-record(opcua_endpoint_url, {
     url                         :: binary(),
     host                        :: inet:ip4_address() | inet:hostname(),
-    port                        :: inet:port_number(),
-    cert                        :: undefined | binary()
+    port                        :: inet:port_number()
 }).
 
 %-- Codec Records --------------------------------------------------------------
@@ -177,24 +192,37 @@
 %         - opcua_security:lock/2
 %     - opcua_protocole_codec:encode_chunk/1
 
+-record(uacp_symmetric_keys, {
+    local,
+    peer
+}).
+
+-record(uacp_keyset, {
+    signing, % key
+    encryption, % key
+    iv % initialization vector
+}).
+
 -record(uacp_security_policy, {
-    policy_uri                      :: binary(),
-    symmetric_signature_algorithm   :: undefined | atom(),
-    symmetric_encryption_algorithm  :: undefined | atom(),
-    asymmetric_signature_algorithm  :: undefined | atom(),
-    asymmetric_encryption_algorithm :: undefined | atom(),
-    min_asymmetric_keyLength        :: undefined | non_neg_integer(),
-    max_asymmetric_keyLength        :: undefined | non_neg_integer(),
-    key_derivation_algorithm        :: undefined | atom(),
-    derived_signature_keyLength     :: undefined | non_neg_integer(),
-    certificate_signature_algorithm :: undefined | atom(),
-    secureChannelNonceLength        :: undefined | non_neg_integer()
+    policy_uri                          :: binary(),
+    symmetric_signature_algorithm       :: undefined | atom(),
+    symmetric_encryption_algorithm      :: undefined | {atom(),
+                                                        non_neg_integer(),%key bits
+                                                        non_neg_integer()},%block bytes
+    asymmetric_signature_algorithm      :: undefined | {atom(), atom()},
+    asymmetric_encryption_algorithm     :: undefined | {atom(), atom()},
+    min_asymmetric_keyLength            :: undefined | non_neg_integer(),%bits
+    max_asymmetric_keyLength            :: undefined | non_neg_integer(),%bits
+    key_derivation_algorithm            :: undefined | atom(),
+    derived_signature_keyLength         :: undefined | non_neg_integer(),%bits
+    certificate_signature_algorithm     :: undefined | binary(),
+    secureChannelNonceLength            :: undefined | non_neg_integer() %bytes
 }).
 
 -record(uacp_chunk_security, {
-    policy_uri,
-    sender_cert,
-    receiver_thumbprint
+    policy_uri                  :: binary(),
+    sender_cert                 :: undefined | binary(),
+    receiver_thumbprint         :: undefined | binary()
 }).
 
 -record(uacp_chunk, {
@@ -202,8 +230,10 @@
     % Decoded Fields
     message_type                :: opcua:message_type(),
     chunk_type                  :: opcua:chunk_type(),
-    channel_id                  :: undefined | 0 | opcua:channel_id(),
-    security                    :: undefined | #uacp_chunk_security{} | opcua:token_id(),
+    channel_id                  :: undefined | 0
+                                             | opcua:channel_id(),
+    security                    :: undefined | #uacp_chunk_security{}
+                                             | opcua:token_id(),
     % Fields decoded when unlocked
     request_id                  :: undefined | pos_integer(),
     sequence_num                :: undefined | pos_integer(),
@@ -231,7 +261,9 @@
     keychain                    :: opcua_keychain:state(),
     self_ident                  :: undefined | opcua_keychain:ident(),
     peer_ident                  :: undefined | opcua_keychain:ident(),
-    endpoint                    :: opcua:endpoint(),
+    endpoint_url                :: opcua:endpoint_url(),
     peer                        :: {inet:ip_address(), inet:port_number()},
-    sock                        :: {inet:ip_address(), inet:port_number()}
+    sock                        :: {inet:ip_address(), inet:port_number()},
+    security_mode               :: undefined | opcua:security_mode(),
+    security_policy             :: undefined | atom()
 }).

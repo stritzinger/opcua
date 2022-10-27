@@ -23,6 +23,8 @@
 -export([add_private/1]).
 -export([trust/1]).
 -export([add_alias/2]).
+-export([chain/2]).
+-export([validate/1]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -41,31 +43,37 @@ start_link(Opts) ->
 %%% KEYCHAIN FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 lookup(Method, Params) ->
-    gen_server:call(?MODULE, {lookup, Method, Params}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Method, Params}).
 
 info(Ident) ->
-    gen_server:call(?MODULE, {info, Ident}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Ident}).
 
 certificate(Ident, Format) ->
-    gen_server:call(?MODULE, {certificate, Ident, Format}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Ident, Format}).
 
 private_key(Ident, Format) ->
-    gen_server:call(?MODULE, {private_key, Ident, Format}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Ident, Format}).
 
 public_key(Ident, Format) ->
-    gen_server:call(?MODULE, {public_key, Ident, Format}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Ident, Format}).
 
 add_certificate(Data, Opts) ->
-    gen_server:call(?MODULE, {add_certificate, Data, Opts}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Data, Opts}).
 
 add_private(Data) ->
-    gen_server:call(?MODULE, {add_private, Data}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Data}).
 
 trust(Ident) ->
-    gen_server:call(?MODULE, {trust, Ident}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Ident}).
 
 add_alias(Ident, Alias) ->
-    gen_server:call(?MODULE, {add_alias, Ident, Alias}).
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Ident, Alias}).
+
+chain(Ident, Format) ->
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Ident, Format}).
+
+validate(Ident) ->
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Ident}).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -113,6 +121,10 @@ handle_call({add_alias, Ident, Alias}, _From, State) ->
         {ok, State2} -> {reply, ok, State2};
         Other -> {reply, Other, State}
     end;
+handle_call({chain, Ident, Format}, _From, State) ->
+    {reply, opcua_keychain:chain(State, Ident, Format), State};
+handle_call({validate, Ident}, _From, State) ->
+    {reply, opcua_keychain:validate(State, Ident), State};
 handle_call(Request, From, State) ->
     ?LOG_WARNING("Unexpected call to default keychain process from ~p: ~p",
                  [From, Request]),

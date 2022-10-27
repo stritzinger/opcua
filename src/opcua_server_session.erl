@@ -60,7 +60,7 @@ start_link(SessId, AuthToken) ->
     gen_statem:start_link(?MODULE, [SessId, AuthToken], []).
 
 handle_request(Conn, #uacp_message{} = Req, SessPid) ->
-    Conn2 = opcua_connection:share(Conn),
+    Conn2 = opcua_keychain:shareable(Conn),
     case gen_statem:call(SessPid, {request, Conn2, Req}) of
         {error, _Reason} = Error -> Error;
         {Tag, Resp, #uacp_connection{} = Conn3} ->
@@ -192,7 +192,7 @@ session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         client_certificate := ClientCertificate,
         client_description := ClientDescription,
         client_nonce := ClientNonce,
-        endpoint_url := EndpointURL,
+        endpoint_url := EndpointUrl,
         max_response_message_size := MaxResponseMessageSize,
         requested_session_timeout := RequestedSessionTimeout,
         session_name := SessionName
@@ -212,49 +212,25 @@ session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         requested_session_timeout = RequestedSessionTimeout,
         session_name = SessionName
     },
-    Resp = opcua_connection:response(Conn, Req, 462, #{
+    Endpoints = opcua_server_discovery:format_endopoints(
+                                opcua_security:supported_endpoints(EndpointUrl)),
+    ServerIdent = opcua_connection:self_identity(Conn),
+    ServerChain = opcua_keychain:chain(Conn, ServerIdent, der),
+    DerBlob = iolist_to_binary(ServerChain),
+    Payload = #{
         session_id => SessId,
         authentication_token => AuthToken,
         revised_session_timeout => RequestedSessionTimeout,
         server_nonce => ServerNonce,
-        server_certificate => undefined,
-        server_endpoints => [ %% Duplicated in opcua_server_discovery
-            #{
-                endpoint_url => EndpointURL,
-                server => #{
-                    application_uri => <<"urn:stritzinger:opcua:erlang:server">>,
-                    product_uri => <<"urn:stritzinger.com:opcua:erlang:server">>,
-                    application_name => <<"Stritzinger GmbH OPCUA Server">>,
-                    application_type => server,
-                    gateway_server_uri => undefined,
-                    discovery_profile_uri => undefined,
-                    discovery_urls => [
-                        <<"opc.tcp://0.0.0.0:4840">>
-                    ]
-                },
-                server_certificate => undefined,
-                security_mode => none,
-                security_policy_uri => <<"http://opcfoundation.org/UA/SecurityPolicy#None">>,
-                user_identity_tokens => [
-                    #{
-                        policy_id => <<"anonymous">>,
-                        token_type => anonymous,
-                        issued_token_type => undefined,
-                        issuer_endpoint_url => undefined,
-                        security_policy_uri => undefined
-                    }
-                ],
-                transport_profile_uri => <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>,
-                security_level => 0
-            }
-        ],
+        server_certificate => DerBlob,
+        server_endpoints => Endpoints,
         server_software_certificates => [],
-        server_signature => #{
-            algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
-            signature => undefined
-        },
+        server_signature => add_server_signature(Conn,
+                                                 ClientCertificate,
+                                                 ClientNonce),
         max_request_message_size => 65536
-    }),
+    },
+    Resp = opcua_connection:response(Conn, Req, 462, Payload),
     {{created, Resp, Conn}, Data2}.
 
 session_activate_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
@@ -262,8 +238,10 @@ session_activate_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         locale_ids := LocalIds,
         user_identity_token := IdentTokenExtObj
     } = Msg,
-    case check_identity(IdentTokenExtObj) of
-        {error, _Reason} = Error -> Error;
+    case check_identity(Conn, IdentTokenExtObj) of
+        {error, _Reason} = Error ->
+            % TODO reply with a ServiceFault instead of just crashing
+            Error;
         {ok, Ident} ->
             MonRef = opcua_connection:monitor(Conn),
             ServerNonce = opcua_util:nonce(),
@@ -292,14 +270,42 @@ session_close_command(Data, Conn, #uacp_message{payload = _Msg} = Req) ->
     Resp = opcua_connection:response(Conn, Req, 474, #{}),
     {{reply, Resp, Conn}, Data2}.
 
-check_identity(ExtObj) ->
+check_identity(Conn, ExtObj) ->
     #opcua_extension_object{type_id = NodeSpec, body = Body} = ExtObj,
     case opcua_node:id(NodeSpec) of
         #opcua_node_id{value = 319} -> %% AnonymousIdentityToken
             #{policy_id := PolicyId} = Body,
             {ok, PolicyId};
+        #opcua_node_id{value = 322} -> %% UserNameIdentityToken
+            check_username_identity(Conn, Body);
+        #opcua_node_id{value = 325} -> %% X509IdentityToken
+            {error, {not_implemented, 'X509IdentityToken'}};
+        #opcua_node_id{value = 938} -> %% IssuedIdentityToken
+            {error, {not_implemented, 'IssuedIdentityToken'}};
         _ ->
             {error, bad_user_access_denied}
+    end.
+
+check_username_identity(Conn, #{user_name := UserName} = Msg) ->
+    Users = application:get_env(opcua, users, #{}),
+    case maps:get(UserName, Users, undefined) of
+        undefined -> {error, bad_user_access_denied};
+        Password -> check_password(Conn, Password, Msg)
+    end.
+
+check_password(_Conn, Password, #{policy_id := PolicyId,
+                           password := Secret,
+                           encryption_algorithm := Algo})
+    when (Algo =:= undefined orelse Algo =:= <<"">> )
+         andalso Password =:= Secret ->
+    {ok, PolicyId};
+check_password(Conn, Password, #{policy_id := PolicyId,
+                           password := Secret,
+                           encryption_algorithm := AlgoUri}) ->
+    Algo = opcua_util:algoritm_type(AlgoUri),
+    case opcua_security:decrypt_user_password(Conn, Secret, Algo) of
+        Password -> {ok, PolicyId};
+        _P ->{error, bad_user_access_denied}
     end.
 
 
@@ -419,4 +425,15 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
                 } || Ref <- maps:get(references, CommandResult, [])]
             },
             view_browse(Data, BrowseOpts, Rest, [BrowseResult | Acc])
+    end.
+
+add_server_signature(Conn, ClientDerCert, ClientNonce) ->
+    case opcua_connection:security_mode(Conn) of
+        none ->
+            #{algorithm => undefined, signature => undefined};
+        _ ->
+            PolicyUri = opcua_connection:security_policy(Conn),
+            PrivateKey = opcua_connection:self_private_key(Conn),
+            opcua_security:session_signature(PolicyUri, PrivateKey,
+                                         ClientDerCert, ClientNonce)
     end.

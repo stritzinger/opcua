@@ -40,16 +40,21 @@
 init() ->
     case opcua_server_registry:allocate_secure_channel(self()) of
         {error, _Reason} = Error -> Error;
-        {ok, ChannelId} -> {ok, #state{channel_id = ChannelId}}
+        {ok, ChannelId} ->
+            {ok, #state{channel_id = ChannelId}}
     end.
 
 handle_request(#uacp_message{type = channel_open, sender = client,
                              node_id = ?NID_CHANNEL_OPEN_REQ,
                              payload = Payload} = Req, Conn, State) ->
-    %TODO: validate that the payload match the current security
+    %TODO: validate that the payload security settings match a valid endpoint
     ?LOG_DEBUG("Secure channel opened: ~p", [Payload]),
+    #{client_nonce := ClientNonce, security_mode := SecMode} = Payload,
     #state{channel_id = ChannelId, curr_sec = CurrSec} = State,
-    TokenId = opcua_security:token_id(CurrSec),
+    NewSec1 = opcua_security:set_mode(CurrSec, SecMode),
+    TokenId = opcua_security:token_id(NewSec1),
+    ServerNonce = opcua_security:nonce(NewSec1),
+    NewSec2 = opcua_security:derive_keys(ServerNonce, ClientNonce, NewSec1),
     Resp = opcua_connection:response(Conn, Req, ?NID_CHANNEL_OPEN_RES, #{
         server_protocol_version => 0,
         security_token => #{
@@ -58,10 +63,11 @@ handle_request(#uacp_message{type = channel_open, sender = client,
             created_at => opcua_util:date_time(),
             revised_lifetime => 3600000
         },
-        server_nonce => undefined
+        server_nonce => ServerNonce
     }),
+    Conn2 = opcua_connection:set_security_mode(Conn, SecMode),
     ?LOG_DEBUG("Open Secure channel response: ~p", [Resp]),
-    {ok, Resp, Conn, State};
+    {ok, Resp, Conn2, State#state{curr_sec = NewSec2}};
 handle_request(#uacp_message{type = channel_close, sender = client,
                              node_id = ?NID_CHANNEL_CLOSE_REQ,
                              payload = Payload} = Req, Conn, State) ->
@@ -80,13 +86,15 @@ channel_id(#state{channel_id = ChannelId}) -> ChannelId.
 
 unlock(#uacp_chunk{state = locked, chunk_type = final,
                    message_type = channel_open, channel_id = ChunkChannelId} = Chunk,
-       Conn, #state{channel_id = ServerChannelId, temp_sec = undefined} = State)
+       Conn, #state{channel_id = ServerChannelId, curr_sec = CurrSec,
+                                                  temp_sec = undefined} = State)
   when ChunkChannelId =:= 0; ChunkChannelId =:= ServerChannelId ->
-    #uacp_chunk{security = #uacp_chunk_security{policy_uri = PolicyUri}} = Chunk,
-    PolicyType = opcua_util:policy_type(PolicyUri),
-    case security_init(State, PolicyType) of
+    #uacp_chunk{security = ChunkSecurity} = Chunk,
+    case security_init(State, Conn, ChunkSecurity) of
         {error, _Reason} = Error -> Error;
-        {ok, State2} -> security_unlock(State2, Conn, Chunk)
+        {ok, Conn2, NewSec} ->
+            State2 = State#state{curr_sec = NewSec, temp_sec = CurrSec},
+            security_unlock(State2, Conn2, Chunk)
     end;
 unlock(#uacp_chunk{state = locked, channel_id = ChannelId} = Chunk,
        Conn, #state{channel_id = ChannelId} = State) ->
@@ -116,10 +124,10 @@ lock(#uacp_chunk{state = unlocked, channel_id = undefined} = Chunk, Conn,
 
 %== Security Module Abstraction Functions ======================================
 
-security_init(#state{curr_sec = CurrSec, temp_sec = undefined} = State, Policy) ->
-    case opcua_security:init_server(Policy, CurrSec) of
+security_init(#state{curr_sec = CurrSec, temp_sec = undefined}, Conn, SecurityConfig) ->
+    case opcua_security:init_server(SecurityConfig, Conn, CurrSec) of
         {error, _Reason} = Error -> Error;
-        {ok, NewSec} -> {ok, State#state{curr_sec = NewSec, temp_sec = CurrSec}}
+        {ok, Conn2, NewSec} -> {ok, Conn2, NewSec}
     end.
 
 security_unlock(#state{curr_sec = CurrSec, temp_sec = undefined} = State, Conn, Chunk) ->

@@ -14,6 +14,9 @@
 %% API Functions
 -export([handle_request/2]).
 
+% Utility functions
+-export([format_endopoints/1]).
+
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -25,38 +28,51 @@ handle_request(Conn, #uacp_message{node_id = #opcua_node_id{value = 426}} = Req)
     }} = Req,
     %TODO: Maybe check the request header,
     %      validate that the EndpointUrl is correct...
+    Endpoints = format_endopoints(
+                                opcua_security:supported_endpoints(EndpointUrl)),
     Resp = opcua_connection:response(Conn, Req, 429, #{
-        endpoints => [ %% Duplicated in opcua_server_session
-            #{
-                endpoint_url => EndpointUrl,
-                server => #{
-                    application_uri => <<"urn:stritzinger:opcua:erlang:server">>,
-                    product_uri => <<"urn:stritzinger.com:opcua:erlang:server">>,
-                    application_name => <<"Stritzinger GmbH OPCUA Server">>,
-                    application_type => server,
-                    gateway_server_uri => undefined,
-                    discovery_profile_uri => undefined,
-                    discovery_urls => [
-                        <<"opc.tcp://0.0.0.0:4840">>
-                    ]
-                },
-                server_certificate => undefined,
-                security_mode => none,
-                security_policy_uri => <<"http://opcfoundation.org/UA/SecurityPolicy#None">>,
-                user_identity_tokens => [
-                    #{
-                        policy_id => <<"anonymous">>,
-                        token_type => anonymous,
-                        issued_token_type => undefined,
-                        issuer_endpoint_url => undefined,
-                        security_policy_uri => undefined
-                    }
-                ],
-                transport_profile_uri => <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>,
-                security_level => 0
-            }
-        ]
+        endpoints => Endpoints
     }),
     {reply, Resp, Conn};
 handle_request(_Conn, _Req) ->
     {error, bad_not_implemented}.
+
+format_endopoints(EndpointSettings) ->
+    lists:map(fun endpoint_description/1, EndpointSettings).
+
+
+endpoint_description({Url, ServerCert, SecurityLevel, SecurityMode, Policy, Tokens}) ->
+    #{
+        endpoint_url => Url,
+        server => #{
+            application_uri => <<"urn:stritzinger:opcua:erlang:server">>,
+            product_uri => <<"urn:stritzinger.com:opcua:erlang:server">>,
+            application_name => <<"Stritzinger GmbH OPCUA Server">>,
+            application_type => server,
+            gateway_server_uri => undefined,
+            discovery_profile_uri => undefined,
+            discovery_urls => [
+                <<"opc.tcp://0.0.0.0:4840">>
+            ]
+        },
+        server_certificate => ServerCert,
+        security_mode => SecurityMode,
+        security_policy_uri => opcua_util:policy_uri(Policy),
+        user_identity_tokens => [format_token(Type, SecurityMode, Policy)
+                                                            || Type <- Tokens],
+        transport_profile_uri => ?TRANSPORT_PROFILE_BINARY,
+        security_level => SecurityLevel
+    }.
+
+format_token(TokenType, SecurityMode, Policy) ->
+    #{
+        policy_id => list_to_binary(
+                        string:join([
+                                atom_to_list(TokenType),
+                                atom_to_list(SecurityMode),
+                                atom_to_list(Policy)], "-")),
+        token_type => TokenType,
+        issued_token_type => undefined,
+        issuer_endpoint_url => undefined,
+        security_policy_uri => opcua_util:policy_uri(Policy)
+    }.
