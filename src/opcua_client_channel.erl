@@ -18,6 +18,7 @@
 -export([init/1]).
 -export([make_request/6]).
 -export([open/2]).
+-export([get_endpoints/2]).
 -export([close/2]).
 -export([handle_response/3]).
 -export([terminate/3]).
@@ -73,8 +74,17 @@ open(Conn, State) ->
     make_request(channel_open, ?NID_CHANNEL_OPEN_REQ, Payload,
                  undefined, Conn, State).
 
+get_endpoints(Conn, State) ->
+    Payload = #{
+        endpoint_url => opcua_connection:endpoint_url(Conn),
+        locale_ids => [?TRANSPORT_PROFILE_BINARY],
+        profile_uris => [?TRANSPORT_PROFILE_BINARY]
+    },
+    make_request(channel_message, ?NID_GET_ENDPOINTS_REQ,
+                 Payload, undefined, Conn, State).
+
 close(Conn, State) ->
-        make_request(channel_open, ?NID_CHANNEL_CLOSE_REQ, #{},
+        make_request(channel_close, ?NID_CHANNEL_CLOSE_REQ, #{},
                  undefined, Conn, State).
 
 handle_response(#uacp_message{type = channel_open, sender = server,
@@ -84,6 +94,14 @@ handle_response(#uacp_message{type = channel_open, sender = server,
     ?LOG_DEBUG("Secure channel opened: ~p", [Payload]),
     #{security_token := #{channel_id := ChannelId, token_id := TokenId}} = Payload,
     {open, security_token_id(State#state{channel_id = ChannelId}, TokenId)};
+handle_response(#uacp_message{type = channel_message, sender = server,
+                             node_id = ?NID_GET_ENDPOINTS_RES,
+                             payload = Payload}, _Conn, State) ->
+    %TODO: validate that the payload match the current security
+    #{endpoints := Endpoints} = Payload,
+    ?LOG_DEBUG("Received server endpoints: ~p",
+               [[M#{server_certificate => redacted} || M <- Endpoints]]),
+    {endpoints, Endpoints, State};
 handle_response(#uacp_message{type = channel_close, sender = server,
                              node_id = ?NID_CHANNEL_CLOSE_RES,
                              payload = Payload}, _Conn, State) ->

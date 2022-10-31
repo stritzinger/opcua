@@ -13,7 +13,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API functions
--export([init/0]).
+-export([init/1]).
 -export([handshake/2]).
 -export([browse/4]).
 -export([read/4]).
@@ -25,22 +25,44 @@
 -export([terminate/3]).
 
 
+%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(DEFAULT_SECURITY_MODE, none).
+-define(DEFAULT_SECURITY_POLICY, ?POLICY_NONE).
+-define(DEFAULT_TOKEN_TYPE, anonymous).
+
+
+
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(state, {
     server_ver                      :: undefined | pos_integer(),
     channel                         :: term(),
     proto                           :: term(),
-    sess                            :: term()
+    sess                            :: term(),
+    security_mode                   :: atom(),
+    security_policy                 :: binary(),
+    token_type                      :: atom(),
+    token_opts                      :: map()
 }).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init() ->
+init(Opts) ->
+    AllOpts = maps:merge(default_options(), Opts),
     case opcua_uacp:init(client, opcua_client_channel) of
         {error, _Reason} = Error -> Error;
-        {ok, Proto} -> {ok, #state{proto = Proto}}
+        {ok, Proto} ->
+            State = #state{
+                security_mode = maps:get(mode, AllOpts),
+                security_policy = maps:get(policy, AllOpts),
+                token_type = maps:get(auth, AllOpts),
+                token_opts = maps:intersect(
+                    #{username => undefined, password => undefined}, AllOpts),
+                proto = Proto
+            },
+            {ok, State}
     end.
 
 handshake(Conn, #state{proto = Proto} = State) ->
@@ -55,45 +77,20 @@ handshake(Conn, #state{proto = Proto} = State) ->
     Request = opcua_connection:request(Conn, hello, undefined, undefined, Payload),
     proto_consume(State, Conn, Request).
 
+
 browse(NodeId, Opts, Conn, State) ->
-    case session_browse(State, Conn, NodeId, Opts) of
-        {error, _Reason, _State2} = Error -> Error;
-        {ok, Handle, Requests, State2} ->
-            case proto_consume(State2, Conn, Requests) of
-                {error, _Reason, _State3} = Error -> Error;
-                {ok, State3} -> {async, Handle, State3}
-            end
-    end.
+    maybe_consume(async, session_browse(State, Conn, NodeId, Opts), Conn).
 
 read(ReadSpecs, Opts, Conn, State) ->
-    case session_read(State, Conn, ReadSpecs, Opts) of
-        {error, _Reason, _State2} = Error -> Error;
-        {ok, Handle, Requests, State2} ->
-            case proto_consume(State2, Conn, Requests) of
-                {error, _Reason, _State3} = Error -> Error;
-                {ok, State3} -> {async, Handle, State3}
-            end
-    end.
+    maybe_consume(async, session_read(State, Conn, ReadSpecs, Opts), Conn).
 
 write(NodeId, AttribValuePairs, Opts, Conn, State) ->
-    case session_write(State, Conn, NodeId, AttribValuePairs, Opts) of
-        {error, _Reason, _State2} = Error -> Error;
-        {ok, Handle, Requests, State2} ->
-            case proto_consume(State2, Conn, Requests) of
-                {error, _Reason, _State3} = Error -> Error;
-                {ok, State3} -> {async, Handle, State3}
-            end
-    end.
+    maybe_consume(async, session_write(State, Conn, NodeId, AttribValuePairs, Opts), Conn).
 
+close(Conn, #state{sess = undefined} = State) ->
+    maybe_consume(ok, channel_close(State, Conn), Conn);
 close(Conn, State) ->
-    case session_close(State, Conn) of
-        {error, _Reason, _State2} = Error -> Error;
-        {ok, Requests, State2} ->
-            case proto_consume(State2, Conn, Requests) of
-                {error, _Reason, _State3} = Error -> Error;
-                {ok, State3} -> {ok, State3}
-            end
-    end.
+    maybe_consume(ok, session_close(State, Conn), Conn).
 
 can_produce(Conn, State) ->
     proto_can_produce(State, Conn).
@@ -112,6 +109,11 @@ terminate(Reason, Conn, State) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+default_options() ->
+    #{mode => ?DEFAULT_SECURITY_MODE,
+      policy => ?DEFAULT_SECURITY_POLICY,
+      auth => ?DEFAULT_TOKEN_TYPE}.
 
 handle_responses(State, _Conn, Msgs) ->
     handle_responses(State, _Conn, Msgs, []).
@@ -151,14 +153,27 @@ handle_response(State, Conn, #uacp_message{type = acknowledge, payload = Payload
     State4 = proto_limit(State3, max_msg_size, MaxMsgSize),
     State5 = proto_limit(State4, max_chunk_count, MaxChunkCount),
     State6 = State5#state{server_ver = ServerVersion},
-    channel_open(State6, Conn);
+    no_result(channel_open(State6, Conn));
 handle_response(#state{channel = undefined} = State, _Conn, _Response) ->
     %% Called when closed and receiving a message, not sure what we should be doing
     {ok, State};
 handle_response(State, Conn, Response) ->
     case channel_handle_response(State, Conn, Response) of
         {error, _Reason, _State2} = Error -> Error;
-        {open, State2} -> session_create(State2, Conn);
+        {open, State2} ->
+            no_result(channel_get_endpoints(State2, Conn));
+        {endpoints, Endpoints, State2} ->
+            CurrEndpoint = opcua_connection:endpoint_url(Conn),
+            case select_endpoint(State2, Endpoints) of
+                {error, Reason} ->
+                    {error, Reason, State2};
+                {ok, #{endpoint_url := CurrEndpoint} = Endpoint} ->
+                    no_result(session_create(State2, Conn, Endpoint));
+                {ok, #{endpoint_url := NewEndpointUrl}} ->
+                    EndpointSpec = opcua_util:parse_endpoint(NewEndpointUrl),
+                    opcua_connection:notify(Conn, {reconnect, EndpointSpec}),
+                    {ok, State2}
+            end;
         {closed, State2} ->
             opcua_connection:notify(Conn, closed),
             {ok, State2#state{channel = undefined}};
@@ -167,19 +182,58 @@ handle_response(State, Conn, Response) ->
                 {error, _Reason, _State3} = Error -> Error;
                 {ok, _Results, _Requests, _State3} = Result -> Result;
                 {closed, State3} ->
-                    channel_close(State3#state{sess = undefined}, Conn)
+                    no_result(channel_close(State3#state{sess = undefined}, Conn))
+            end
+    end.
+
+select_endpoint(State, Endpoints) ->
+    #state{security_mode = Mode,
+           security_policy = Policy,
+           token_type = Type} = State,
+    FilteredEndpoints =
+        [E || E = #{security_mode := M, security_policy_uri := P} <- Endpoints,
+              M =:= Mode, P =:= Policy],
+    case FilteredEndpoints of
+        [] -> {error, compatible_server_endpoint_not_found};
+        [#{user_identity_tokens := Tokens} = Endpoint | _] ->
+            %TODO: Should scan all the endpoint for compatible token type
+            %      instead of only checking the first one
+            FilteredTokens = [I || I = #{token_type := T} <- Tokens, T =:= Type],
+            case FilteredTokens of
+                [] -> {error, compatible_server_endpoint_not_found};
+                [Token | _] ->
+                    Token2 = Token#{opts => State#state.token_opts},
+                    {ok, Endpoint#{user_identity_tokens := [Token2]}}
             end
     end.
 
 
+%== Utility Functions ==========================================================
+
+maybe_consume(_Tag, {error, _Reason, _State} = Error, _Conn) -> Error;
+maybe_consume(Tag, {ok, Requests, State}, Conn) ->
+    case proto_consume(State, Conn, Requests) of
+        {error, _Reason, _State2} = Error -> Error;
+        {ok, State2} -> {Tag, State2}
+    end;
+maybe_consume(Tag, {ok, Result, Requests, State}, Conn) ->
+    case proto_consume(State, Conn, Requests) of
+        {error, _Reason, _State2} = Error -> Error;
+        {ok, State2} -> {Tag, Result, State2}
+    end.
+
+no_result({error, _Reason, _State} = Error) -> Error;
+no_result({ok, Req, State}) -> {ok, [], Req, State}.
+
+
 %== Session Module Abstraction Functions =======================================
 
-session_create(#state{channel = Channel, sess = undefined} = State, Conn) ->
-    Sess = opcua_client_session:new(),
+session_create(#state{channel = Channel, sess = undefined} = State, Conn, Endpoint) ->
+    Sess = opcua_client_session:new(Endpoint),
     case opcua_client_session:create(Conn, Channel, Sess) of
         {error, Reason} -> {error, Reason, State};
         {ok, Req, Channel2, Sess2} ->
-            {ok, [], Req, State#state{channel = Channel2, sess = Sess2}}
+            {ok, Req, State#state{channel = Channel2, sess = Sess2}}
     end.
 
 session_browse(#state{channel = Channel, sess = Sess} = State, Conn, NodeId, Opts) ->
@@ -226,20 +280,26 @@ session_handle_response(#state{channel = Channel, sess = Sess} = State, Conn, Re
 
 channel_open(#state{channel = undefined} = State, Conn) ->
     case opcua_client_channel:init(Conn) of
-        {error, Reason} -> {error, Reason, State};
+        {error, Reason} ->
+            {error, Reason, State};
         {ok, Channel} ->
             case opcua_client_channel:open(Conn, Channel) of
                 {error, _Reason} = Error -> Error;
                 {ok, Req, Channel2} ->
-                    {ok, [], Req, State#state{channel = Channel2}}
+                    {ok, Req, State#state{channel = Channel2}}
             end
     end.
 
+channel_get_endpoints(#state{channel = Channel} = State, Conn) ->
+    {ok, Req, Channel2} = opcua_client_channel:get_endpoints(Conn, Channel),
+    {ok, Req, State#state{channel = Channel2}}.
+
 channel_close(#state{channel = Channel} = State, Conn) ->
     case opcua_client_channel:close(Conn, Channel) of
-        {error, _Reason} = Error -> Error;
+        {error, Reason} ->
+            {error, Reason, State};
         {ok, Req, Channel2} ->
-            {ok, [], Req, State#state{channel = Channel2}}
+            {ok, Req, State#state{channel = Channel2}}
     end.
 
 channel_terminate(#state{channel = Channel}, Conn, Reason) ->

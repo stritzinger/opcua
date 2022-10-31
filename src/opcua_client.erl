@@ -4,6 +4,12 @@
 % Insipired by: https://gist.github.com/ferd/c86f6b407cf220812f9d893a659da3b8
 
 
+% When adding a state handler, remember to always add a timeout by calling
+% enter_timeouts or event_timeouts so the state machine keep consuming data
+% from the protocol. When adding a completly new state, remember to update
+% enter_timeouts and event_timeouts themselves to handle the new state name.
+
+
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API
@@ -39,7 +45,7 @@
     opts                        :: map(),
     socket                      :: inet:socket(),
     conn                        :: undefined | opcua:connection(),
-    proto                       :: term(),
+    proto                       :: undefined | term(),
     calls = #{}                 :: #{term() => gen_statem:from()}
 }).
 
@@ -52,10 +58,13 @@ connect(EndpointSpec) ->
 connect(EndpointSpec, Opts) ->
     Endpoint  = opcua_util:parse_endpoint(EndpointSpec),
     Pid = opcua_client_pool_sup:start_client(#{}),
-    FullOpts = prepare_connect_options(Opts),
-    case gen_statem:call(Pid, {connect, Endpoint, FullOpts}, infinity) of
+    case prepare_connect_options(Opts) of
         {error, _Reason} = Error -> Error;
-        ok -> {ok, Pid}
+        {ok, FullOpts} ->
+            case gen_statem:call(Pid, {connect, Endpoint, FullOpts}, infinity) of
+                {error, _Reason} = Error -> Error;
+                ok -> {ok, Pid}
+            end
     end.
 
 browse(Pid, NodeSpec) ->
@@ -111,10 +120,7 @@ start_link(Opts) ->
 
 init(_Opts) ->
     ?LOG_DEBUG("OPCUA client process starting", []),
-    case opcua_client_uacp:init() of
-        {error, _Reason} = Error -> Error;
-        {ok, Proto} -> {ok, disconnected, #data{proto = Proto}}
-    end.
+    {ok, disconnected, #data{}}.
 
 callback_mode() -> [handle_event_function, state_enter].
 
@@ -122,8 +128,14 @@ callback_mode() -> [handle_event_function, state_enter].
 handle_event({call, From}, {connect, Endpoint, Opts}, disconnected = State,
              #data{conn = undefined} = Data) ->
     Data2 = Data#data{opts = Opts},
-    next_state_and_reply_later({connecting, 0, Endpoint}, Data2, on_ready, From,
-                               event_timeouts(State, Data2));
+    case opcua_client_uacp:init(Opts) of
+        {error, Reason} ->
+            stop_and_reply_all(normal, Data2, {error, Reason});
+        {ok, Proto} ->
+            Data3 = Data2#data{proto = Proto},
+            next_state_and_reply_later({connecting, 0, Endpoint}, Data3,
+                                       on_ready, From, event_timeouts(State, Data2))
+    end;
 %% STATE: {connecting, N, Endpoint}
 handle_event(enter, _OldState, {connecting, N, _} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered ~p", [self(), State]),
@@ -151,6 +163,10 @@ handle_event(enter, _OldState, handshaking = State, Data) ->
         {error, Reason, Data2} ->
             stop_and_reply_all(normal, Data2, {error, Reason})
     end;
+handle_event(info, {opcua_connection, {reconnect, EndpointSpec}},
+             handshaking = State, Data) ->
+    ?LOG_INFO("Reconnecting to endpoint ~s", [EndpointSpec #opcua_endpoint.url]),
+    {next_state, {reconnecting, EndpointSpec}, Data, event_timeouts(State, Data)};
 handle_event(info, {opcua_connection, ready}, handshaking = State, Data) ->
     {next_state, connected, Data, event_timeouts(State, Data)};
 handle_event(info, {opcua_connection, _}, handshaking, Data) ->
@@ -173,6 +189,25 @@ handle_event({call, From}, {write, NodeId, AVPairs, Opts},
 handle_event({call, From}, close, connected = State, Data) ->
     next_state_and_reply_later(closing, Data, on_closed, From,
                                event_timeouts(State, Data));
+%% STATE: {reconnecting, Endpoint}
+handle_event(enter, _OldState, {reconnecting, _Endpoint} = State, Data) ->
+    ?LOG_DEBUG("Client ~p entered reconnecting", [self()]),
+    case proto_close(Data) of
+        {ok, Data2} ->
+            {keep_state, Data2, enter_timeouts(State, Data2)};
+        {error, Reason, Data2} ->
+            stop_and_reply(Reason, Data2, on_closed,
+                           {error, Reason}, {error, closed})
+    end;
+handle_event(info, {opcua_connection, closed},
+             {reconnecting, EndpointSpec} = State, Data) ->
+    reconnect(Data, State, EndpointSpec);
+handle_event(state_timeout, abort, {reconnecting, EndpointSpec} = State, Data) ->
+    reconnect(Data, State, EndpointSpec);
+handle_event(info, {tcp_closed, Sock}, {reconnecting, EndpointSpec} = State,
+             #data{socket = Sock} = Data) ->
+    %% When closing the server may close the socket at any time
+    reconnect(Data, State, EndpointSpec);
 %% STATE: closing
 handle_event(enter, _OldState, closing = State, Data) ->
     ?LOG_DEBUG("Client ~p entered closing", [self()]),
@@ -190,9 +225,8 @@ handle_event(state_timeout, abort, closing, Data) ->
 handle_event(info, {tcp_closed, Sock}, closing, #data{socket = Sock} = Data) ->
     %% When closing the server may close the socket at any time
     stop_and_reply(normal, Data, on_closed, ok, {error, closed});
-%% STATE: handshaking, connected and closing
-handle_event(timeout, produce, State, Data)
-  when State =:= handshaking; State =:= connected; State =:= closing ->
+%% STATE: handshaking, connected, reconnecting and closing
+handle_event(timeout, produce, State, Data) ->
     case proto_produce(Data) of
         {ok, Data2} ->
             {keep_state, Data2, event_timeouts(State, Data2)};
@@ -204,8 +238,7 @@ handle_event(timeout, produce, State, Data)
         {error, Reason, Data2} ->
             stop(Reason, Data2)
     end;
-handle_event(info, {tcp, Sock, Input}, State, #data{socket = Sock} = Data)
-  when State =:= handshaking; State =:= connected; State =:= closing ->
+handle_event(info, {tcp, Sock, Input}, State, #data{socket = Sock} = Data) ->
     ?DUMP("Received Data: ~p", [Input]),
     case proto_handle_data(Data, Input) of
         {ok, Responses, Data2} ->
@@ -214,19 +247,16 @@ handle_event(info, {tcp, Sock, Input}, State, #data{socket = Sock} = Data)
         {error, Reason, Data2} ->
             stop(Reason, Data2)
     end;
-handle_event(info, {tcp_passive, Sock}, State, #data{socket = Sock} = Data)
-  when State =:= handshaking; State =:= connected; State =:= closing ->
+handle_event(info, {tcp_passive, Sock}, State, #data{socket = Sock} = Data) ->
     case conn_activate(Data) of
         ok ->
             {keep_state, Data, event_timeouts(State, Data)};
         {error, Reason} ->
             stop_and_reply_all(Reason, Data, {error, socket_error})
     end;
-handle_event(info, {tcp_closed, Sock}, State, #data{socket = Sock} = Data)
-  when State =:= handshaking; State =:= connected; State =:= closing ->
+handle_event(info, {tcp_closed, Sock}, _State, #data{socket = Sock} = Data) ->
     stop_and_reply_all(normal, Data, {error, socket_closed});
-handle_event(info, {tcp_error, Sock}, State, #data{socket = Sock} = Data)
-  when State =:= handshaking; State =:= connected; State =:= closing ->
+handle_event(info, {tcp_error, Sock}, _State, #data{socket = Sock} = Data) ->
     stop_and_reply_all(tcp_error, Data, {error, socket_error});
 %% GENERIC STATE HANDLERS
 handle_event(enter, _OldState, NewState, Data) ->
@@ -250,15 +280,35 @@ terminate(Reason, State, Data) ->
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 prepare_connect_options(Opts) ->
-    maps:merge(#{
+    FullOpts = maps:merge(#{
         connect_retry => 3,
         connect_timeout => infinity
-    }, Opts).
+    }, Opts),
+    case maps:get(auth, FullOpts) of
+        anonymous -> {ok, FullOpts};
+        user_name ->
+            case {maps:is_key(username, FullOpts),
+                  maps:is_key(password, FullOpts)} of
+                {true, true} -> {ok, FullOpts};
+                _ -> {error, missing_credentials}
+            end
+    end.
 
 pack_command_result(From, State, {error, Reason, Data}) ->
     {keep_state, Data, [{reply, From, {error, Reason}} | enter_timeouts(State, Data)]};
 pack_command_result(From, State, {async, Handle, Data}) ->
     keep_state_and_reply_later(Data, Handle, From, enter_timeouts(State, Data)).
+
+reconnect(#data{opts = Opts} = Data, State, EndpointSpec) ->
+    Data2 = conn_close(Data),
+    case opcua_client_uacp:init(Opts) of
+        {error, Reason} ->
+            stop_and_reply_all(internal_error, Data2, {error, Reason});
+        {ok, Proto} ->
+            Data3 = Data2#data{proto = Proto},
+            {next_state, {connecting, 0, EndpointSpec}, Data3,
+             event_timeouts(State, Data3)}
+    end.
 
 
 %== Protocol Module Abstraction Functions ======================================
@@ -344,9 +394,10 @@ conn_send(#data{socket = Socket}, Packet) ->
     gen_tcp:send(Socket, Packet).
 
 conn_close(#data{socket = undefined}) -> ok;
-conn_close(#data{socket = Socket}) ->
+conn_close(#data{socket = Socket} = Data) ->
     ?LOG_DEBUG("Closing connection"),
-    gen_tcp:close(Socket).
+    gen_tcp:close(Socket),
+    Data#data{socket = undefined}.
 
 
 %== Reply Managment ============================================================
@@ -408,13 +459,18 @@ enter_timeouts({connecting, _, _} = State, Data) ->
     [{state_timeout, 10000, retry} | event_timeouts(State, Data)];
 enter_timeouts(handshaking = State, Data) ->
     [{state_timeout, 3000, abort} | event_timeouts(State, Data)];
+enter_timeouts({reconnecting, _} = State, Data) ->
+    [{state_timeout, 3000, abort} | event_timeouts(State, Data)];
 enter_timeouts(closing = State, Data) ->
     [{state_timeout, 4000, abort} | event_timeouts(State, Data)];
 enter_timeouts(State, Data) ->
     event_timeouts(State, Data).
 
+event_timeouts({reconnecting, _}, Data) ->
+    event_timeouts(reconnecting, Data);
 event_timeouts(State, Data)
-  when State =:= handshaking; State =:= connected; State =:= closing ->
+  when State =:= handshaking; State =:= connected;
+       State =:= reconnecting; State =:= closing ->
     #data{conn = Conn, proto = Proto} = Data,
     case opcua_client_uacp:can_produce(Conn, Proto) of
         true -> [{timeout, 0, produce}];

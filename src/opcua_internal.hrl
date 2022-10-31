@@ -46,7 +46,12 @@
 -define(IS_BUILTIN_TYPE_ID(T), is_integer(T), T > 0, T =< 25).
 
 -define(POLICY_NONE, <<"http://opcfoundation.org/UA/SecurityPolicy#None">>).
+-define(POLICY_BASIC256SHA256, <<"http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256">>).
+-define(TRANSPORT_PROFILE_BINARY, <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>).
 
+-define(NID_SERVICE_FAULT,              ?NNID(395)).
+-define(NID_GET_ENDPOINTS_REQ,          ?NNID(426)).
+-define(NID_GET_ENDPOINTS_RES,          ?NNID(429)).
 -define(NID_CHANNEL_OPEN_REQ,           ?NNID(444)).
 -define(NID_CHANNEL_OPEN_RES,           ?NNID(447)).
 -define(NID_CHANNEL_CLOSE_REQ,          ?NNID(450)).
@@ -64,6 +69,7 @@
 -define(NID_WRITE_REQ,                  ?NNID(671)).
 -define(NID_WRITE_RES,                  ?NNID(674)).
 -define(NID_ANONYMOUS_IDENTITY_TOKEN,   ?NNID(319)).
+-define(NID_USERNAME_IDENTITY_TOKEN,    ?NNID(322)).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

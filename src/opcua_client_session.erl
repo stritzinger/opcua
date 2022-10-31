@@ -6,6 +6,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 -include_lib("stdlib/include/assert.hrl").
+-include_lib("public_key/include/public_key.hrl").
 
 -include("opcua.hrl").
 -include("opcua_internal.hrl").
@@ -13,7 +14,7 @@
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--export([new/0]).
+-export([new/1]).
 -export([id/1]).
 -export([auth_token/1]).
 -export([create/3]).
@@ -24,19 +25,25 @@
 -export([handle_response/4]).
 
 
+%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(ENC_ALGO_RSA_OAEP, <<"http://www.w3.org/2001/04/xmlenc#rsa-oaep">>).
+
+
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(state, {
     status                      :: undefined | creating | activating | activated,
-    id                          :: opcua:node_id(),
-    token                       :: opcua:node_id()
+    id                          :: undefined | opcua:node_id(),
+    token                       :: undefined | opcua:node_id(),
+    endpoint                    :: map()
 }).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-new() ->
-    #state{}.
+new(Endpoint) ->
+    #state{endpoint = Endpoint}.
 
 id(undefined)       -> ?UNDEF_NODE_ID;
 id(#state{id = Id}) -> Id.
@@ -165,11 +172,15 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
         revised_session_timeout := _RevisedSessTimeout,
         server_certificate := _ServerCert,
         server_endpoints := _ServerEndpointDescription,
-        server_nonce := _ServerNonce,
+        server_nonce := ServerNonce,
         server_signature := _ServerSig,
         session_id := SessId
     } = ResPayload,
-    State2 = State#state{status = activating, id = SessId, token = AuthToken},
+    State2 = State#state{
+        status = activating,
+        id = SessId,
+        token = AuthToken
+    },
     ReqPayload = #{
         client_signature => #{
             algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
@@ -177,13 +188,7 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
         },
         client_software_certificates => [],
         locale_ids => [<<"en">>],
-        user_identity_token => #opcua_extension_object{
-            type_id = ?NID_ANONYMOUS_IDENTITY_TOKEN,
-            encoding = byte_string,
-            body = #{
-                policy_id => <<"anonymous">>
-            }
-        },
+        user_identity_token => identity_token(State2, ServerNonce),
         user_token_signature => #{
             algorithm => undefined,
             signature => undefined
@@ -196,6 +201,10 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
 handle_response(State, Channel, Conn, activating, _Handle, ?NID_ACTIVATE_SESS_RES, _Payload) ->
     opcua_connection:notify(Conn, ready),
     {ok, [], [], Channel, State#state{status = activated}};
+handle_response(_State, _Channel, _Conn, activating, Handle, ?NID_SERVICE_FAULT,
+                #{response_header := #{request_handle := Handle, service_result := Reason}}) ->
+        ?LOG_ERROR("Service fault while activating: ~s", [Reason]),
+        {error, Reason};
 handle_response(State, Channel, _Conn, activated, Handle, ?NID_BROWSE_RES, Payload) ->
     %TODO: Add support for batching and error handling
     #{results := [#{references := RefDescs}]} = Payload,
@@ -215,6 +224,59 @@ handle_response(State, Channel, _Conn, activated, _Handle, ?NID_CLOSE_SESS_RES, 
 handle_response(State, Channel, _Conn, Status, _Handle, NodeId, Payload) ->
     ?LOG_WARNING("Unexpected message while ~w: ~p ~p", [Status, NodeId, Payload]),
     {ok, [], [], Channel, State}.
+
+
+%== Utility Functions ==========================================================
+
+identity_token(#state{endpoint = #{user_identity_tokens := [
+        #{token_type := anonymous, policy_id := PolicyId}]}},
+        _ServerNonce) ->
+    #opcua_extension_object{
+        type_id = ?NID_ANONYMOUS_IDENTITY_TOKEN,
+        encoding = byte_string,
+        body = #{
+            policy_id => PolicyId
+        }
+    };
+identity_token(#state{endpoint = #{user_identity_tokens := [
+        #{token_type := user_name, policy_id := PolicyId,
+          security_policy_uri := ?POLICY_NONE, opts := Opts}]}},
+        _ServerNonce) ->
+    #opcua_extension_object{
+        type_id = ?NID_USERNAME_IDENTITY_TOKEN,
+        encoding = byte_string,
+        body = #{
+            policy_id => PolicyId,
+            user_name => maps:get(username, Opts),
+            password => maps:get(password, Opts),
+            encryption_algorithm => <<"">>
+        }
+    };
+identity_token(#state{endpoint = #{
+        security_policy_uri := ?POLICY_NONE,
+        server_certificate := ServerDerCert,
+        user_identity_tokens := [
+            #{token_type := user_name, policy_id := PolicyId,
+              security_policy_uri := ?POLICY_BASIC256SHA256,
+              opts := Opts}]}}, ServerNonce) ->
+    %TODO: we should verify the server certificate at some point
+    ServerOtpCert = public_key:pkix_decode_cert(ServerDerCert, otp),
+    PublicKey = ServerOtpCert#'OTPCertificate'.tbsCertificate#'OTPTBSCertificate'.subjectPublicKeyInfo#'OTPSubjectPublicKeyInfo'.subjectPublicKey,
+    Username = maps:get(username, Opts),
+    Password = maps:get(password, Opts),
+    CleatTextSize = byte_size(Password) + byte_size(ServerNonce),
+    ClearText = <<CleatTextSize:32/little, Password/binary, ServerNonce/binary>>,
+    Secret = public_key:encrypt_public(ClearText, PublicKey, [{rsa_padding, rsa_pkcs1_oaep_padding}]),
+    #opcua_extension_object{
+        type_id = ?NID_USERNAME_IDENTITY_TOKEN,
+        encoding = byte_string,
+        body = #{
+            policy_id => PolicyId,
+            user_name => Username,
+            password => Secret,
+            encryption_algorithm => ?ENC_ALGO_RSA_OAEP
+        }
+    }.
 
 
 %== Channel Module Abstraction Functions =======================================

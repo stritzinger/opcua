@@ -4,9 +4,21 @@
 
 === Connecting
 
+==== Anonymous Connection
+
 e.g.
 
-	`{ok, Client} = opcua_client:connect(<<"opc.tcp://172.16.48.6:4840">>).`
+	`{ok, Client} = opcua_client:connect(<<"opc.tcp://172.16.48.128:4840">>).`
+	`{ok, Client} = opcua_client:connect(<<"opc.tcp://172.16.48.128:4840">>,
+	    #{auth => anonymous}).`
+
+
+==== Connecting with Username and Password
+
+e.g.
+
+	`{ok, Client} = opcua_client:connect(<<"opc.tcp://172.16.48.128:4840">>,
+	   #{auth => user_name, username => <<"test">>, password => <<"test">>}).`
 
 
 === Browsing Nodes
