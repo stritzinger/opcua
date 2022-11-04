@@ -20,7 +20,12 @@ start_link() ->
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
+    {KeychainMod, KeychainArgs} = case application:get_env(default_keychain) of
+        {ok, {Mod, Args}} -> {Mod, Args};
+        _ -> {opcua_keychain_ets, []}
+    end,
     Childs = [
+        worker(opcua_keychain_default, [KeychainMod, KeychainArgs]),
         supervisor(opcua_address_space_sup, []),
         worker(opcua_database, [#{}]),
         % ,
