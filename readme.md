@@ -18,7 +18,7 @@ e.g.
 e.g.
 
 	`{ok, Client} = opcua_client:connect(<<"opc.tcp://172.16.48.128:4840">>,
-	   #{auth => user_name, username => <<"test">>, password => <<"test">>}).`
+	   #{auth => {user_name, <<"test">>, <<"test">>}).`
 
 
 === Browsing Nodes

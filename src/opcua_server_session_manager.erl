@@ -1,5 +1,7 @@
 -module(opcua_server_session_manager).
 
+-behaviour(gen_server).
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

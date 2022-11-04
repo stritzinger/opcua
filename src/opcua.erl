@@ -2,6 +2,16 @@
 
 -behaviour(application).
 
+%TODO: Security checks:
+%   - The ApplicationUri specified in the Server Certificate is the same as the ApplicationUri provided in the EndpointDescription.
+%   - The Server Certificate returned in CreateSession response is the same as the Certificate used to create the SecureChannel.
+%   - The EndpointDescriptions returned from the DiscoveryEndpoint are the same as the EndpointDescriptions returned in the CreateSession response.
+%   - Client and server should check time synchronization (default: max 5 min)
+%   - Verifiy all certificates against a trusted keychain
+%   - Support sending/receiving certificate chains
+%   - Verify we are enforcing the buffer size restriction correctly (Big certificate chain?)
+%   - Stongly validate the security header
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -35,6 +45,13 @@
     uint32/0,
     optional/1
 ]).
+
+%-- OPCUA Security Types -------------------------------------------------------
+
+-type security_policy_type() :: none | basic256sha256.
+
+-export_type([security_policy_type/0]).
+
 
 %-- OPCUA Types ----------------------------------------------------------------
 
@@ -217,6 +234,8 @@
 -type sequence_num() :: pos_integer().
 -type request_id() :: pos_integer().
 -type security_policy() :: #uacp_security_policy{}.
+-type security_mode() :: none | sign | sign_and_encrypt.
+-type auth_token_type() :: anonymous | user_name.
 -type chunk() :: #uacp_chunk{}.
 -type message() :: #uacp_message{}.
 -type connection() :: #uacp_connection{}.
@@ -252,6 +271,8 @@
     sequence_num/0,
     request_id/0,
     security_policy/0,
+    security_mode/0,
+    auth_token_type/0,
     chunk/0,
     message/0,
     connection/0,

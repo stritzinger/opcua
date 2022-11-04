@@ -41,6 +41,46 @@
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-type client_auth_spec() :: anonymous | {user_name, binary(), binary()} | {certificate, opcua_keychain:ident()}.
+-type endpoint_selector() :: fun((Endpoints :: [map()]) ->
+     {ok, Endpoint :: term(), TokenPolicyId :: binary(),
+          AuthMethod :: client_auth_spec()}
+   | {error, not_found}).
+
+-type client_options() :: #{
+    % The number of time the client will retry connecting. Default: 3
+    connect_retry => non_neg_integer(),
+    % The connection timeout. Default: infinty.
+    connect_timeout => infinity | non_neg_integer(),
+    % The keychain manager to use, if not specfied it uses the default one.
+    keychain => term(),
+    % If the client should lookup the server endpoints first.
+    % Default: true
+    endpoint_lookup => boolean(),
+    % The security to use for endpoint lookup, if not specified,
+    % mode and policy will be none and the identity will be the root one.
+    endpoint_lookup_security => #{
+        mode => opcua:security_mode(),
+        policy => opcua:security_policy_type(),
+        identity => undefined | opcua_keychain:ident()
+    },
+    % The endpoint selector function to use if endpoint lookup is enabled.
+    % If not specified, the first endpoint and token type that match the then
+    % required options mode and auth will be selected.
+    endpoint_selector => endpoint_selector(),
+    % The security mode to use if the endpoint_selector is not defined or
+    % the endpoint selection is not enabled. By default it uses none.
+    mode => opcua:security_mode(),
+    % The security policy to use if the endpoint_selector is not defined or
+    % the endpoint selection is not enabled. By default it uses none.
+    policy => opcua:security_policy_type(),
+    % The client identity, must be defined if the policy type is not none.
+    identity => undefined | opcua_keychain:ident(),
+    % The authentication method to use if the endpoint_selector is not defined
+    % or the endpoint selection is not enabled. By default it uses anonymous.
+    auth => client_auth_spec()
+}.
+
 -record(data, {
     opts                        :: map(),
     socket                      :: inet:socket(),
@@ -55,16 +95,15 @@
 connect(EndpointSpec) ->
     connect(EndpointSpec, #{}).
 
+-spec connect(EndpointSpec :: binary(), Opts :: client_options()) ->
+    {ok, ClientPid :: pid()} | {error, Reason :: term()}.
 connect(EndpointSpec, Opts) ->
     Endpoint  = opcua_util:parse_endpoint(EndpointSpec),
     Pid = opcua_client_pool_sup:start_client(#{}),
-    case prepare_connect_options(Opts) of
+    FullOpts = prepare_connect_options(Opts),
+    case gen_statem:call(Pid, {connect, Endpoint, FullOpts}, infinity) of
         {error, _Reason} = Error -> Error;
-        {ok, FullOpts} ->
-            case gen_statem:call(Pid, {connect, Endpoint, FullOpts}, infinity) of
-                {error, _Reason} = Error -> Error;
-                ok -> {ok, Pid}
-            end
+        ok -> {ok, Pid}
     end.
 
 browse(Pid, NodeSpec) ->
@@ -128,7 +167,8 @@ callback_mode() -> [handle_event_function, state_enter].
 handle_event({call, From}, {connect, Endpoint, Opts}, disconnected = State,
              #data{conn = undefined} = Data) ->
     Data2 = Data#data{opts = Opts},
-    case opcua_client_uacp:init(Opts) of
+    {ProtoMode, ProtoOpts} = proto_initial_mode(Data2),
+    case opcua_client_uacp:init(ProtoMode, ProtoOpts) of
         {error, Reason} ->
             stop_and_reply_all(normal, Data2, {error, Reason});
         {ok, Proto} ->
@@ -163,10 +203,10 @@ handle_event(enter, _OldState, handshaking = State, Data) ->
         {error, Reason, Data2} ->
             stop_and_reply_all(normal, Data2, {error, Reason})
     end;
-handle_event(info, {opcua_connection, {reconnect, EndpointSpec}},
+handle_event(info, {opcua_connection, {reconnect, EndpointSpec, ProtoOpts}},
              handshaking = State, Data) ->
     ?LOG_INFO("Reconnecting to endpoint ~s", [EndpointSpec #opcua_endpoint.url]),
-    {next_state, {reconnecting, EndpointSpec}, Data, event_timeouts(State, Data)};
+    {next_state, {reconnecting, EndpointSpec, ProtoOpts}, Data, event_timeouts(State, Data)};
 handle_event(info, {opcua_connection, ready}, handshaking = State, Data) ->
     {next_state, connected, Data, event_timeouts(State, Data)};
 handle_event(info, {opcua_connection, _}, handshaking, Data) ->
@@ -189,8 +229,8 @@ handle_event({call, From}, {write, NodeId, AVPairs, Opts},
 handle_event({call, From}, close, connected = State, Data) ->
     next_state_and_reply_later(closing, Data, on_closed, From,
                                event_timeouts(State, Data));
-%% STATE: {reconnecting, Endpoint}
-handle_event(enter, _OldState, {reconnecting, _Endpoint} = State, Data) ->
+%% STATE: {reconnecting, EndpointSpec, ProtoOpts}
+handle_event(enter, _OldState, {reconnecting, _EndpointSpec, _ProtoOpts} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered reconnecting", [self()]),
     case proto_close(Data) of
         {ok, Data2} ->
@@ -200,14 +240,14 @@ handle_event(enter, _OldState, {reconnecting, _Endpoint} = State, Data) ->
                            {error, Reason}, {error, closed})
     end;
 handle_event(info, {opcua_connection, closed},
-             {reconnecting, EndpointSpec} = State, Data) ->
-    reconnect(Data, State, EndpointSpec);
-handle_event(state_timeout, abort, {reconnecting, EndpointSpec} = State, Data) ->
-    reconnect(Data, State, EndpointSpec);
-handle_event(info, {tcp_closed, Sock}, {reconnecting, EndpointSpec} = State,
+             {reconnecting, EndpointSpec, ProtoOpts} = State, Data) ->
+    reconnect(Data, State, EndpointSpec, ProtoOpts);
+handle_event(state_timeout, abort, {reconnecting, EndpointSpec, ProtoOpts} = State, Data) ->
+    reconnect(Data, State, EndpointSpec, ProtoOpts);
+handle_event(info, {tcp_closed, Sock}, {reconnecting, EndpointSpec, ProtoOpts} = State,
              #data{socket = Sock} = Data) ->
     %% When closing the server may close the socket at any time
-    reconnect(Data, State, EndpointSpec);
+    reconnect(Data, State, EndpointSpec, ProtoOpts);
 %% STATE: closing
 handle_event(enter, _OldState, closing = State, Data) ->
     ?LOG_DEBUG("Client ~p entered closing", [self()]),
@@ -280,28 +320,55 @@ terminate(Reason, State, Data) ->
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 prepare_connect_options(Opts) ->
-    FullOpts = maps:merge(#{
+    EndpointLookupSec = case maps:get(endpoint_lookup_security, Opts, #{}) of
+        undefined -> #{};
+        Value -> Value
+    end,
+    Merged = maps:merge(#{
         connect_retry => 3,
-        connect_timeout => infinity
+        connect_timeout => infinity,
+        keychain => default,
+        endpoint_lookup => true,
+        endpoint_lookup_security =>
+            maps:merge(#{
+                mode => none,
+                policy => none,
+                auth => anonimous,
+                identity => maps:get(identity, Opts, undefined)
+            }, EndpointLookupSec),
+        mode => none,
+        policy => none,
+        identity => undefined,
+        auth => anonymous
     }, Opts),
-    case maps:get(auth, FullOpts) of
-        anonymous -> {ok, FullOpts};
-        user_name ->
-            case {maps:is_key(username, FullOpts),
-                  maps:is_key(password, FullOpts)} of
-                {true, true} -> {ok, FullOpts};
-                _ -> {error, missing_credentials}
-            end
+    #{mode := Mode, policy := Policy, auth := AuthSpec} = Merged,
+    DefaultSelector = fun(Endpoints) ->
+        select_endpoint(Mode, Policy, AuthSpec, Endpoints)
+    end,
+    case maps:find(endpoint_selector, Merged) of
+        error -> Merged#{endpoint_selector => DefaultSelector};
+        {ok, undefined} -> Merged#{endpoint_selector => DefaultSelector};
+        {ok, _} -> Merged
     end.
+
+proto_initial_mode(#data{opts = #{endpoint_lookup := true} = Opts}) ->
+    #{endpoint_selector := Selector, endpoint_lookup_security := SubOpts} = Opts,
+    #{mode := Mode, policy := Policy, identity := Ident} = SubOpts,
+    ProtoOpts = #{endpoint_selector => Selector, mode => Mode, policy => Policy, identity => Ident},
+    {lookup_endpoint, ProtoOpts};
+proto_initial_mode(#data{opts = #{endpoint_lookup := false} = Opts}) ->
+    #{endpoint_selector := Selector, mode := Mode, policy := Policy, identity := Ident} = Opts,
+    ProtoOpts = #{endpoint_selector => Selector, mode => Mode, policy => Policy, identity => Ident},
+    {open_session, ProtoOpts}.
 
 pack_command_result(From, State, {error, Reason, Data}) ->
     {keep_state, Data, [{reply, From, {error, Reason}} | enter_timeouts(State, Data)]};
 pack_command_result(From, State, {async, Handle, Data}) ->
     keep_state_and_reply_later(Data, Handle, From, enter_timeouts(State, Data)).
 
-reconnect(#data{opts = Opts} = Data, State, EndpointSpec) ->
+reconnect(Data, State, EndpointSpec, ProtoOpts) ->
     Data2 = conn_close(Data),
-    case opcua_client_uacp:init(Opts) of
+    case opcua_client_uacp:init(open_session, ProtoOpts) of
         {error, Reason} ->
             stop_and_reply_all(internal_error, Data2, {error, Reason});
         {ok, Proto} ->
@@ -309,6 +376,28 @@ reconnect(#data{opts = Opts} = Data, State, EndpointSpec) ->
             {next_state, {connecting, 0, EndpointSpec}, Data3,
              event_timeouts(State, Data3)}
     end.
+
+select_endpoint(Mode, Policy, AuthSpec, Endpoints) ->
+    PolicyUri = opcua_util:policy_uri(Policy),
+    AuthType = auth_type(AuthSpec),
+    FilteredEndpoints =
+        [E || E = #{security_mode := M, security_policy_uri := P} <- Endpoints,
+              M =:= Mode, P =:= PolicyUri],
+    case FilteredEndpoints of
+        [] -> {error, not_found};
+        [#{user_identity_tokens := Tokens} = Endpoint | _] ->
+            %TODO: Should scan all the endpoint for compatible token type
+            %      instead of only checking the first one
+            FilteredTokens = [I || I = #{token_type := T} <- Tokens, T =:= AuthType],
+            case FilteredTokens of
+                [] -> {error, not_found};
+                [#{policy_id := PolicyId} | _] ->
+                    {ok, Endpoint, PolicyId, AuthSpec}
+            end
+    end.
+
+auth_type(anonymous) -> anonymous;
+auth_type({user_name, _, _}) -> user_name.
 
 
 %== Protocol Module Abstraction Functions ======================================
@@ -459,14 +548,14 @@ enter_timeouts({connecting, _, _} = State, Data) ->
     [{state_timeout, 10000, retry} | event_timeouts(State, Data)];
 enter_timeouts(handshaking = State, Data) ->
     [{state_timeout, 3000, abort} | event_timeouts(State, Data)];
-enter_timeouts({reconnecting, _} = State, Data) ->
+enter_timeouts({reconnecting, _, _} = State, Data) ->
     [{state_timeout, 3000, abort} | event_timeouts(State, Data)];
 enter_timeouts(closing = State, Data) ->
     [{state_timeout, 4000, abort} | event_timeouts(State, Data)];
 enter_timeouts(State, Data) ->
     event_timeouts(State, Data).
 
-event_timeouts({reconnecting, _}, Data) ->
+event_timeouts({reconnecting, _, _}, Data) ->
     event_timeouts(reconnecting, Data);
 event_timeouts(State, Data)
   when State =:= handshaking; State =:= connected;
@@ -478,4 +567,3 @@ event_timeouts(State, Data)
     end;
 event_timeouts(_State, _Data) ->
     [].
-

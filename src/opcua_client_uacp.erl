@@ -13,7 +13,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API functions
--export([init/1]).
+-export([init/2]).
 -export([handshake/2]).
 -export([browse/4]).
 -export([read/4]).
@@ -27,39 +27,35 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(DEFAULT_SECURITY_MODE, none).
--define(DEFAULT_SECURITY_POLICY, ?POLICY_NONE).
--define(DEFAULT_TOKEN_TYPE, anonymous).
-
-
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(state, {
+    mode                            :: lookup_endpoint | open_session,
     server_ver                      :: undefined | pos_integer(),
     channel                         :: term(),
     proto                           :: term(),
     sess                            :: term(),
+    endpoint_selector               :: function(),
     security_mode                   :: atom(),
-    security_policy                 :: binary(),
-    token_type                      :: atom(),
-    token_opts                      :: map()
+    security_policy                 :: atom(),
+    identity                        :: undefined | opcua_keychain:ident()
 }).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(Opts) ->
+init(Mode, Opts) ->
     AllOpts = maps:merge(default_options(), Opts),
     case opcua_uacp:init(client, opcua_client_channel) of
         {error, _Reason} = Error -> Error;
         {ok, Proto} ->
             State = #state{
+                mode = Mode,
+                endpoint_selector = maps:get(endpoint_selector, AllOpts),
                 security_mode = maps:get(mode, AllOpts),
                 security_policy = maps:get(policy, AllOpts),
-                token_type = maps:get(auth, AllOpts),
-                token_opts = maps:intersect(
-                    #{username => undefined, password => undefined}, AllOpts),
+                identity = maps:get(identity, AllOpts),
                 proto = Proto
             },
             {ok, State}
@@ -111,9 +107,7 @@ terminate(Reason, Conn, State) ->
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 default_options() ->
-    #{mode => ?DEFAULT_SECURITY_MODE,
-      policy => ?DEFAULT_SECURITY_POLICY,
-      auth => ?DEFAULT_TOKEN_TYPE}.
+    #{mode => none, policy => none, auth => anonymous, identity => undefined}.
 
 handle_responses(State, _Conn, Msgs) ->
     handle_responses(State, _Conn, Msgs, []).
@@ -157,23 +151,28 @@ handle_response(State, Conn, #uacp_message{type = acknowledge, payload = Payload
 handle_response(#state{channel = undefined} = State, _Conn, _Response) ->
     %% Called when closed and receiving a message, not sure what we should be doing
     {ok, State};
-handle_response(State, Conn, Response) ->
+handle_response(#state{mode = lookup_endpoint} = State, Conn, Response) ->
     case channel_handle_response(State, Conn, Response) of
         {error, _Reason, _State2} = Error -> Error;
         {open, State2} ->
             no_result(channel_get_endpoints(State2, Conn));
         {endpoints, Endpoints, State2} ->
-            CurrEndpoint = opcua_connection:endpoint_url(Conn),
             case select_endpoint(State2, Endpoints) of
                 {error, Reason} ->
                     {error, Reason, State2};
-                {ok, #{endpoint_url := CurrEndpoint} = Endpoint} ->
-                    no_result(session_create(State2, Conn, Endpoint));
-                {ok, #{endpoint_url := NewEndpointUrl}} ->
-                    EndpointSpec = opcua_util:parse_endpoint(NewEndpointUrl),
-                    opcua_connection:notify(Conn, {reconnect, EndpointSpec}),
+                {ok, EndpointSpec, ProtoOpts} ->
+                    opcua_connection:notify(Conn, {reconnect, EndpointSpec, ProtoOpts}),
                     {ok, State2}
             end;
+        {closed, State2} ->
+            opcua_connection:notify(Conn, closed),
+            {ok, State2#state{channel = undefined}}
+    end;
+handle_response(#state{mode = open_session} = State, Conn, Response) ->
+    case channel_handle_response(State, Conn, Response) of
+        {error, _Reason, _State2} = Error -> Error;
+        {open, #state{endpoint_selector = Selector} = State2} ->
+            no_result(session_create(State2, Conn, Selector));
         {closed, State2} ->
             opcua_connection:notify(Conn, closed),
             {ok, State2#state{channel = undefined}};
@@ -187,24 +186,21 @@ handle_response(State, Conn, Response) ->
     end.
 
 select_endpoint(State, Endpoints) ->
-    #state{security_mode = Mode,
-           security_policy = Policy,
-           token_type = Type} = State,
-    FilteredEndpoints =
-        [E || E = #{security_mode := M, security_policy_uri := P} <- Endpoints,
-              M =:= Mode, P =:= Policy],
-    case FilteredEndpoints of
-        [] -> {error, compatible_server_endpoint_not_found};
-        [#{user_identity_tokens := Tokens} = Endpoint | _] ->
-            %TODO: Should scan all the endpoint for compatible token type
-            %      instead of only checking the first one
-            FilteredTokens = [I || I = #{token_type := T} <- Tokens, T =:= Type],
-            case FilteredTokens of
-                [] -> {error, compatible_server_endpoint_not_found};
-                [Token | _] ->
-                    Token2 = Token#{opts => State#state.token_opts},
-                    {ok, Endpoint#{user_identity_tokens := [Token2]}}
-            end
+    #state{endpoint_selector = Selector, identity = Identity} = State,
+    case Selector(Endpoints) of
+        {error, not_found} -> {error, no_compatible_server_endpoint};
+        {ok, Endpoint, _AuthPolicyId, _AuthSpec} ->
+            #{endpoint_url := EndPointUrl,
+              security_mode := Mode,
+              security_policy_uri := PolicyUri} = Endpoint,
+            EndpointSpec = opcua_util:parse_endpoint(EndPointUrl),
+            ProtoOpts = #{
+                endpoint_selector => Selector,
+                mode => Mode,
+                policy => opcua_util:policy_type(PolicyUri),
+                identity => Identity
+            },
+            {ok, EndpointSpec, ProtoOpts}
     end.
 
 
@@ -228,8 +224,8 @@ no_result({ok, Req, State}) -> {ok, [], Req, State}.
 
 %== Session Module Abstraction Functions =======================================
 
-session_create(#state{channel = Channel, sess = undefined} = State, Conn, Endpoint) ->
-    Sess = opcua_client_session:new(Endpoint),
+session_create(#state{channel = Channel, sess = undefined} = State, Conn, EndpointSelector) ->
+    Sess = opcua_client_session:new(EndpointSelector),
     case opcua_client_session:create(Conn, Channel, Sess) of
         {error, Reason} -> {error, Reason, State};
         {ok, Req, Channel2, Sess2} ->
@@ -278,8 +274,9 @@ session_handle_response(#state{channel = Channel, sess = Sess} = State, Conn, Re
 
 %== Channel Module Abstraction Functions =======================================
 
-channel_open(#state{channel = undefined} = State, Conn) ->
-    case opcua_client_channel:init(Conn) of
+channel_open(#state{channel = undefined, security_mode = Mode,
+                    security_policy = Policy, identity = Identity} = State, Conn) ->
+    case opcua_client_channel:init(Conn, Mode, Policy, Identity) of
         {error, Reason} ->
             {error, Reason, State};
         {ok, Channel} ->

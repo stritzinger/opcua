@@ -15,7 +15,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API functions
--export([init/1]).
+-export([init/4]).
 -export([make_request/6]).
 -export([open/2]).
 -export([get_endpoints/2]).
@@ -41,7 +41,8 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(_Conn) ->
+init(_Conn, _Mode, _Policy, _Identity) ->
+    %TODO: add support for mode, policy and identity
     Policy = #uacp_security_policy{policy_url = ?POLICY_NONE},
     security_init(#state{}, Policy).
 

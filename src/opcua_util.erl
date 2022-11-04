@@ -27,6 +27,8 @@
 -export([convert_name/1]).
 -export([parse_range/1]).
 -export([parse_endpoint/1]).
+-export([policy_uri/1]).
+-export([policy_type/1]).
 
 %% Debug functions
 -export([decode_client_message/1]).
@@ -142,6 +144,13 @@ parse_endpoint(Url) when is_binary(Url) ->
     Port = maps:get(port, Map, 4840),
     Host = binary_to_list(BinHost),
     #opcua_endpoint{url = Url, host = Host, port = Port}.
+
+policy_uri(none) -> ?POLICY_NONE;
+policy_uri(basic256sha256) -> ?POLICY_BASIC256SHA256.
+
+policy_type(?POLICY_NONE) -> none;
+policy_type(?POLICY_BASIC256SHA256) -> basic256sha256;
+policy_type(_) -> unsupported.
 
 
 %%% DEBUG FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
