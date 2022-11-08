@@ -1,4 +1,5 @@
 _build
+_*
 *.lock
 .rebar3
 .tool-versions

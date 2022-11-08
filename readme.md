@@ -1,5 +1,9 @@
 = OPCUA
 
+== Generate certificates
+
+To generate certificates please see `certificates/README.MD`
+
 == Client
 
 === Connecting
