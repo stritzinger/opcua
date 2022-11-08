@@ -186,20 +186,19 @@ decode_sequence_header(Data) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-decode_chunks(<<EncMsgType:3/binary,
-               EncChunkType:1/binary,
-               PacketLen:32/unsigned-little-integer,
-               Rest/binary>> = Data, Acc) ->
+decode_chunks(<<MessageHeader:8/binary, Rest/binary>> = Data, Acc) ->
+    <<EncMsgType:3/binary,
+      EncChunkType:1/binary,
+      PacketLen:32/unsigned-little-integer>> = MessageHeader,
     BodyLen = PacketLen - 8,
     case Rest of
         <<Packet:BodyLen/binary, Data2/binary>> ->
             MsgType = decode_message_type(EncMsgType),
             ChunkType = decode_chunk_type(EncChunkType),
-            <<Header:8/binary, _/binary>> = Packet,
             Chunk = #uacp_chunk{
                 message_type = MsgType,
                 chunk_type = ChunkType,
-                header = Header
+                header = MessageHeader
             },
             Chunk2 = decode_chunk(MsgType, ChunkType, Packet, Chunk),
             decode_chunks(Data2, [Chunk2 | Acc]);
@@ -215,17 +214,17 @@ decode_chunk(MsgType, ChunkType, Data, Chunk)
        MsgType =:= error, ChunkType =:= final ->
     Chunk#uacp_chunk{body = Data};
 decode_chunk(channel_open, final, Data, Chunk) ->
-    #uacp_chunk{header = Header} = Chunk,
+    #uacp_chunk{header = MessageHeader} = Chunk,
     Spec = [uint32, string, byte_string, byte_string],
     {DecFields, LockedData} = opcua_codec_binary:decode(Spec, Data),
     FullDataSize = byte_size(Data),
     LockedDataSize = byte_size(LockedData),
-    HeaderSize = iolist_size(Header),
+    MessageHeaderSize = iolist_size(MessageHeader),
     ExtraHeaderSize = FullDataSize - LockedDataSize,
     <<ExtraHeader:ExtraHeaderSize/binary, _/binary>> = Data,
-    [ChannelId, PolicyUrl, SenderCert, ReceiverThumbprint] = DecFields,
-    SecPol = #uacp_security_policy{
-        policy_url = PolicyUrl,
+    [ChannelId, PolicyUri, SenderCert, ReceiverThumbprint] = DecFields,
+    SecPol = #uacp_chunk_security{
+        policy_uri = PolicyUri,
         sender_cert = SenderCert,
         receiver_thumbprint = ReceiverThumbprint
     },
@@ -233,29 +232,29 @@ decode_chunk(channel_open, final, Data, Chunk) ->
         state = locked,
         channel_id = ChannelId,
         security = SecPol,
-        header_size = HeaderSize + ExtraHeaderSize,
+        header_size = MessageHeaderSize + ExtraHeaderSize,
         locked_size = LockedDataSize,
-        header = [Header, ExtraHeader],
+        header = [MessageHeader, ExtraHeader],
         body = LockedData
     };
 decode_chunk(MsgType, ChunkType, Data, Chunk)
   when MsgType =:= channel_close, ChunkType =:= final;
        MsgType =:= channel_message ->
-    #uacp_chunk{header = Header} = Chunk,
+    #uacp_chunk{header = MessageHeader} = Chunk,
     Spec = [uint32, uint32],
     {[ChannelId, TokenId], LockedData} = opcua_codec_binary:decode(Spec, Data),
     FullDataSize = byte_size(Data),
     LockedDataSize = byte_size(LockedData),
-    HeaderSize = iolist_size(Header),
+    MessageHeaderSize = iolist_size(MessageHeader),
     ExtraHeaderSize = FullDataSize - LockedDataSize,
     <<ExtraHeader:ExtraHeaderSize/binary, _/binary>> = Data,
     Chunk#uacp_chunk{
         state = locked,
         channel_id = ChannelId,
         security = TokenId,
-        header_size = HeaderSize + ExtraHeaderSize,
+        header_size = MessageHeaderSize + ExtraHeaderSize,
         locked_size = LockedDataSize,
-        header = [Header, ExtraHeader],
+        header = [MessageHeader, ExtraHeader],
         body = LockedData
     };
 decode_chunk(MsgType, ChunkType, Data, _Chunk) ->
@@ -266,14 +265,14 @@ decode_chunk(MsgType, ChunkType, Data, _Chunk) ->
 prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType} = Chunk)
   when State =:= unlocked, MsgType =:= channel_open, ChunkType =:= final ->
     #uacp_chunk{
-        security = #uacp_security_policy{
-            policy_url = PolicyUrl,
+        security = #uacp_chunk_security{
+            policy_uri = PolicyUri,
             sender_cert = SenderCert,
             receiver_thumbprint = ReceiverThumbprint
         },
         body = UnlockedBody
     } = Chunk,
-    HeaderSize = 8 + 4 + encoded_string_size([PolicyUrl, SenderCert, ReceiverThumbprint]),
+    HeaderSize = 8 + 4 + encoded_string_size([PolicyUri, SenderCert, ReceiverThumbprint]),
     UnlockedSize = iolist_size(UnlockedBody),
     Chunk#uacp_chunk{header_size = HeaderSize, unlocked_size = UnlockedSize};
 prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType} = Chunk)
@@ -292,8 +291,8 @@ freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Chu
   when State =:= unlocked, MsgType =:= channel_open, ChunkType =:= final, HeaderSize =/= undefined, LockedSize =/= undefined ->
     #uacp_chunk{
         channel_id = ChannelId,
-        security = #uacp_security_policy{
-            policy_url = PolicyUrl,
+        security = #uacp_chunk_security{
+            policy_uri = PolicyUri,
             sender_cert = SenderCert,
             receiver_thumbprint = ReceiverThumbprint
         }
@@ -303,7 +302,7 @@ freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Chu
     Len = LockedSize + HeaderSize,
     Header1 = <<EncMsgType:3/binary, EncChunkType:1/binary, Len:32/little-unsigned-integer>>,
     Header2Spec = [uint32, string, byte_string, byte_string],
-    Header2Data = [ChannelId, PolicyUrl, SenderCert, ReceiverThumbprint],
+    Header2Data = [ChannelId, PolicyUri, SenderCert, ReceiverThumbprint],
     {Header2, []} = opcua_codec_binary:encode(Header2Spec, Header2Data),
     ?assertEqual(Chunk#uacp_chunk.header_size, iolist_size([Header1, Header2])),
     Chunk#uacp_chunk{header = [Header1, Header2]};

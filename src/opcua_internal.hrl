@@ -168,9 +168,23 @@
 %     - opcua_protocole_codec:encode_chunk/1
 
 -record(uacp_security_policy, {
-    policy_url                  :: binary(),
-    sender_cert                 :: opcua:optional(binary()),
-    receiver_thumbprint         :: opcua:optional(binary())
+    policy_uri                      :: binary(),
+    symmetric_signature_algorithm   :: atom(),
+    symmetric_encryption_algorithm  :: atom(),
+    asymmetric_signature_algorithm  :: atom(),
+    asymmetric_encryption_algorithm :: atom(),
+    min_asymmetric_keyLength        :: non_neg_integer(),
+    max_asymmetric_keyLength        :: non_neg_integer(),
+    key_derivation_algorithm        :: atom(),
+    derived_signature_keyLength     :: non_neg_integer(),
+    certificate_signature_algorithm :: atom(),
+    secureChannelNonceLength         :: non_neg_integer()
+}).
+
+-record(uacp_chunk_security, {
+    policy_uri,
+    sender_cert,
+    receiver_thumbprint
 }).
 
 -record(uacp_chunk, {
@@ -179,7 +193,7 @@
     message_type                :: opcua:message_type(),
     chunk_type                  :: opcua:chunk_type(),
     channel_id                  :: undefined | 0 | opcua:channel_id(),
-    security                    :: undefined | #uacp_security_policy{} | opcua:token_id(),
+    security                    :: undefined | #uacp_chunk_security{} | opcua:token_id(),
     % Fields decoded when unlocked
     request_id                  :: undefined | pos_integer(),
     sequence_num                :: undefined | pos_integer(),

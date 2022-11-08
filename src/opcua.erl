@@ -236,6 +236,7 @@
 -type security_policy() :: #uacp_security_policy{}.
 -type security_mode() :: none | sign | sign_and_encrypt.
 -type auth_token_type() :: anonymous | user_name.
+-type security_data() :: #uacp_chunk_security{}.
 -type chunk() :: #uacp_chunk{}.
 -type message() :: #uacp_message{}.
 -type connection() :: #uacp_connection{}.
@@ -273,6 +274,7 @@
     security_policy/0,
     security_mode/0,
     auth_token_type/0,
+    security_data/0,
     chunk/0,
     message/0,
     connection/0,
