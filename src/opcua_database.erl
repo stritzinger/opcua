@@ -46,8 +46,7 @@ lookup_schema(NodeSpec) ->
 lookup_id(NodeSpec) ->
     case opcua_codec:node_id(NodeSpec) of
         %TODO: Are we supposed to resolve non-numeric node ids ?
-        #opcua_node_id{} = NodeId -> NodeId;
-        _ -> error(not_implemented)
+        #opcua_node_id{} = NodeId -> NodeId
     end.
 
 %% The returned node id is canonical, meaning it is always numeric.

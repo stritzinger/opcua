@@ -43,7 +43,7 @@
 
 -record(refs, {
     index   :: {opcua:node_id(), opcua:node_id(), forward | inverse},
-    targets :: opcua:node_id()
+    targets :: [opcua:node_id()] | '_' % to use as ETS spec and make dialyzer happy
 }).
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

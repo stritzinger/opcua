@@ -156,16 +156,29 @@ policy_type(_) -> unsupported.
 %%% DEBUG FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 decode_client_message(Data) ->
-    TokenId = <<1,2,3,4>>,
-    Policy = #uacp_security_policy{policy_uri = ?POLICY_NONE},
-    {ok, Sec} = opcua_security:init_client(Policy),
-    Sec2 = opcua_security:token_id(TokenId, Sec),
-    {[Chunk], <<>>} = opcua_uacp_codec:decode_chunks(Data),
-    Chunk2 = Chunk#uacp_chunk{security = TokenId},
-    {ok, Chunk3, _Sec3} = opcua_security:unlock(Chunk2, Sec2),
-    #uacp_chunk{message_type = MsgType, body = Body} = Chunk3,
-    {NodeId, Payload} = opcua_uacp_codec:decode_payload(MsgType, Body),
-    {NodeId, Payload}.
+    TokenId = 1234,
+    Conn = #uacp_connection{
+        pid = self(),
+        keychain = default,
+        endpoint = #opcua_endpoint{
+            url = <<"opc+tcp://localhost:4840">>,
+            host = "localhost",
+            port = 4840
+        },
+        peer = {{127, 0, 0, 1}, 4840},
+        sock = {{127, 0, 0, 1}, 6666}
+    },
+    case opcua_security:init_client(none, none) of
+        {error, _Reason} = Error -> Error;
+        {ok, Sec} ->
+            Sec2 = opcua_security:token_id(TokenId, Sec),
+            {[Chunk], <<>>} = opcua_uacp_codec:decode_chunks(Data),
+            Chunk2 = Chunk#uacp_chunk{security = TokenId},
+            {ok, Chunk3, _Conn2, _Sec3} = opcua_security:unlock(Chunk2, Conn, Sec2),
+            #uacp_chunk{message_type = MsgType, body = Body} = Chunk3,
+            {NodeId, Payload} = opcua_uacp_codec:decode_payload(MsgType, Body),
+            {ok, NodeId, Payload}
+    end.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

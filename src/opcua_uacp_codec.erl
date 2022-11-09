@@ -351,19 +351,23 @@ encode_chunk(#uacp_chunk{message_type = MsgType, chunk_type = ChunkType, state =
                [State, ChunkType, MsgType, Chunk]),
     throw(bad_unexpected_error).
 
+-spec decode_message_type(binary()) -> opcua:message_type().
 decode_message_type(<<"HEL">>) -> hello;
 decode_message_type(<<"ACK">>) -> acknowledge;
 decode_message_type(<<"ERR">>) -> error;
-decode_message_type(<<"RHE">>) -> reverse_hello;
+% Reverse HELLO not yet supported
+% decode_message_type(<<"RHE">>) -> reverse_hello;
 decode_message_type(<<"OPN">>) -> channel_open;
 decode_message_type(<<"CLO">>) -> channel_close;
 decode_message_type(<<"MSG">>) -> channel_message;
 decode_message_type(_) -> throw(bad_tcp_message_type_invalid).
 
+-spec encode_message_type(opcua:message_type()) -> binary().
 encode_message_type(hello)              -> <<"HEL">>;
 encode_message_type(acknowledge)        -> <<"ACK">>;
 encode_message_type(error)              -> <<"ERR">>;
-encode_message_type(reverse_hello)      -> <<"RHE">>;
+% Reverse HELLO not yet supported
+% encode_message_type(reverse_hello)      -> <<"RHE">>;
 encode_message_type(channel_open)       -> <<"OPN">>;
 encode_message_type(channel_close)      -> <<"CLO">>;
 encode_message_type(channel_message)    -> <<"MSG">>.

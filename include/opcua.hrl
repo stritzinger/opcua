@@ -105,19 +105,19 @@
 }).
 
 -record(opcua_object, {
-    event_notifier              :: byte()
+    event_notifier              :: undefined | byte()
 }).
 
 -record(opcua_variable, {
-    value                       :: opcua:variant(),
-    data_type                   :: opcua:node_id(),
-    value_rank                  :: non_neg_integer(),
+    value                       :: undefined | opcua:variant(),
+    data_type                   :: opcua:builtin_type() | opcua:node_id(),
+    value_rank                  :: undefined | non_neg_integer(),
     array_dimensions            :: opcua:optional([non_neg_integer()]),
     access_level                :: opcua:optional(byte()),
     user_access_level           :: opcua:optional(byte()),
-    minimum_sampling_interval   :: float(),
-    historizing                 :: boolean(),
-    access_level_ex             :: opcua:uint32()
+    minimum_sampling_interval   :: undefined | float(),
+    historizing                 :: undefined | boolean(),
+    access_level_ex             :: undefined | opcua:uint32()
 }).
 
 -record(opcua_method, {
@@ -136,7 +136,7 @@
 }).
 
 -record(opcua_variable_type, {
-    value                       :: opcua:variant(),
+    value                       :: undefined | opcua:variant(),
     data_type                   :: opcua:optional(opcua:node_id()),
     value_rank                  :: opcua:optional(integer()),
     array_dimensions            :: opcua:optional([non_neg_integer()]),

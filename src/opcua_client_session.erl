@@ -96,10 +96,7 @@ browse(NodeId, Opts, Conn, Channel, #state{status = activated} = State) ->
             result_mask => 16#3F
         }]
     },
-    {ok, Request, Channel2, State2} =
-        channel_make_request(State, Channel, Conn,
-                             ?NID_BROWSE_REQ, Payload),
-    {ok, opcua_connection:handle(Conn, Request), [Request], Channel2, State2}.
+    make_identified_request(State, Channel, Conn, ?NID_BROWSE_REQ, Payload).
 
 read(ReadSpecs, _Opts, Conn, Channel, #state{status = activated} = State) ->
     %TODO: Add support for options for age, timestamp and array slicing
@@ -115,10 +112,7 @@ read(ReadSpecs, _Opts, Conn, Channel, #state{status = activated} = State) ->
             }
         || {NodeId, Attribs} <- ReadSpecs, Spec <- Attribs]
     },
-    {ok, Request, Channel2, State2} =
-        channel_make_request(State, Channel, Conn,
-                             ?NID_READ_REQ, Payload),
-    {ok, opcua_connection:handle(Conn, Request), [Request], Channel2, State2}.
+    make_identified_request(State, Channel, Conn, ?NID_READ_REQ, Payload).
 
 write(NodeId, AttribValuePairs, _Opts, Conn, Channel,
       #state{status = activated} = State) ->
@@ -133,17 +127,14 @@ write(NodeId, AttribValuePairs, _Opts, Conn, Channel,
             }
         || {Spec, Val} <- AttribValuePairs]
     },
-    {ok, Request, Channel2, State2} =
-        channel_make_request(State, Channel, Conn,
-                             ?NID_WRITE_REQ, Payload),
-    {ok, opcua_connection:handle(Conn, Request), [Request], Channel2, State2}.
+    make_identified_request(State, Channel, Conn, ?NID_WRITE_REQ, Payload).
 
 close(Conn, Channel, #state{status = activated} = State) ->
     Payload = #{delete_subscriptions => true},
-    {ok, Request, Channel2, State2} =
+    {ok, Request, Conn2, Channel2, State2} =
         channel_make_request(State, Channel, Conn,
                              ?NID_CLOSE_SESS_REQ, Payload),
-    {ok, [Request], Channel2, State2}.
+    {ok, [Request], Conn2, Channel2, State2}.
 
 handle_response(#uacp_message{node_id = NodeId, payload = Payload} = Msg, Conn,
                 Channel, #state{status = Status} = State) ->
@@ -166,6 +157,14 @@ spec_range({_Attr, {From, To}})
 spec_range({Attr, Dims}) when is_list(Dims) ->
     Ranges = [spec_range({Attr, Spec}) || Spec <- Dims],
     iolist_to_binary(lists:join($,, Ranges)).
+
+% Make a request and returns its handle
+make_identified_request(State, Channel, Conn, NodeId, Payload) ->
+    {ok, Request, Conn2, Channel2, State2} =
+        channel_make_request(State, Channel, Conn,
+                             NodeId, Payload),
+    Handle = opcua_connection:handle(Conn2, Request),
+    {ok, Handle, [Request], Conn2, Channel2, State2}.
 
 handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, ResPayload) ->
     #{
@@ -200,37 +199,37 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
                 }
             },
             State4 = State3#state{status = activating},
-            {ok, Req, Channel2, State5} =
+            {ok, Req, Conn2, Channel2, State5} =
                 channel_make_request(State4, Channel, Conn,
                                      ?NID_ACTIVATE_SESS_REQ, ReqPayload),
-            {ok, [], [Req], Channel2, State5}
+            {ok, [], [Req], Conn2, Channel2, State5}
     end;
 handle_response(State, Channel, Conn, activating, _Handle, ?NID_ACTIVATE_SESS_RES, _Payload) ->
     opcua_connection:notify(Conn, ready),
-    {ok, [], [], Channel, State#state{status = activated}};
+    {ok, [], [], Conn, Channel, State#state{status = activated}};
 handle_response(_State, _Channel, _Conn, activating, Handle, ?NID_SERVICE_FAULT,
                 #{response_header := #{request_handle := Handle, service_result := Reason}}) ->
     ?LOG_ERROR("Service fault while activating session: ~s", [Reason]),
     {error, Reason};
-handle_response(State, Channel, _Conn, activated, Handle, ?NID_BROWSE_RES, Payload) ->
+handle_response(State, Channel, Conn, activated, Handle, ?NID_BROWSE_RES, Payload) ->
     %TODO: Add support for batching and error handling
     #{results := [#{references := RefDescs}]} = Payload,
-    {ok, [{Handle, {ok, RefDescs}}], [], Channel, State};
-handle_response(State, Channel, _Conn, activated, Handle, ?NID_READ_RES, Payload) ->
+    {ok, [{Handle, {ok, RefDescs}}], [], Conn, Channel, State};
+handle_response(State, Channel, Conn, activated, Handle, ?NID_READ_RES, Payload) ->
     %TODO: Add support for multi-node batching and error handling
     %TODO: Add option to allow per-attribute error instead of all-or-nothing
     #{results := Results} = Payload,
-    {ok, [{Handle, unpack_read_results(Results)}], [], Channel, State};
-handle_response(State, Channel, _Conn, activated, Handle, ?NID_WRITE_RES, Payload) ->
+    {ok, [{Handle, unpack_read_results(Results)}], [], Conn, Channel, State};
+handle_response(State, Channel, Conn, activated, Handle, ?NID_WRITE_RES, Payload) ->
     %TODO: Add support for multi-node batching and error handling
     %TODO: Add option to allow per-attribute error instead of all-or-nothing
     #{results := Results} = Payload,
-    {ok, [{Handle, {ok, Results}}], [], Channel, State};
-handle_response(State, Channel, _Conn, activated, _Handle, ?NID_CLOSE_SESS_RES, _Payload) ->
-    {closed, Channel, State};
-handle_response(State, Channel, _Conn, Status, _Handle, NodeId, Payload) ->
+    {ok, [{Handle, {ok, Results}}], [], Conn, Channel, State};
+handle_response(State, Channel, Conn, activated, _Handle, ?NID_CLOSE_SESS_RES, _Payload) ->
+    {closed, Conn, Channel, State};
+handle_response(State, Channel, Conn, Status, _Handle, NodeId, Payload) ->
     ?LOG_WARNING("Unexpected message while ~w session: ~p ~p", [Status, NodeId, Payload]),
-    {ok, [], [], Channel, State}.
+    {ok, [], [], Conn, Channel, State}.
 
 
 select_endpoint(#state{endpoint = undefined} = State, Endpoints) ->
@@ -319,7 +318,7 @@ pack_write_value(#opcua_variant{} = Var) ->
     #opcua_data_value{status = undefined, value = Var}.
 
 channel_make_request(State, Channel, Conn, NodeId, Payload) ->
-    {ok, Req, Channel2} =
+    {ok, Req, Conn2, Channel2} =
         opcua_client_channel:make_request(channel_message, NodeId,
                                           Payload, State, Conn, Channel),
-    {ok, Req, Channel2, State}.
+    {ok, Req, Conn2, Channel2, State}.

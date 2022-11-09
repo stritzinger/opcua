@@ -83,6 +83,8 @@ encode(float, Float) when is_float(Float)->
     <<Float:32/little-signed-float>>;
 encode(double, Double) when is_float(Double) ->
     <<Double:64/little-signed-float>>;
+encode(double, Int) when is_integer(Int) ->
+    <<Int:64/little-signed-float>>;
 encode(string, String) when String == undefined ->
     <<-1:32/little-signed-integer>>;
 encode(string, Atom) when is_atom(Atom) ->

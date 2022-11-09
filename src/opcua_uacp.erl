@@ -88,11 +88,11 @@ produce(Conn, Channel, #state{} = State) ->
     case queue:out(Queue) of
         {empty, Queue2} ->
             ?assertEqual(0, maps:size(Map)),
-            {ok, Channel, State#state{inflight_queue = Queue2}};
+            {ok, Conn, Channel, State#state{inflight_queue = Queue2}};
         {{value, ReqId}, Queue2} ->
             case maps:take(ReqId, Map) of
                 error ->
-                    {ok, Channel, State#state{inflight_queue = Queue2}};
+                    {ok, Conn, Channel, State#state{inflight_queue = Queue2}};
                 {Inflight, Map2} ->
                     #inflight_output{
                         message_type = MsgType,
@@ -103,22 +103,22 @@ produce(Conn, Channel, #state{} = State) ->
                                          inflight_queue = Queue2},
                     %TODO: Properly figure out the chunk overhead
                     MaxSize = limit(max_res_chunk_size, State2) - 1000,
-                    {ChunkType, DataChunk, Channel4, State4} =
+                    {ChunkType, DataChunk, Conn4, Channel4, State4} =
                         case iolist_chunk(Data, MaxSize) of
                             {C, _Size, R} when R =:= <<>>; R =:= [] ->
-                                {final, C, Channel, State2};
+                                {final, C, Conn, Channel, State2};
                             {C, _Size, R} ->
-                                {ok, Channel2, State3} =
+                                {ok, Conn2, Channel2, State3} =
                                     inflight_output_add(State2, Channel, Conn,
                                                         MsgType, ReqId, R),
-                                {intermediate, C, Channel2, State3}
+                                {intermediate, C, Conn2, Channel2, State3}
                         end,
-                    case produce_chunk(State4, Channel4, Conn,
+                    case produce_chunk(State4, Channel4, Conn4,
                                        MsgType, ChunkType, ReqId, DataChunk) of
                         {error, _Reason, _Channel5, _State5} = Error -> Error;
-                        {ok, Chunk, Channel5, State5} ->
+                        {ok, Chunk, Conn5, Channel5, State5} ->
                             Output = opcua_uacp_codec:encode_chunks(Chunk),
-                            {ok, Output, Channel5, State5}
+                            {ok, Output, Conn5, Channel5, State5}
                     end
             end
     end.
@@ -179,7 +179,7 @@ iolist_chunk(Bin, RemSize, Acc) when is_binary(Bin) ->
 peer_side(#state{side = client}) -> server;
 peer_side(#state{side = server}) -> client.
 
-produce_chunk(State, Channel, _Conn, MsgType, ChunkType, undefined, Data)
+produce_chunk(State, Channel, Conn, MsgType, ChunkType, undefined, Data)
   when MsgType =:= hello, ChunkType =:= final;
        MsgType =:= acknowledge, ChunkType =:= final;
        MsgType =:= error, ChunkType =:= final ->
@@ -187,7 +187,7 @@ produce_chunk(State, Channel, _Conn, MsgType, ChunkType, undefined, Data)
         message_type = MsgType,
         chunk_type = ChunkType,
         body = Data
-    }, Channel, State};
+    }, Conn, Channel, State};
 produce_chunk(State, Channel, Conn,
               MsgType, ChunkType, ReqId, Data)
   when MsgType =:= channel_open, ChunkType =:= final;
@@ -205,34 +205,34 @@ produce_chunk(State, Channel, Conn,
 handle_chunks(State, Channel, Conn, Chunks) ->
     handle_chunks(State, Channel, Conn, Chunks, []).
 
-handle_chunks(State, Channel, _Conn, [], Acc) ->
-    {ok, lists:reverse(Acc), Channel, State};
+handle_chunks(State, Channel, Conn, [], Acc) ->
+    {ok, lists:reverse(Acc), Conn, Channel, State};
 handle_chunks(State, Channel, Conn, [Chunk | Rest], Acc) ->
     %TODO: handle errors so non-fatal errors do not break the chunk processing
     case handle_chunk(State, Channel, Conn, Chunk) of
         {error, _Reason, _Channel2, _State2} = Error -> Error;
-        {ok, Channel2, State2} ->
-            handle_chunks(State2, Channel2, Conn, Rest, Acc);
-        {ok, Msg, Channel2, State2} ->
-            handle_chunks(State2, Channel2, Conn, Rest, [Msg | Acc])
+        {ok, Conn2, Channel2, State2} ->
+            handle_chunks(State2, Channel2, Conn2, Rest, Acc);
+        {ok, Msg, Conn2, Channel2, State2} ->
+            handle_chunks(State2, Channel2, Conn2, Rest, [Msg | Acc])
     end.
 
-handle_chunk(State, Channel, _Conn, #uacp_chunk{state = undefined} = Chunk) ->
+handle_chunk(State, Channel, Conn, #uacp_chunk{state = undefined} = Chunk) ->
     case inflight_input_update(State, Chunk) of
-        {ok, State3} -> {ok, Channel, State3};
-        {ok, Message, State3} -> {ok, Message, Channel, State3}
+        {ok, State3} -> {ok, Conn, Channel, State3};
+        {ok, Message, State3} -> {ok, Message, Conn, Channel, State3}
     end;
 handle_chunk(State, Channel, Conn, #uacp_chunk{state = locked} = Chunk) ->
     case channel_unlock(State, Channel, Conn, Chunk) of
         {error, _Reason, _Channel2, _State2} = Error -> Error;
-        {ok, Chunk2, Channel2, State2} ->
+        {ok, Chunk2, Conn2, Channel2, State2} ->
             case inflight_input_update(State2, Chunk2) of
-                {ok, State3} -> {ok, Channel2, State3};
-                {ok, Message, State3} -> {ok, Message, Channel2, State3}
+                {ok, State3} -> {ok, Conn2, Channel2, State3};
+                {ok, Message, State3} -> {ok, Message, Conn2, Channel2, State3}
             end
     end.
 
-inflight_output_add(State, Channel, _Conn, MsgType, ReqId, Data) ->
+inflight_output_add(State, Channel, Conn, MsgType, ReqId, Data) ->
     #state{inflight_outputs = ResMap, inflight_queue = ResQueue} = State,
     Inflight = #inflight_output{
         message_type = MsgType,
@@ -242,7 +242,8 @@ inflight_output_add(State, Channel, _Conn, MsgType, ReqId, Data) ->
     ?assert(not maps:is_key(ReqId, ResMap)),
     ResMap2 = maps:put(ReqId, Inflight, ResMap),
     ResQueue2 = queue:in(ReqId, ResQueue),
-    {ok, Channel, State#state{inflight_outputs = ResMap2, inflight_queue = ResQueue2}}.
+    State2 = State#state{inflight_outputs = ResMap2, inflight_queue = ResQueue2},
+    {ok, Conn, Channel, State2}.
 
 %TODO: Enforce that channel_open messages cannot be chunked.
 inflight_input_update(State, #uacp_chunk{chunk_type = aborted} = Chunk) ->
@@ -334,11 +335,11 @@ inflight_input_update(State, #uacp_chunk{chunk_type = final} = Chunk) ->
 channel_lock(#state{channel_mod = Mod} = State, Channel, Conn, Chunk) ->
     case Mod:lock(Chunk, Conn, Channel) of
         {error, Reason} -> {error, Reason, Channel, State};
-        {ok, Chunk2, Channel2} -> {ok, Chunk2, Channel2, State}
+        {ok, Chunk2, Conn2, Channel2} -> {ok, Chunk2, Conn2, Channel2, State}
     end.
 
 channel_unlock(#state{channel_mod = Mod} = State, Channel, Conn, Chunk) ->
     case Mod:unlock(Chunk, Conn, Channel) of
         {error, Reason} -> {error, Reason, Channel, State};
-        {ok, Chunk2, Channel2} -> {ok, Chunk2, Channel2, State}
+        {ok, Chunk2, Conn2, Channel2} -> {ok, Chunk2, Conn2, Channel2, State}
     end.

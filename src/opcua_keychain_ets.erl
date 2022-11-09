@@ -11,10 +11,11 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % API functions
--export([new/0]).
+-export([new/0, new/1]).
 
 % Behaviour opcua_keychain callback functions
 -export([init/1]).
+-export([shareable/1]).
 -export([info/2]).
 -export([certificate/3]).
 -export([public_key/3]).
@@ -27,7 +28,8 @@
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(state, {
-    table :: ets:table()
+    table :: ets:table(),
+    read_only = false
 }).
 
 -record(entry, {
@@ -48,11 +50,14 @@
 new() ->
     opcua_keychain:new(?MODULE, []).
 
+new(Parent) ->
+    opcua_keychain:new(Parent, ?MODULE, []).
+
 
 %%% BEHAVIOUR opcua_keychain CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init(_Args) ->
-    Table = ets:new(keychain, [set, private, {keypos, #entry.id}]),
+    Table = ets:new(keychain, [set, protected, {keypos, #entry.id}]),
     {ok, #state{table = Table}}.
 
 info(#state{table = Table}, Ident) ->
@@ -60,6 +65,9 @@ info(#state{table = Table}, Ident) ->
         [] -> not_found;
         [Entry] -> get_info(Entry)
     end.
+
+shareable(#state{read_only = true} = State) -> State;
+shareable(State) -> State#state{read_only = true}.
 
 certificate(_State, _Ident, pem) ->
     not_implemented;
@@ -88,7 +96,6 @@ public_key(State, Ident, der) ->
             public_key:der_encode('RSAPublicKey', KeyRec)
     end.
 
-
 private_key(#state{table = Table}, Ident, der) ->
     case ets:lookup(Table, Ident) of
         [] -> not_found;
@@ -102,6 +109,7 @@ private_key(#state{table = Table}, Ident, rec) ->
         [#entry{key_rec = KeyRec}] -> KeyRec
     end.
 
+add_certificate(#state{read_only = true}, _CertDer) -> {error, read_only};
 add_certificate(#state{table = Table} = State, CertDer) ->
     try public_key:pkix_decode_cert(CertDer, otp) of
         CertRec ->
@@ -118,10 +126,8 @@ add_certificate(#state{table = Table} = State, CertDer) ->
                         cert_rec = CertRec,
                         is_trusted = false
                     },
-                    case ets:insert(Table, Entry) of
-                        true -> {ok, get_info(Entry), State};
-                        {error, _Reason} = Error -> Error
-                    end;
+                    ets:insert(Table, Entry),
+                    {ok, get_info(Entry), State};
                 _ ->
                     {error, already_exists}
             end
@@ -130,6 +136,7 @@ add_certificate(#state{table = Table} = State, CertDer) ->
             {error, decoding_error}
     end.
 
+add_private(#state{read_only = true}, _KeyDer) -> {error, read_only};
 add_private(#state{table = Table} = State, KeyDer) ->
     %TODO: add support for EC keys
     try public_key:der_decode('RSAPrivateKey', KeyDer) of
@@ -139,25 +146,22 @@ add_private(#state{table = Table} = State, KeyDer) ->
                 [] -> {error, certificate_not_found};
                 [Entry] ->
                     Entry2 = Entry#entry{key_der = KeyDer, key_rec = KeyRec},
-                    case ets:insert(Table, Entry2) of
-                        true -> {ok, get_info(Entry2), State};
-                        {error, _Reason} = Error -> Error
-                    end
+                    ets:insert(Table, Entry2),
+                    {ok, get_info(Entry2), State}
             end
     catch
         error:{badmatch, _} ->
             {error, decoding_error}
     end.
 
+trust(#state{read_only = true}, _Ident) -> {error, read_only};
 trust(#state{table = Table} = State, Ident) ->
     case ets:lookup(Table, Ident) of
         [] -> {error, certificate_not_found};
         [Entry] ->
             Entry2 = Entry#entry{is_trusted = true},
-            case ets:insert(Table, Entry2) of
-                true -> {ok, State};
-                {error, _Reason} = Error -> Error
-            end
+            ets:insert(Table, Entry2),
+            {ok, State}
     end.
 
 

@@ -57,6 +57,6 @@ handle_request(Conn, #uacp_message{node_id = #opcua_node_id{value = 426}} = Req)
             }
         ]
     }),
-    {reply, Resp};
+    {reply, Resp, Conn};
 handle_request(_Conn, _Req) ->
     {error, bad_not_implemented}.

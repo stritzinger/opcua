@@ -83,13 +83,13 @@
 %-- Codec Records --------------------------------------------------------------
 
 -record(opcua_diagnostic_info, {
-    symbolic_id                 :: integer(),
-    namespace_uri               :: integer(),
-    locale                      :: integer(),
-    localized_text              :: integer(),
-    additional_info             :: binary(),
-    inner_status_code           :: integer(),
-    inner_diagnostic_info       :: term()
+    symbolic_id                 :: undefined | integer(),
+    namespace_uri               :: undefined | integer(),
+    locale                      :: undefined | integer(),
+    localized_text              :: undefined | integer(),
+    additional_info             :: undefined | binary(),
+    inner_status_code           :: undefined | integer(),
+    inner_diagnostic_info       :: undefined | term()
 }).
 
 -record(opcua_structure, {
@@ -169,16 +169,16 @@
 
 -record(uacp_security_policy, {
     policy_uri                      :: binary(),
-    symmetric_signature_algorithm   :: atom(),
-    symmetric_encryption_algorithm  :: atom(),
-    asymmetric_signature_algorithm  :: atom(),
-    asymmetric_encryption_algorithm :: atom(),
-    min_asymmetric_keyLength        :: non_neg_integer(),
-    max_asymmetric_keyLength        :: non_neg_integer(),
-    key_derivation_algorithm        :: atom(),
-    derived_signature_keyLength     :: non_neg_integer(),
-    certificate_signature_algorithm :: atom(),
-    secureChannelNonceLength         :: non_neg_integer()
+    symmetric_signature_algorithm   :: undefined | atom(),
+    symmetric_encryption_algorithm  :: undefined | atom(),
+    asymmetric_signature_algorithm  :: undefined | atom(),
+    asymmetric_encryption_algorithm :: undefined | atom(),
+    min_asymmetric_keyLength        :: undefined | non_neg_integer(),
+    max_asymmetric_keyLength        :: undefined | non_neg_integer(),
+    key_derivation_algorithm        :: undefined | atom(),
+    derived_signature_keyLength     :: undefined | non_neg_integer(),
+    certificate_signature_algorithm :: undefined | atom(),
+    secureChannelNonceLength        :: undefined | non_neg_integer()
 }).
 
 -record(uacp_chunk_security, {
@@ -210,14 +210,17 @@
     type                        :: opcua:message_type(),
     sender                      :: undefined | opcua:message_sender(),
     request_id                  :: undefined | pos_integer(),
-    node_id                     :: undefined | opcua:node_id(),
+    node_id                     :: undefined | opcua:node_spec(),
     payload                     :: undefined | term(),
     context                     :: undefined | term()
 }).
 
 -record(uacp_connection, {
     pid                         :: pid(),
-    endpoint                    :: opcus:endpoint(),
+    keychain                    :: opcua_keychain:state(),
+    self_ident                  :: undefined | opcua_keychain:ident(),
+    peer_ident                  :: undefined | opcua_keychain:ident(),
+    endpoint                    :: opcua:endpoint(),
     peer                        :: {inet:ip_address(), inet:port_number()},
     sock                        :: {inet:ip_address(), inet:port_number()}
 }).

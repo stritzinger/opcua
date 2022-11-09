@@ -1,9 +1,28 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% @doc Keychain managment abstraction module.
+%%%
+%%% Interface to all keychain backends.
+%%% The identity is defined by a binary that is the sha1 of the key modulo so
+%%% it is the same for the certificate and for the privagte key.
+%%%
+%%% TODO:
+%%%  - Implement certificate lookup functions
+%%%  - Implement certification chain retrieval
+%%%  - Implement certification chain validation
+%%%  - Optionaly use system CA certificatges
+%%%  - Support giving away a keychain to another process
+%%%
+%%% @end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -module(opcua_keychain).
 
 %%% BEHAVIOUR opcua_keychain DEFINITION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -callback init(Args) -> {ok, State} | {error, Reason}
     when Args :: term(), State :: term(), Reason :: term().
+
+-callback shareable(State) -> State
+    when State :: term().
 
 -callback info(State, Ident) -> Info | not_found
     when State :: term(), Ident :: ident(), Info :: ident_info().
@@ -23,15 +42,15 @@
 -callback add_certificate(State, Data) ->
         {ok, Info, State} | {error, Reason}
     when State :: term(), Data :: binary(), Info :: ident_info(),
-         Reason :: term().
+         Reason :: read_only | term().
 
 -callback add_private(State, Data) ->
         {ok, Info, State} | {error, Reason}
     when State :: term(), Data :: binary(), Info :: ident_info(),
-         Reason :: certificate_not_found | term().
+         Reason :: read_only | certificate_not_found | term().
 
 -callback trust(State, Ident) -> {ok, State} | {error, Reason}
-    when State :: term(), Ident :: ident(), Reason :: term().
+    when State :: term(), Ident :: ident(), Reason :: read_only | term().
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -42,6 +61,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -export([new/2, new/3]).
+-export([shareable/1]).
 -export([info/1, info/2]).
 -export([certificate/2, certificate/3]).
 -export([public_key/2, public_key/3]).
@@ -66,7 +86,7 @@
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--type state() :: term().
+-type state() :: default | term().
 -type ident() :: binary().
 -type filename() :: binary().
 -type format() :: der | rec.
@@ -75,31 +95,43 @@
 -type public_key() :: binary() | public_key:public_key().
 -type capability() :: decrypt | encrypt | sign | authenticate | ca.
 -type ident_info() :: #{
-    ident := binary(),
+    id := binary(),
     thumbprint := binary(),
     capabilities := [capability()],
     is_trusted := boolean(),
     has_private := boolean()
 }.
 
--export_type([ident/0, format/0, capability/0]).
+-export_type([state/0, ident/0, format/0, capability/0]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% @doc Creates a new keychain with given callback module.
 new(Mod, Args) ->
     new(default, Mod, Args).
 
+% @doc Creates a new keychain with given callback module and parent keychain.
 new(Parent, Mod, Args) ->
     case Mod:init(Args) of
         {ok, Sub} -> {ok, {Mod, Sub, Parent}};
         {error, _Reason} = Error -> Error
     end.
 
+% @doc Makes the keychain shareable with other processes.
+% The result must be a read-only keychain that can be passed to onther
+% processes without conflicts.
+-spec shareable(state()) -> state().
+shareable(default) -> default;
+shareable({Mod, Sub, Parent}) ->
+    {Mod, Mod:shareable(Sub), shareable(Parent)}.
+
+% @doc Returns information about an identity from the default keychain.
 -spec info(ident()) -> not_found | ident_info().
 info(Ident) ->
     opcua_keychain_default:info(Ident).
 
+% @doc Returns information about an identity from the given keychain.
 -spec info(state(), ident()) -> not_found | ident_info().
 info(undefined, _Ident) -> not_found;
 info(default, Ident) -> info(Ident);
@@ -109,10 +141,14 @@ info({Mod, Sub, Parent}, Ident) ->
         Result -> Result
     end.
 
+% @doc Returns a certificate in either DER or OTP record for an
+% identity identifier from the default keychain.
 -spec certificate(ident(), format()) -> certificate() | not_found.
 certificate(Ident, Format) ->
     opcua_keychain_default:certificate(Ident, Format).
 
+% @doc Returns a certificate in either DER or OTPCertificate record for an
+% identity identifier from the given keychain.
 -spec certificate(state(), ident(), format()) -> certificate() | not_found.
 certificate(undefined, _Ident, _Format) -> not_found;
 certificate(default, Ident, Format) ->
@@ -123,10 +159,14 @@ certificate({Mod, Sub, Parent}, Ident, Format) ->
         Result -> Result
     end.
 
+% @doc Returns a public key in either DER or OTP record for an
+% identity identifier from the default keychain.
 -spec public_key(ident(), format()) -> public_key() | not_found.
 public_key(Ident, Format) ->
     opcua_keychain_default:public_key(Ident, Format).
 
+% @doc Returns a public key in either DER or OTP record for an
+% identity identifier from the given keychain.
 -spec public_key(state(), ident(), format()) -> public_key() | not_found.
 public_key(undefined, _Ident, _Format) -> not_found;
 public_key(default, Ident, Format) ->
@@ -137,10 +177,14 @@ public_key({Mod, Sub, Parent}, Ident, Format) ->
         Result -> Result
     end.
 
+% @doc Returns a private key in either DER or OTP record for an
+% identity identifier from the default keychain.
 -spec private_key(ident(), format()) -> private_key() | not_found.
 private_key(Ident, Format) ->
     opcua_keychain_default:private_key(Ident, Format).
 
+% @doc Returns a private key in either DER or OTP record for an
+% identity identifier from the given keychain.
 -spec private_key(state(), ident(), format()) -> public_key() | not_found.
 private_key(undefined, _Ident, _Format) -> not_found;
 private_key(default, Ident, Format) ->
@@ -151,6 +195,7 @@ private_key({Mod, Sub, Parent}, Ident, Format) ->
         Result -> Result
     end.
 
+% @doc Loads certificates and keys from given PEM file into the default keychain.
 -spec load_pem(filename(), undefined | binary()) ->
     {ok, [ident_info()]} | {error, Reason :: term()}.
 load_pem(Filename, Password) ->
@@ -159,6 +204,8 @@ load_pem(Filename, Password) ->
         {ok, Data} -> add_pem(Data, Password)
     end.
 
+% @doc Loads certificates and keys from given PEM file into the given keychain.
+% Could fail if the keystore is read-only after being made shareable.
 -spec load_pem(state(), filename(), undefined | binary()) ->
     {ok, [ident_info()], state()} | {error, Reason :: term()}.
 load_pem(undefined, _Filename, _Password) -> {error, undefined_keychain};
@@ -177,6 +224,7 @@ load_pem(State, Filename, Password) ->
             end
     end.
 
+% @doc Loads a certificate from given DER file into the default keychain.
 -spec load_certificate(filename()) ->
     {ok, ident_info()} | {error, Reason :: term()}.
 load_certificate(Filename) ->
@@ -185,6 +233,8 @@ load_certificate(Filename) ->
         {ok, Data} -> add_certificate(Data)
     end.
 
+% @doc Loads a certificate from given DER file into the given keychain.
+% Could fail if the keystore is read-only after being made shareable.
 -spec load_certificate(state(), filename()) ->
     {ok, ident_info(), state()} | {error, Reason :: term()}.
 load_certificate(undefined, _Filename) -> {error, undefined_keychain};
@@ -203,6 +253,7 @@ load_certificate({Mod, Sub, Parent}, Filename) ->
             end
     end.
 
+% @doc Loads a privagte key from given DER file into the default keychain.
 -spec load_private(filename()) ->
     {ok, ident_info()} | {error, Reason :: term()}.
 load_private(Filename) ->
@@ -211,11 +262,13 @@ load_private(Filename) ->
         {ok, Data} -> add_private(Data)
     end.
 
+% @doc Loads a private key from given DER file into the given keychain.
+% Could fail if the keystore is read-only after being made shareable.
 -spec load_private(state(), filename()) ->
     {ok, ident_info(), state()} | {error, Reason :: term()}.
 load_private(undefined, _Filename) -> {error, undefined_keychain};
 load_private(default, Filename) ->
-    opcua_keychain_default:load_private(Filename);
+    load_private(Filename);
 load_private({Mod, Sub, Parent}, Filename) ->
     case file:read_file(Filename) of
         {error, _Reason} = Error -> Error;
@@ -226,6 +279,7 @@ load_private({Mod, Sub, Parent}, Filename) ->
             end
     end.
 
+% @doc Adds certificates and keys from given PEM data into the default keychain.
 -spec add_pem(binary(), undefined | binary()) ->
     {ok, [ident_info()]} | {error, Reason :: term()}.
 add_pem(Data, Password) ->
@@ -245,9 +299,11 @@ add_pem(Data, Password) ->
         Result -> Result
     end.
 
+% @doc Adds certificates and keys from given PEM data into the given keychain.
+% Could fail if the keystore is read-only after being made shareable.
 -spec add_pem(state(), binary(), undefined | binary()) ->
     {ok, [ident_info()], state()} | {error, Reason :: term()}.
-add_pem(undefined, Data, Password) -> {error, undefined_keychain};
+add_pem(undefined, _Data, _Password) -> {error, undefined_keychain};
 add_pem(default, Data, Password) ->
     case add_pem(Data, Password) of
         {ok, Infos} -> {ok, Infos, default};
@@ -262,11 +318,14 @@ add_pem({Mod, Sub, Parent}, Data, Password) ->
         Result -> Result
     end.
 
+% @doc Adds a certificate from given DER data into the default keychain.
 -spec add_certificate(binary()) ->
     {ok, ident_info()} | {error, Reason :: term()}.
 add_certificate(Data) ->
     opcua_keychain_default:add_certificate(Data).
 
+% @doc Adds a certificate from given DER data into the given keychain.
+% Could fail if the keystore is read-only after being made shareable.
 -spec add_certificate(state(), binary()) ->
     {ok, ident_info(), state()} | {error, Reason :: term()}.
 add_certificate(undefined, _Data) -> {error, undefined_keychain};
@@ -281,11 +340,14 @@ add_certificate({Mod, Sub, Parent}, Data) ->
         Result -> Result
     end.
 
+% @doc Adds a private key from given DER data into the default keychain.
 -spec add_private(binary()) ->
     {ok, ident_info()} | {error, Reason :: term()}.
 add_private(Data) ->
     opcua_keychain_default:add_private(Data).
 
+% @doc Adds a private key from given DER data into the given keychain.
+% Could fail if the keystore is read-only after being made shareable.
 -spec add_private(state(), binary()) ->
     {ok, ident_info(), state()} | {error, Reason :: term()}.
 add_private(undefined, _Data) -> {error, undefined_keychain};
@@ -300,10 +362,13 @@ add_private({Mod, Sub, Parent}, Data) ->
         Result -> Result
     end.
 
+% @doc Marks a certificate as trusted in the default keychain.
 -spec trust(ident()) -> ok | not_found.
 trust(Ident) ->
     opcua_keychain_default:trust(Ident).
 
+% @doc Marks a certificate as trusted in the given keychain.
+% Could fail if the keystore is read-only after being made shareable.
 -spec trust(state(), ident()) -> {ok, state()} | not_found.
 trust(undefined, _Ident) -> {error, undefined_keychain};
 trust(default, Ident) ->
@@ -322,36 +387,43 @@ trust({Mod, Sub, Parent}, Ident) ->
         Result -> Result
     end.
 
+% @doc Retrieves the certification chain of an identity from the default keychain.
 -spec chain(ident(), format()) -> [certificate()] | not_found.
 chain(_Ident, _Format) ->
     %TODO: use othre functions to recursively retrieve the certification chain,
-    not_implemented.
+    not_found.
 
+% @doc Retrieves the certification chain of an identity from the given keychain.
 -spec chain(state(), ident(), format()) -> [certificate()] | not_found.
 chain(_State, _Ident, _Format) ->
     %TODO: use othre functions to recursively retrieve the certification chain,
-    not_implemented.
+    not_found.
 
+% @doc Validates the certification chain for an identity in default keychain.
 -spec validate(ident()) ->
     ok | {error, Reason :: term()}.
 validate(_Ident) ->
     %TODO: implemente chain validation
     ok.
 
+% @doc Validates the certification chain for an identity in given keychain or
+% validates the given chain of certificate in either DER or record agains the
+% default keychain.
 -spec validate(state() | [certificate()], ident() | format()) ->
-    {ok, state()} | {error, Reason :: term()}.
+    ok | {error, Reason :: term()}.
 validate(Chain, _Format) when is_list(Chain) ->
     %TODO: implemente chain validation
     ok;
-validate(State, _Ident) ->
+validate(_State, _Ident) ->
     %TODO: implemente chain validation
-    {ok, State}.
+    ok.
 
+% @doc Validates a given certification chain against the given keychain.
 -spec validate(state(), [certificate()], format()) ->
-    {ok, state()} | {error, Reason :: term()}.
-validate(State, _Chain, _Format) ->
+    ok | {error, Reason :: term()}.
+validate(_State, _Chain, _Format) ->
     %TODO: implemente chain validation
-    {ok, State}.
+    ok.
 
 
 %%% HELPER FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

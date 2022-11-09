@@ -41,8 +41,8 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(_Conn, _Mode, _Policy, _Identity) ->
-    security_init(#state{}, ?POLICY_NONE).
+init(_Conn, Mode, Policy, _Identity) ->
+    security_init(#state{}, Mode, Policy).
 
 make_request(Type, NodeId, Payload, Sess, Conn, State)
   when Type =:= channel_open; Type =:= channel_close; Type =:= channel_message ->
@@ -60,7 +60,7 @@ make_request(Type, NodeId, Payload, Sess, Conn, State)
     },
     State2 = State#state{req_id = NextId + 1,  req_handle = NextHandle + 1},
     Req = opcua_connection:request(Conn, Type, NextId, NodeId, FinalPayload),
-    {ok, Req, State2}.
+    {ok, Req, Conn, State2}.
 
 open(Conn, State) ->
     Payload = #{
@@ -92,7 +92,7 @@ close(Conn, State) ->
 
 handle_response(#uacp_message{type = channel_open, sender = server,
                              node_id = ?NID_CHANNEL_OPEN_RES,
-                             payload = Payload}, _Conn, State) ->
+                             payload = Payload}, Conn, State) ->
     %TODO: validate that the payload match the current security
     %
     % THIS IS THE SECUDER MESSAGE RESPONCE
@@ -100,25 +100,25 @@ handle_response(#uacp_message{type = channel_open, sender = server,
     %
     ?LOG_DEBUG("Secure channel opened: ~p", [Payload]),
     #{security_token := #{channel_id := ChannelId, token_id := TokenId}} = Payload,
-    {open, security_token_id(State#state{channel_id = ChannelId}, TokenId)};
+    {open, Conn, security_token_id(State#state{channel_id = ChannelId}, TokenId)};
 handle_response(#uacp_message{type = channel_message, sender = server,
                              node_id = ?NID_GET_ENDPOINTS_RES,
-                             payload = Payload}, _Conn, State) ->
+                             payload = Payload}, Conn, State) ->
     %TODO: validate that the payload match the current security
     #{endpoints := Endpoints} = Payload,
     ?LOG_DEBUG("Received server endpoints: ~p",
                [[M#{server_certificate => redacted} || M <- Endpoints]]),
-    {endpoints, Endpoints, State};
+    {endpoints, Endpoints, Conn, State};
 handle_response(#uacp_message{type = channel_close, sender = server,
                              node_id = ?NID_CHANNEL_CLOSE_RES,
-                             payload = Payload}, _Conn, State) ->
+                             payload = Payload}, Conn, State) ->
     %TODO: Do some validation of the message to check it is for this channel ?
     ?LOG_DEBUG("Secure channel closed: ~p", [Payload]),
-    {closed, State};
+    {closed, Conn, State};
 handle_response(#uacp_message{type = channel_message, sender = server} = Msg,
-                _Conn, State) ->
+                Conn, State) ->
     %TODO: Do some validation of the message to check it is for this channel ?
-    {forward, Msg, State}.
+    {forward, Msg, Conn, State}.
 
 
 terminate(_Reason, _Conn, _State) ->
@@ -129,11 +129,11 @@ terminate(_Reason, _Conn, _State) ->
 
 channel_id(#state{channel_id = ChannelId}) -> ChannelId.
 
-unlock(#uacp_chunk{state = locked, message_type = channel_open} = Chunk, _Conn, State) ->
-    security_unlock(State, Chunk);
+unlock(#uacp_chunk{state = locked, message_type = channel_open} = Chunk, Conn, State) ->
+    security_unlock(State, Conn, Chunk);
 unlock(#uacp_chunk{state = locked, channel_id = ChannelId} = Chunk,
-       _Conn, #state{channel_id = ChannelId} = State) ->
-    security_unlock(State, Chunk);
+       Conn, #state{channel_id = ChannelId} = State) ->
+    security_unlock(State, Conn, Chunk);
 unlock(_Chunk, _Conn, _State) ->
     {error, bad_tcp_secure_channel_unknown}.
 
@@ -149,24 +149,26 @@ lock(#uacp_chunk{state = unlocked, channel_id = undefined} = Chunk, Conn, State)
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-lock_chunk(State, _Conn, Chunk) ->
-    case security_setup(State, Chunk) of
-        {error, _Reason} = Error -> Error;
-        {ok, Chunk2, State2} ->
+lock_chunk(State, Conn, Chunk) ->
+    case security_setup(State, Conn, Chunk) of
+        % No error use-case yet, disabled to make dialyzer happy
+        % {error, _Reason} = Error -> Error;
+        {ok, Chunk2, Conn2, State2} ->
             Chunk3 = opcua_uacp_codec:prepare_chunks(Chunk2),
-            case security_prepare(State2, Chunk3) of
-                {error, _Reason} = Error -> Error;
-                {ok, Chunk4, State3} ->
+            case security_prepare(State2, Conn2, Chunk3) of
+                % No error use-case yet, disabled to make dialyzer happy
+                % {error, _Reason} = Error -> Error;
+                {ok, Chunk4, Conn3, State3} ->
                     Chunk5 = opcua_uacp_codec:freeze_chunks(Chunk4),
-                    security_lock(State3, Chunk5)
+                    security_lock(State3, Conn3, Chunk5)
             end
     end.
 
 
 %== Security Module Abstraction Functions ======================================
 
-security_init(#state{security = undefined} = State, Policy) ->
-    case opcua_security:init_client(Policy) of
+security_init(#state{security = undefined} = State, Mode, Policy) ->
+    case opcua_security:init_client(Mode, Policy) of
         {error, _Reason} = Error -> Error;
         {ok, Sec} -> {ok, State#state{security = Sec}}
     end.
@@ -175,45 +177,53 @@ security_token_id(#state{security = Sec} = State, TokenId) ->
     Sec2 = opcua_security:token_id(TokenId, Sec),
     State#state{security = Sec2}.
 
-security_unlock(#state{security = Sec} = State, Chunk)
+security_unlock(#state{security = Sec} = State, Conn, Chunk)
   when Sec =/= undefined ->
-    case opcua_security:unlock(Chunk, Sec) of
+    case opcua_security:unlock(Chunk, Conn, Sec) of
         {error, _Reason} = Error -> Error;
-        {ok, Chunk2, Sec2} ->
-            {ok, Chunk2, State#state{security = Sec2}};
-        expired ->
-            {error, bad_secure_channel_token_unknown}
+        % Expiration not yet supported, disabling to make dialyzer happy
+        % expired ->
+        %     {error, bad_secure_channel_token_unknown};
+        {ok, Chunk2, Conn2, Sec2} ->
+            {ok, Chunk2, Conn2, State#state{security = Sec2}}
     end;
-security_unlock(#state{security = Sec} = State,
+security_unlock(#state{security = Sec} = State, Conn,
                 #uacp_chunk{security = TokenId} = Chunk)
   when Sec =/= undefined ->
     case opcua_security:token_id(Sec) of
         TokenId ->
-            case opcua_security:unlock(Chunk, Sec) of
+            case opcua_security:unlock(Chunk, Conn, Sec) of
                 {error, _Reason} = Error -> Error;
-                {ok, Chunk2, Sec2} ->
-                    {ok, Chunk2, State#state{security = Sec2}};
-                expired ->
-                    {error, bad_secure_channel_token_unknown}
+                % Expiration not yet supported, disabling to make dialyzer happy
+                % expired ->
+                %     {error, bad_secure_channel_token_unknown};
+                {ok, Chunk2, Conn2, Sec2} ->
+                    {ok, Chunk2, Conn2, State#state{security = Sec2}}
             end;
         _ ->
             {error, bad_secure_channel_token_unknown}
     end.
 
-security_setup(#state{security = Sec} = State, Chunk) ->
-    case opcua_security:setup(Chunk, Sec) of
-        {error, _Reason} = Error -> Error;
-        {ok, Chunk2, Sec2} -> {ok, Chunk2, State#state{security = Sec2}}
+security_setup(#state{security = Sec} = State, Conn, Chunk) ->
+    case opcua_security:setup(Chunk, Conn, Sec) of
+        % No error use-case yet, disabled to make dialyzer happy
+        % {error, _Reason} = Error -> Error;
+        {ok, Chunk2, Conn2, Sec2} ->
+            {ok, Chunk2, Conn2, State#state{security = Sec2}}
     end.
 
-security_prepare(#state{security = Sec} = State, Chunk) ->
-    case opcua_security:prepare(Chunk, Sec) of
-        {error, _Reason} = Error -> Error;
-        {ok, Chunk2, Sec2} -> {ok, Chunk2, State#state{security = Sec2}}
+security_prepare(#state{security = Sec} = State, Conn, Chunk) ->
+    case opcua_security:prepare(Chunk, Conn, Sec) of
+        % No error use-case yet, disabled to make dialyzer happy
+        % {error, _Reason} = Error -> Error;
+        {ok, Chunk2, Conn2, Sec2} ->
+            {ok, Chunk2, Conn2, State#state{security = Sec2}}
     end.
 
-security_lock(#state{security = Sec} = State, Chunk) ->
-    case opcua_security:lock(Chunk, Sec) of
-        {error, _Reason} = Error -> Error;
-        {ok, Chunk2, Sec2} -> {ok, Chunk2, State#state{security = Sec2}}
+security_lock(#state{security = Sec} = State, Conn, Chunk) ->
+    case opcua_security:lock(Chunk, Conn, Sec) of
+        % No error use-case yet, disabled to make dialyzer happy
+        % {error, _Reason} = Error -> Error;
+        {ok, Chunk2, Conn2, Sec2} ->
+            {ok, Chunk2, Conn2, State#state{security = Sec2}}
     end.

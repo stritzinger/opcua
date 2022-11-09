@@ -47,7 +47,10 @@
           AuthMethod :: client_auth_spec()}
    | {error, not_found}).
 
--type client_options() :: #{
+-type client_connect_options() :: #{
+    % The parent keychain to use for the connection, if not defined it will use
+    % the default keychain.
+    keychain => opcua_keychain:state(),
     % The number of time the client will retry connecting. Default: 3
     connect_retry => non_neg_integer(),
     % The connection timeout. Default: infinty.
@@ -55,7 +58,7 @@
     % The keychain manager to use, if not specfied it uses the default one.
     keychain => term(),
     % If the client should lookup the server endpoints first.
-    % Default: true
+    % Default: false
     endpoint_lookup => boolean(),
     % The security to use for endpoint lookup, if not specified,
     % mode and policy will be none and the identity will be the root one.
@@ -82,8 +85,8 @@
 }.
 
 -record(data, {
-    opts                        :: map(),
-    socket                      :: inet:socket(),
+    opts                        :: undefined | map(),
+    socket                      :: undefined | inet:socket(),
     conn                        :: undefined | opcua:connection(),
     proto                       :: undefined | term(),
     calls = #{}                 :: #{term() => gen_statem:from()}
@@ -95,7 +98,7 @@
 connect(EndpointSpec) ->
     connect(EndpointSpec, #{}).
 
--spec connect(EndpointSpec :: binary(), Opts :: client_options()) ->
+-spec connect(EndpointSpec :: binary(), Opts :: client_connect_options()) ->
     {ok, ClientPid :: pid()} | {error, Reason :: term()}.
 connect(EndpointSpec, Opts) ->
     Endpoint  = opcua_util:parse_endpoint(EndpointSpec),
@@ -169,8 +172,9 @@ handle_event({call, From}, {connect, Endpoint, Opts}, disconnected = State,
     Data2 = Data#data{opts = Opts},
     {ProtoMode, ProtoOpts} = proto_initial_mode(Data2),
     case opcua_client_uacp:init(ProtoMode, ProtoOpts) of
-        {error, Reason} ->
-            stop_and_reply_all(normal, Data2, {error, Reason});
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason} ->
+        %     stop_and_reply_all(normal, Data2, {error, Reason});
         {ok, Proto} ->
             Data3 = Data2#data{proto = Proto},
             next_state_and_reply_later({connecting, 0, Endpoint}, Data3,
@@ -198,10 +202,11 @@ handle_event(state_timeout, retry, {connecting, N, Endpoint} = State, Data) ->
 handle_event(enter, _OldState, handshaking = State, Data) ->
     ?LOG_DEBUG("Client ~p entered ~p", [self(), State]),
     case proto_handshake(Data) of
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason, Data2} ->
+        %     stop_and_reply_all(normal, Data2, {error, Reason});
         {ok, Data2} ->
-            {keep_state, Data2, enter_timeouts(State, Data2)};
-        {error, Reason, Data2} ->
-            stop_and_reply_all(normal, Data2, {error, Reason})
+            {keep_state, Data2, enter_timeouts(State, Data2)}
     end;
 handle_event(info, {opcua_connection, {reconnect, EndpointSpec, ProtoOpts}},
              handshaking = State, Data) ->
@@ -233,11 +238,12 @@ handle_event({call, From}, close, connected = State, Data) ->
 handle_event(enter, _OldState, {reconnecting, _EndpointSpec, _ProtoOpts} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered reconnecting", [self()]),
     case proto_close(Data) of
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason, Data2} ->
+        %     stop_and_reply(Reason, Data2, on_closed,
+        %                    {error, Reason}, {error, closed});
         {ok, Data2} ->
-            {keep_state, Data2, enter_timeouts(State, Data2)};
-        {error, Reason, Data2} ->
-            stop_and_reply(Reason, Data2, on_closed,
-                           {error, Reason}, {error, closed})
+            {keep_state, Data2, enter_timeouts(State, Data2)}
     end;
 handle_event(info, {opcua_connection, closed},
              {reconnecting, EndpointSpec, ProtoOpts} = State, Data) ->
@@ -252,11 +258,12 @@ handle_event(info, {tcp_closed, Sock}, {reconnecting, EndpointSpec, ProtoOpts} =
 handle_event(enter, _OldState, closing = State, Data) ->
     ?LOG_DEBUG("Client ~p entered closing", [self()]),
     case proto_close(Data) of
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason, Data2} ->
+        %     stop_and_reply(Reason, Data2, on_closed,
+        %                    {error, Reason}, {error, closed});
         {ok, Data2} ->
-            {keep_state, Data2, enter_timeouts(State, Data2)};
-        {error, Reason, Data2} ->
-            stop_and_reply(Reason, Data2, on_closed,
-                           {error, Reason}, {error, closed})
+            {keep_state, Data2, enter_timeouts(State, Data2)}
     end;
 handle_event(info, {opcua_connection, closed}, closing, Data) ->
     stop_and_reply(normal, Data, on_closed, ok, {error, closed});
@@ -328,7 +335,7 @@ prepare_connect_options(Opts) ->
         connect_retry => 3,
         connect_timeout => infinity,
         keychain => default,
-        endpoint_lookup => true,
+        endpoint_lookup => false,
         endpoint_lookup_security =>
             maps:merge(#{
                 mode => none,
@@ -341,14 +348,16 @@ prepare_connect_options(Opts) ->
         identity => undefined,
         auth => anonymous
     }, Opts),
-    #{mode := Mode, policy := Policy, auth := AuthSpec} = Merged,
+    #{keychain := Keychain, mode := Mode, policy := Policy, auth := AuthSpec} = Merged,
+    % Make sure the keychain can be shared with other processes
+    Merged2 = Merged#{keychain := opcua_keychain:shareable(Keychain)},
     DefaultSelector = fun(Endpoints) ->
         select_endpoint(Mode, Policy, AuthSpec, Endpoints)
     end,
-    case maps:find(endpoint_selector, Merged) of
-        error -> Merged#{endpoint_selector => DefaultSelector};
-        {ok, undefined} -> Merged#{endpoint_selector => DefaultSelector};
-        {ok, _} -> Merged
+    case maps:find(endpoint_selector, Merged2) of
+        error -> Merged2#{endpoint_selector => DefaultSelector};
+        {ok, undefined} -> Merged2#{endpoint_selector => DefaultSelector};
+        {ok, _} -> Merged2
     end.
 
 proto_initial_mode(#data{opts = #{endpoint_lookup := true} = Opts}) ->
@@ -361,16 +370,18 @@ proto_initial_mode(#data{opts = #{endpoint_lookup := false} = Opts}) ->
     ProtoOpts = #{endpoint_selector => Selector, mode => Mode, policy => Policy, identity => Ident},
     {open_session, ProtoOpts}.
 
-pack_command_result(From, State, {error, Reason, Data}) ->
-    {keep_state, Data, [{reply, From, {error, Reason}} | enter_timeouts(State, Data)]};
+% No error use-case yet, diabling to make dialyzer happy
+% pack_command_result(From, State, {error, Reason, Data}) ->
+%     {keep_state, Data, [{reply, From, {error, Reason}} | enter_timeouts(State, Data)]};
 pack_command_result(From, State, {async, Handle, Data}) ->
     keep_state_and_reply_later(Data, Handle, From, enter_timeouts(State, Data)).
 
 reconnect(Data, State, EndpointSpec, ProtoOpts) ->
     Data2 = conn_close(Data),
     case opcua_client_uacp:init(open_session, ProtoOpts) of
-        {error, Reason} ->
-            stop_and_reply_all(internal_error, Data2, {error, Reason});
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason} ->
+        %     stop_and_reply_all(internal_error, Data2, {error, Reason});
         {ok, Proto} ->
             Data3 = Data2#data{proto = Proto},
             {next_state, {connecting, 0, EndpointSpec}, Data3,
@@ -404,45 +415,65 @@ auth_type({user_name, _, _}) -> user_name.
 
 proto_produce(#data{conn = Conn, proto = Proto} = Data) ->
     case opcua_client_uacp:produce(Conn, Proto) of
-        {ok, Proto2} -> {ok, Data#data{proto = Proto2}};
-        {ok, Output, Proto2} -> {ok, Output, Data#data{proto = Proto2}};
-        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+        {ok, Conn2, Proto2} ->
+            {ok, Data#data{conn = Conn2, proto = Proto2}};
+        {ok, Output, Conn2, Proto2} ->
+            {ok, Output, Data#data{conn = Conn2, proto = Proto2}};
+        {error, Reason, Proto2} ->
+            {error, Reason, Data#data{proto = Proto2}}
     end.
 
 proto_handle_data(#data{conn = Conn, proto = Proto} = Data, Input) ->
     case opcua_client_uacp:handle_data(Input, Conn, Proto) of
-        {ok, Responses, Proto2} -> {ok, Responses, Data#data{proto = Proto2}};
-        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+        {ok, Responses, Conn2, Proto2} ->
+            {ok, Responses, Data#data{conn = Conn2, proto = Proto2}};
+        {error, Reason, Proto2} ->
+            {error, Reason, Data#data{proto = Proto2}}
     end.
 
 proto_handshake(#data{conn = Conn, proto = Proto} = Data) ->
     case opcua_client_uacp:handshake(Conn, Proto) of
-        {ok, Proto2} -> {ok, Data#data{proto = Proto2}};
-        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason, Proto2} ->
+        %     {error, Reason, Data#data{proto = Proto2}};
+        {ok, Conn2, Proto2} ->
+            {ok, Data#data{conn = Conn2, proto = Proto2}}
     end.
 
 proto_browse(#data{conn = Conn, proto = Proto} = Data, NodeId, Opts) ->
     case opcua_client_uacp:browse(NodeId, Opts, Conn, Proto) of
-        {async, Handle, Proto2} -> {async, Handle, Data#data{proto = Proto2}};
-        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason, Proto2} ->
+        %     {error, Reason, Data#data{proto = Proto2}};
+        {async, Handle, Conn2, Proto2} ->
+            {async, Handle, Data#data{conn = Conn2, proto = Proto2}}
     end.
 
 proto_read(#data{conn = Conn, proto = Proto} = Data, ReadSpecs, Opts) ->
     case opcua_client_uacp:read(ReadSpecs, Opts, Conn, Proto) of
-        {async, Handle, Proto2} -> {async, Handle, Data#data{proto = Proto2}};
-        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason, Proto2} ->
+        %     {error, Reason, Data#data{proto = Proto2}};
+        {async, Handle, Conn2, Proto2} ->
+            {async, Handle, Data#data{conn = Conn2, proto = Proto2}}
     end.
 
 proto_write(#data{conn = Conn, proto = Proto} = Data, NodeId, AVPairs, Opts) ->
     case opcua_client_uacp:write(NodeId, AVPairs, Opts, Conn, Proto) of
-        {async, Handle, Proto2} -> {async, Handle, Data#data{proto = Proto2}};
-        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason, Proto2} ->
+        %     {error, Reason, Data#data{proto = Proto2}};
+        {async, Handle, Conn2, Proto2} ->
+            {async, Handle, Data#data{conn = Conn2, proto = Proto2}}
     end.
 
 proto_close(#data{conn = Conn, proto = Proto} = Data) ->
     case opcua_client_uacp:close(Conn, Proto) of
-        {ok, Proto2} -> {ok, Data#data{proto = Proto2}};
-        {error, Reason, Proto2} -> {error, Reason, Data#data{proto = Proto2}}
+        % No error use-case yet, diabling to make dialyzer happy
+        % {error, Reason, Proto2} ->
+        %     {error, Reason, Data#data{proto = Proto2}};
+        {ok, Conn2, Proto2} ->
+            {ok, Data#data{conn = Conn2, proto = Proto2}}
     end.
 
 proto_terminate(#data{conn = Conn, proto = Proto}, Reason) ->
@@ -453,7 +484,9 @@ proto_terminate(#data{conn = Conn, proto = Proto}, Reason) ->
 
 conn_init(#data{opts = CliOpts, socket = undefined} = Data, Endpoint)
   when Endpoint =/= undefined ->
-    #{connect_timeout := Timeout} = CliOpts,
+    #{keychain := ParentKeychain,
+      identity := Identity,
+      connect_timeout := Timeout} = CliOpts,
     #opcua_endpoint{host = Host, port = Port, url = Url} = Endpoint,
     ?LOG_DEBUG("Connecting to ~s", [Url]),
     Opts = [binary, {active, false}, {packet, raw}],
@@ -466,7 +499,9 @@ conn_init(#data{opts = CliOpts, socket = undefined} = Data, Endpoint)
                 {{error, _Reason} = Error, _} -> Error;
                 {_, {error, _Reason} = Error} -> Error;
                 {{ok, PeerName}, {ok, SockName}} ->
-                    Conn = opcua_connection:new(Endpoint, PeerName, SockName),
+                    Keychain = opcua_keychain_ets:new(ParentKeychain),
+                    Conn = opcua_connection:new(Keychain, Identity, Endpoint,
+                                                PeerName, SockName),
                     Data2 = Data#data{socket = Socket, conn = Conn},
                     case conn_activate(Data2) of
                         {error, _Reason} = Error -> Error;

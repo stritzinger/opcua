@@ -60,7 +60,13 @@ start_link(SessId, AuthToken) ->
     gen_statem:start_link(?MODULE, [SessId, AuthToken], []).
 
 handle_request(Conn, #uacp_message{} = Req, SessPid) ->
-    gen_statem:call(SessPid, {request, Conn, Req}).
+    Conn2 = opcua_connection:share(Conn),
+    case gen_statem:call(SessPid, {request, Conn2, Req}) of
+        {error, _Reason} = Error -> Error;
+        {Tag, Resp, #uacp_connection{} = Conn3} ->
+            Conn4 = opcua_connection:merge(Conn, Conn3),
+            {Tag, Resp, Conn4}
+    end.
 
 
 %%% BEHAVIOUR gen_statem CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -249,7 +255,7 @@ session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         },
         max_request_message_size => 65536
     }),
-    {{created, Resp}, Data2}.
+    {{created, Resp, Conn}, Data2}.
 
 session_activate_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     #{
@@ -273,7 +279,7 @@ session_activate_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
                 results => [],
                 diagnostic_infos => []
             }),
-            {{bound, Resp}, Data2}
+            {{bound, Resp, Conn}, Data2}
     end.
 
 session_deactivate(Data) ->
@@ -284,7 +290,7 @@ session_close_command(Data, Conn, #uacp_message{payload = _Msg} = Req) ->
     opcua_connection:demonitor(Conn, MonRef),
     Data2 = Data#data{conn = undefined, mon_ref = undefined},
     Resp = opcua_connection:response(Conn, Req, 474, #{}),
-    {{reply, Resp}, Data2}.
+    {{reply, Resp, Conn}, Data2}.
 
 check_identity(ExtObj) ->
     #opcua_extension_object{type_id = NodeSpec, body = Body} = ExtObj,
@@ -316,7 +322,7 @@ attribute_read_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         results => Results,
         diagnostic_infos => []
     }),
-    {{reply, Resp}, Data}.
+    {{reply, Resp, Conn}, Data}.
 
 attribute_read(Data, ReadOpts, ReadIds) ->
     attribute_read(Data, ReadOpts, ReadIds, []).
@@ -370,7 +376,7 @@ view_browse_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
         results => Results,
         diagnostic_infos => []
     }),
-    {{reply, Resp}, Data}.
+    {{reply, Resp, Conn}, Data}.
 
 view_browse(Data, BrowseOpts, NodesToBrowse) ->
     view_browse(Data, BrowseOpts, NodesToBrowse, []).

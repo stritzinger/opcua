@@ -36,11 +36,8 @@ init(_Opts) ->
     case opcua_server_channel:init() of
         {error, _Reason} = Error -> Error;
         {ok, Channel} ->
-            case opcua_uacp:init(server, opcua_server_channel) of
-                {error, _Reason} = Error -> Error;
-                {ok, Proto} ->
-                    {ok, #state{channel = Channel, proto = Proto}}
-            end
+            {ok, Proto} = opcua_uacp:init(server, opcua_server_channel),
+            {ok, #state{channel = Channel, proto = Proto}}
     end.
 
 can_produce(Conn, State) ->
@@ -52,7 +49,7 @@ produce(Conn, State) ->
 handle_data(Data, Conn, State) ->
     case proto_handle_data(State, Conn, Data) of
         {error, _Reason, _State2} = Error -> Error;
-        {ok, Msgs, State2} -> handle_requests(State2, Conn, Msgs)
+        {ok, Msgs, Conn2, State2} -> handle_requests(State2, Conn2, Msgs)
     end.
 
 terminate(Reason, Conn, State) ->
@@ -65,21 +62,21 @@ negotiate_limit(0, B) when is_integer(B), B >= 0 -> B;
 negotiate_limit(A, 0) when is_integer(A), A > 0-> A;
 negotiate_limit(A, B) when is_integer(A), A > 0, is_integer(B), B > 0 -> min(A, B).
 
-handle_requests(State, _Conn, []) -> {ok, State};
+handle_requests(State, Conn, []) -> {ok, Conn, State};
 handle_requests(State, Conn, [Msg | Rest]) ->
     ?DUMP("Received message: ~p", [Msg]),
     case handle_request(State, Conn, Msg) of
         {error, _Reason, _State2} = Error -> Error;
-        {ok, State2} ->
-            handle_requests(State2, Conn, Rest);
-        {ok, NewMsg, State2} ->
-            case proto_consume(State2, Conn, NewMsg) of
-                {error, _Reason, _State2} = Error -> Error;
-                {ok, State3} -> handle_requests(State3, Conn, Rest)
+        {ok, Conn2, State2} ->
+            handle_requests(State2, Conn2, Rest);
+        {ok, NewMsg, Conn2, State2} ->
+            case proto_consume(State2, Conn2, NewMsg) of
+                % {error, _Reason, _State2} = Error -> Error;
+                {ok, Conn3, State3} -> handle_requests(State3, Conn3, Rest)
             end
     end.
 
-handle_request(State, _Conn, #uacp_message{type = hello, payload = Msg}) ->
+handle_request(State, Conn, #uacp_message{type = hello, payload = Msg}) ->
     ServerVersion = proto_version(State),
     #{
         ver := ClientVersion,
@@ -124,14 +121,14 @@ handle_request(State, _Conn, #uacp_message{type = hello, payload = Msg}) ->
             max_chunk_count => MaxChunkCount
         }
     },
-    {ok, Response, State6};
+    {ok, Response, Conn, State6};
 handle_request(State, Conn, #uacp_message{type = MsgType} = Req)
   when MsgType =:= channel_open; MsgType =:= channel_close ->
     channel_handle_request(State, Conn, Req);
-handle_request(State, _Conn, #uacp_message{type = error, payload = Payload}) ->
+handle_request(State, Conn, #uacp_message{type = error, payload = Payload}) ->
     #{error := Error, reason := Reason} = Payload,
     ?LOG_ERROR("Received client error ~w: ~s", [Error, Reason]),
-    {ok, State};
+    {ok, Conn, State};
 handle_request(#state{sess = Sess} = State, Conn,
                #uacp_message{type = channel_message} = Request) ->
     #uacp_message{node_id = NodeSpec} = Request,
@@ -147,11 +144,16 @@ handle_request(#state{sess = Sess} = State, Conn,
             opcua_server_session:handle_request(Conn, Request2, Session)
     end,
     case Result of
-        {error, Reason} -> {error, Reason, State};
-        {created, Resp, _SessPid} -> {ok, Resp, State};
-        {bound, Resp, SessPid} -> {ok, Resp, State#state{sess = SessPid}};
-        {closed, Resp} -> {ok, Resp, State#state{sess = undefined}};
-        {reply, Resp} -> {ok, Resp, State}
+        {error, Reason} ->
+            {error, Reason, State};
+        {created, Resp, Conn2, _SessPid} ->
+            {ok, Resp, Conn2, State};
+        {bound, Resp, Conn2, SessPid} ->
+            {ok, Resp, Conn2, State#state{sess = SessPid}};
+        {closed, Resp, Conn2} ->
+            {ok, Resp, Conn2, State#state{sess = undefined}};
+        {reply, Resp, Conn2} ->
+            {ok, Resp, Conn2, State}
     end.
 
 
@@ -162,8 +164,10 @@ channel_terminate(#state{channel = Channel}, Conn, Reason) ->
 
 channel_handle_request(#state{channel = Channel} = State, Conn, Req) ->
     case opcua_server_channel:handle_request(Req, Conn, Channel) of
-        {error, _Reason} = Error -> Error;
-        {ok, Resp, Channel2} -> {ok, Resp, State#state{channel = Channel2}}
+        % No error case yet, commented to make dialyzer happy
+        % {error, _Reason} = Error -> Error;
+        {ok, Resp, Conn2, Channel2} ->
+            {ok, Resp, Conn2, State#state{channel = Channel2}}
     end.
 
 
@@ -186,25 +190,26 @@ proto_produce(#state{channel = Channel, proto = Proto} = State, Conn) ->
     case opcua_uacp:produce(Conn, Channel, Proto) of
         {error, Reason, Channel2, Proto2} ->
             {error, Reason, State#state{channel = Channel2, proto = Proto2}};
-        {ok, Channel2, Proto2} ->
-            {ok, State#state{channel = Channel2, proto = Proto2}};
-        {ok, Output, Channel2, Proto2} ->
-            {ok, Output, State#state{channel = Channel2, proto = Proto2}}
+        {ok, Conn2, Channel2, Proto2} ->
+            {ok, Conn2, State#state{channel = Channel2, proto = Proto2}};
+        {ok, Output, Conn2, Channel2, Proto2} ->
+            {ok, Output, Conn2, State#state{channel = Channel2, proto = Proto2}}
     end.
 
 proto_handle_data(#state{channel = Channel, proto = Proto} = State, Conn, Data) ->
     case opcua_uacp:handle_data(Data, Conn, Channel, Proto) of
         {error, Reason, Channel2, Proto2} ->
             {error, Reason, State#state{channel = Channel2, proto = Proto2}};
-        {ok, Messages, Channel2, Proto2} ->
-            {ok, Messages, State#state{channel = Channel2, proto = Proto2}}
+        {ok, Messages, Conn2, Channel2, Proto2} ->
+            {ok, Messages, Conn2, State#state{channel = Channel2, proto = Proto2}}
     end.
 
 proto_consume(#state{channel = Channel, proto = Proto} = State, Conn, Msg) ->
     ?DUMP("Sending message: ~p", [Msg]),
     case opcua_uacp:consume(Msg, Conn, Channel, Proto) of
-        {error, Reason, Channel2, Proto2} ->
-            {error, Reason, State#state{channel = Channel2, proto = Proto2}};
-        {ok, Channel2, Proto2} ->
-            {ok, State#state{channel = Channel2, proto = Proto2}}
+        % No error case yet, commented to make dialyzer happy
+        % {error, Reason, Channel2, Proto2} ->
+        %     {error, Reason, State#state{channel = Channel2, proto = Proto2}};
+        {ok, Conn2, Channel2, Proto2} ->
+            {ok, Conn2, State#state{channel = Channel2, proto = Proto2}}
     end.

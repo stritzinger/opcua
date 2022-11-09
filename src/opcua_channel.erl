@@ -5,13 +5,15 @@
 -callback channel_id(State) -> ChannelId
     when State :: term(), ChannelId :: opcua:channel_id().
 
--callback lock(Chunk, Conn, State) -> {ok, Chunk, State} | {error, Reason}
+-callback lock(Chunk, Conn, State)
+  -> {ok, Chunk, Conn, State} | {error, Reason}
     when Chunk :: opcua:chunk(),
          Conn :: opcua:connection(),
          State :: term(),
          Reason :: term().
 
--callback unlock(Chunk, Conn, State) -> {ok, Chunk, State} | {error, Reason}
+-callback unlock(Chunk, Conn, State)
+  -> {ok, Chunk, Conn, State} | {error, Reason}
     when Chunk :: opcua:chunk(),
          Conn :: opcua:connection(),
          State :: term(),

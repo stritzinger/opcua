@@ -43,7 +43,7 @@
     socket          :: inet:socket(),
     conn            :: undefined | opcua:connection(),
     proto           :: term(),
-    linger_timeout  :: pos_integer()
+    linger_timeout  :: infinity | non_neg_integer()
 }).
 
 -type state() :: #state{}.
@@ -87,12 +87,15 @@ connection_process(Parent, Ref, Transport, Opts) ->
 -spec init(pid(), atom(), inet:socket(), module(), term()) -> no_return().
 init(Parent, Ref, Socket, Transport, Opts) ->
     ?LOG_DEBUG("Starting protocol handler"),
-    {[LingerTimeout], ProtoOpts} = extract_options([
-        {linger_timeout, ?DEFAULT_LINGER_TIMEOUT}
+    {[LingerTimeout, Ident, ParentKeychain], ProtoOpts} = extract_options([
+        {linger_timeout, ?DEFAULT_LINGER_TIMEOUT},
+        {identity, undefined},
+        {keychain, default}
     ], Opts),
     PeerNameRes = Transport:peername(Socket),
     SockNameRes = Transport:sockname(Socket),
     UACPRes = opcua_server_uacp:init(ProtoOpts),
+    {ok, Keychain} = opcua_keychain_ets:new(ParentKeychain),
     case {PeerNameRes, SockNameRes, UACPRes} of
         {{ok, PeerName}, {ok, {SockAddr, _} = SockName}, {ok, Proto}} ->
             Endpoint = opcua_util:parse_endpoint({SockAddr, 4840}),
@@ -101,7 +104,8 @@ init(Parent, Ref, Socket, Transport, Opts) ->
                 ref = Ref,
                 transport = Transport,
                 socket = Socket,
-                conn = opcua_connection:new(Endpoint, PeerName, SockName),
+                conn = opcua_connection:new(Keychain, Ident, Endpoint,
+                                            PeerName, SockName),
                 proto = Proto,
                 linger_timeout = LingerTimeout
             },
@@ -133,8 +137,9 @@ loop_consume(State) ->
         {OK, S, Input} ->
             ?DUMP("Received data: ~p", [Input]),
             case opcua_server_uacp:handle_data(Input, Conn, Proto) of
-                {ok, Proto2} ->
-                    loop_produce(State#state{proto = Proto2}, fun loop/1);
+                {ok, Conn2, Proto2} ->
+                    State2 = State#state{conn = Conn2, proto = Proto2},
+                    loop_produce(State2, fun loop/1);
                 {error, Reason, Proto2} ->
                     terminate(State#state{proto = Proto2}, Reason)
             end;
@@ -165,10 +170,10 @@ loop_produce(State, Cont) ->
     case opcua_server_uacp:produce(Conn, Proto) of
         {error, Reason, Proto2} ->
             terminate(State#state{proto = Proto2}, Reason);
-        {ok, Proto2} ->
-            Cont(State#state{proto = Proto2});
-        {ok, Output, Proto2} ->
-            State2 = State#state{proto = Proto2},
+        {ok, Conn2, Proto2} ->
+            Cont(State#state{conn = Conn2, proto = Proto2});
+        {ok, Output, Conn2, Proto2} ->
+            State2 = State#state{conn = Conn2, proto = Proto2},
             ?DUMP("Sending data:  ~p", [Output]),
             case T:send(S, Output) of
                 ok -> Cont(State2);
@@ -177,6 +182,8 @@ loop_produce(State, Cont) ->
             end
     end.
 
+% Add spec to make dialyzer happy
+-spec handle_error(state() | undefined, term(), term(), term()) -> no_return().
 handle_error(State, Kind, Reason, Msg) ->
     ?LOG_ERROR("Connection error ~w: ~s (~p)", [Kind, Msg, Reason]),
     terminate(State, {Kind, Reason, Msg}).
@@ -196,15 +203,17 @@ terminate_produce(State) ->
     %TODO: we may want to do that for a maximum amount of time ?
     #state{socket = S, transport = T, conn = Conn, proto = Proto} = State,
     case opcua_server_uacp:produce(Conn, Proto) of
-        {ok, Proto2} -> State#state{proto = Proto2};
-        {ok, Output, Proto2} ->
+        {ok, Conn2, Proto2} ->
+            State#state{conn = Conn2, proto = Proto2};
+        {ok, Output, Conn2, Proto2} ->
             ?LOG_DEBUG("Sending:  ~p", [Output]),
+            State2 = State#state{conn = Conn2, proto = Proto2},
             case T:send(S, Output) of
-                ok -> terminate_produce(State#state{proto = Proto2});
+                ok -> terminate_produce(State2);
                 {error, Reason} ->
                     ?LOG_WARNING("Socket error while terminating the "
                                  "connection: ~p", [Reason]),
-                    State#state{proto = Proto2}
+                    State2
             end
     end.
 
