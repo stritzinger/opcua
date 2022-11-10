@@ -15,7 +15,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API functions
--export([init/4]).
+-export([init/3]).
 -export([make_request/6]).
 -export([open/2]).
 -export([get_endpoints/2]).
@@ -41,7 +41,7 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(_Conn, Mode, Policy, _Identity) ->
+init(_Conn, Mode, Policy) ->
     security_init(#state{}, Mode, Policy).
 
 make_request(Type, NodeId, Payload, Sess, Conn, State)
@@ -118,7 +118,10 @@ handle_response(#uacp_message{type = channel_close, sender = server,
 handle_response(#uacp_message{type = channel_message, sender = server} = Msg,
                 Conn, State) ->
     %TODO: Do some validation of the message to check it is for this channel ?
-    {forward, Msg, Conn, State}.
+    {forward, Msg, Conn, State};
+handle_response(#uacp_message{type = error, sender = server, payload = Error},
+                _Conn, _State) ->
+    {error, Error}.
 
 
 terminate(_Reason, _Conn, _State) ->

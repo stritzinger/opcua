@@ -182,9 +182,10 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
         id = SessId,
         token = AuthToken
     },
-    case select_endpoint(State2, ServerEndpoints) of
+    case select_endpoint(State2, Conn, ServerEndpoints) of
         {error, _Reason} = Error -> Error;
-        {ok, State3} ->
+        {ok, Conn2, State3} ->
+            IdentToken = identity_token(State3, Conn2, ServerNonce),
             ReqPayload = #{
                 client_signature => #{
                     algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
@@ -192,17 +193,17 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
                 },
                 client_software_certificates => [],
                 locale_ids => [<<"en">>],
-                user_identity_token => identity_token(State3, ServerNonce),
+                user_identity_token => IdentToken,
                 user_token_signature => #{
                     algorithm => undefined,
                     signature => undefined
                 }
             },
             State4 = State3#state{status = activating},
-            {ok, Req, Conn2, Channel2, State5} =
-                channel_make_request(State4, Channel, Conn,
+            {ok, Req, Conn3, Channel2, State5} =
+                channel_make_request(State4, Channel, Conn2,
                                      ?NID_ACTIVATE_SESS_REQ, ReqPayload),
-            {ok, [], [Req], Conn2, Channel2, State5}
+            {ok, [], [Req], Conn3, Channel2, State5}
     end;
 handle_response(State, Channel, Conn, activating, _Handle, ?NID_ACTIVATE_SESS_RES, _Payload) ->
     opcua_connection:notify(Conn, ready),
@@ -231,16 +232,22 @@ handle_response(State, Channel, Conn, Status, _Handle, NodeId, Payload) ->
     ?LOG_WARNING("Unexpected message while ~w session: ~p ~p", [Status, NodeId, Payload]),
     {ok, [], [], Conn, Channel, State}.
 
-
-select_endpoint(#state{endpoint = undefined} = State, Endpoints) ->
+select_endpoint(#state{endpoint = undefined} = State, Conn, Endpoints) ->
     #state{selector = Selector} = State,
     case Selector(Endpoints) of
         {error, not_found} -> {error, no_compatible_server_endpoint};
         {ok, Endpoint, TokenPolicyId, AuthSpec} ->
-            #{user_identity_tokens := Tokens} = Endpoint,
-            FilteredTokens = [T || T = #{policy_id := I} <- Tokens, I =:= TokenPolicyId],
-            Endpoint2 = Endpoint#{user_identity_tokens => FilteredTokens},
-            {ok, State#state{endpoint = Endpoint2, auth_spec = AuthSpec}}
+            #{server_certificate := Cert,
+              user_identity_tokens := Tokens} = Endpoint,
+            case opcua_connection:validate_peer(Conn, Cert) of
+                {error, _Reason} = Error -> Error;
+                {ok, Conn2} ->
+                    FilteredTokens = [T || T = #{policy_id := I} <- Tokens,
+                                           I =:= TokenPolicyId],
+                    Endpoint2 = Endpoint#{user_identity_tokens => FilteredTokens},
+                    State2 = State#state{endpoint = Endpoint2, auth_spec = AuthSpec},
+                    {ok, Conn2, State2}
+            end
     end.
 
 
@@ -250,7 +257,7 @@ identity_token(#state{endpoint = #{
                         user_identity_tokens := [
                             #{token_type := anonymous, policy_id := PolicyId}]},
                       auth_spec = anonymous},
-               _ServerNonce) ->
+               _Conn, _ServerNonce) ->
     #opcua_extension_object{
         type_id = ?NID_ANONYMOUS_IDENTITY_TOKEN,
         encoding = byte_string,
@@ -263,7 +270,7 @@ identity_token(#state{endpoint = #{
                             #{token_type := user_name, policy_id := PolicyId,
                               security_policy_uri := ?POLICY_NONE}]},
                       auth_spec = {user_name, Username, Password}},
-               _ServerNonce) ->
+               _Conn, _ServerNonce) ->
     #opcua_extension_object{
         type_id = ?NID_USERNAME_IDENTITY_TOKEN,
         encoding = byte_string,
@@ -276,16 +283,13 @@ identity_token(#state{endpoint = #{
     };
 identity_token(#state{endpoint = #{
                         security_policy_uri := ?POLICY_NONE,
-                        server_certificate := ServerDerCert,
                         user_identity_tokens := [
                             #{token_type := user_name, policy_id := PolicyId,
                               security_policy_uri := ?POLICY_BASIC256SHA256}]},
                       auth_spec = {user_name, Username, Password}},
-               ServerNonce) ->
-    %TODO: we should verify the server certificate at some point
-    %TODO: See how to use a local keychain for the server certificate
-    ServerOtpCert = public_key:pkix_decode_cert(ServerDerCert, otp),
-    PublicKey = ServerOtpCert#'OTPCertificate'.tbsCertificate#'OTPTBSCertificate'.subjectPublicKeyInfo#'OTPSubjectPublicKeyInfo'.subjectPublicKey,
+               Conn, ServerNonce) ->
+    %TODO: Handle not having a server certificate ?
+    PublicKey = opcua_connection:peer_public_key(Conn),
     CleatTextSize = byte_size(Password) + byte_size(ServerNonce),
     ClearText = <<CleatTextSize:32/little, Password/binary, ServerNonce/binary>>,
     Secret = public_key:encrypt_public(ClearText, PublicKey, [{rsa_padding, rsa_pkcs1_oaep_padding}]),

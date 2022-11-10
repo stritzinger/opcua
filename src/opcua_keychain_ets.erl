@@ -16,11 +16,12 @@
 % Behaviour opcua_keychain callback functions
 -export([init/1]).
 -export([shareable/1]).
+-export([lookup/3]).
 -export([info/2]).
 -export([certificate/3]).
 -export([public_key/3]).
 -export([private_key/3]).
--export([add_certificate/2]).
+-export([add_certificate/3]).
 -export([add_private/2]).
 -export([trust/2]).
 
@@ -29,11 +30,13 @@
 
 -record(state, {
     table :: ets:table(),
+    aliases :: ets:table(),
     read_only = false
 }).
 
 -record(entry, {
     id :: binary(),
+    alias :: atom(),
     thumbprint :: binary(),
     capabilities :: [opcua_keychain:capabilities()],
     cert_der :: binary(),
@@ -57,17 +60,21 @@ new(Parent) ->
 %%% BEHAVIOUR opcua_keychain CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init(_Args) ->
-    Table = ets:new(keychain, [set, protected, {keypos, #entry.id}]),
-    {ok, #state{table = Table}}.
+    Table = ets:new(keychain_data, [set, protected, {keypos, #entry.id}]),
+    Aliases = ets:new(keychain_alias_lookup, [bag, protected, {keypos, 1}]),
+    {ok, #state{table = Table, aliases = Aliases}}.
+
+shareable(#state{read_only = true} = State) -> State;
+shareable(State) -> State#state{read_only = true}.
+
+lookup(#state{aliases = Aliases}, alias, Alias) ->
+    [I || {_, I} <- ets:lookup(Aliases, Alias)].
 
 info(#state{table = Table}, Ident) ->
     case ets:lookup(Table, Ident) of
         [] -> not_found;
         [Entry] -> get_info(Entry)
     end.
-
-shareable(#state{read_only = true} = State) -> State;
-shareable(State) -> State#state{read_only = true}.
 
 certificate(_State, _Ident, pem) ->
     not_implemented;
@@ -109,8 +116,11 @@ private_key(#state{table = Table}, Ident, rec) ->
         [#entry{key_rec = KeyRec}] -> KeyRec
     end.
 
-add_certificate(#state{read_only = true}, _CertDer) -> {error, read_only};
-add_certificate(#state{table = Table} = State, CertDer) ->
+add_certificate(#state{read_only = true}, _CertDer, _Opts) ->
+    {error, read_only};
+add_certificate(#state{table = Table} = State, CertDer, Opts) ->
+    Alias = maps:get(alias, Opts, undefined),
+    IsTrusted = maps:get(is_trusted, Opts, false),
     try public_key:pkix_decode_cert(CertDer, otp) of
         CertRec ->
             Id = opcua_keychain:certificate_id(CertRec),
@@ -120,13 +130,15 @@ add_certificate(#state{table = Table} = State, CertDer) ->
                 [] ->
                     Entry = #entry{
                         id = Id,
+                        alias = Alias,
                         thumbprint = CertThumbprint,
                         capabilities = CertCaps,
                         cert_der = CertDer,
                         cert_rec = CertRec,
-                        is_trusted = false
+                        is_trusted = IsTrusted
                     },
                     ets:insert(Table, Entry),
+                    update_lookups(State, Entry),
                     {ok, get_info(Entry), State};
                 _ ->
                     {error, already_exists}
@@ -167,11 +179,17 @@ trust(#state{table = Table} = State, Ident) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-get_info(#entry{id = Id, thumbprint = Thumb, capabilities = Caps,
+get_info(#entry{id = Id, alias = Alias, thumbprint = Thumb, capabilities = Caps,
                 key_der = undefined, is_trusted = IsTrusted}) ->
-    #{id => Id, thumbprint => Thumb, capabilities => Caps,
+    #{id => Id, alias => Alias, thumbprint => Thumb, capabilities => Caps,
       is_trusted => IsTrusted, has_private => false};
-get_info(#entry{id = Id, thumbprint = Thumb, capabilities = Caps,
+get_info(#entry{id = Id, alias = Alias, thumbprint = Thumb, capabilities = Caps,
                 is_trusted = IsTrusted}) ->
-    #{id => Id, thumbprint => Thumb, capabilities => Caps,
+    #{id => Id, alias => Alias, thumbprint => Thumb, capabilities => Caps,
       is_trusted => IsTrusted, has_private => true}.
+
+
+update_lookups(_State, #entry{alias = undefined}) -> ok;
+update_lookups(#state{aliases = Aliases}, #entry{id = Id, alias = Alias}) ->
+    ets:insert(Aliases, {Alias, Id}),
+    ok.

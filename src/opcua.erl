@@ -367,14 +367,17 @@ set_value(VarSpec, Value) ->
 %%% BEHAVIOUR application CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start(_StartType, _StartArgs) ->
-    {ok, Pid} = opcua_sup:start_link(),
-    case application:get_env(start_server) of
-        {ok, false} ->
-            ok;
-        _ ->
-            {ok, _} = opcua_server_ranch_protocol:start_listener()
-    end,
-    {ok, Pid}.
+    case opcua_sup:start_link() of
+        {error, _Reason} = Error -> Error;
+        {ok, Pid} ->
+            case application:get_env(start_server) of
+                {ok, false} ->
+                    ok;
+                _ ->
+                    {ok, _} = opcua_server_ranch_protocol:start_listener()
+            end,
+            {ok, Pid}
+    end.
 
 stop(_State) ->
     opcua_server_ranch_protocol:stop_listener().

@@ -22,18 +22,12 @@
 -export([prepare/3]).
 -export([lock/3]).
 
-%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% -define(POLICY_MATCH, #uacp_security_policy{policy_uri = ?POLICY_NONE}).
-
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(state, {
     token_id :: undefined | pos_integer(),
-    security_policy :: undefined | opcua:security_policy(),
-    peer_security_data :: undefined | opcua:security_data(),
-    self_security_data :: undefined | opcua:security_data(),
+    policy :: undefined | binary(),
     peer_seq :: undefined | non_neg_integer(),
     self_seq :: undefined | non_neg_integer()
 }).
@@ -42,19 +36,16 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init_client(none, none) ->
-    Sec = #uacp_chunk_security{policy_uri = opcua_util:policy_uri(none)},
-    {ok, #state{self_security_data = Sec}};
+    {ok, #state{policy = opcua_util:policy_uri(none)}};
 init_client(none, _PolicyType) ->
     {error, bad_security_policy_rejected}.
 
 init_server(none, undefined) ->
     TokenId = generate_token_id([0]),
-    Sec = #uacp_chunk_security{policy_uri = opcua_util:policy_uri(none)},
-    {ok, #state{self_security_data = Sec, token_id = TokenId}};
+    {ok, #state{policy = opcua_util:policy_uri(none), token_id = TokenId}};
 init_server(none, #state{token_id = OldTokenId}) ->
     NewTokenId = generate_token_id([0, OldTokenId]),
-    Sec = #uacp_chunk_security{policy_uri = opcua_util:policy_uri(none)},
-    {ok, #state{self_security_data = Sec, token_id = NewTokenId}};
+    {ok, #state{policy = opcua_util:policy_uri(none), token_id = NewTokenId}};
 init_server(_PolicyType, _ParentState) ->
     {error, bad_security_policy_rejected}.
 
@@ -63,20 +54,30 @@ token_id(#state{token_id = TokenId}) -> TokenId.
 token_id(TokenId, #state{token_id = undefined} = State) ->
     State#state{token_id = TokenId}.
 
-unlock(#uacp_chunk{message_type = channel_open, security = SecData} = Chunk,
-       Conn, #state{self_security_data = SecData} = State) ->
-    validate_peer_sequence(State#state{peer_security_data = SecData}, Conn,
-                           decode_sequence_header(Chunk));
+unlock(#uacp_chunk{message_type = channel_open,
+                   security = #uacp_chunk_security{policy_uri = PolicyUri} = Sec} = Chunk,
+       Conn, #state{policy = PolicyUri} = State) ->
+    case validate_security(Conn, Sec) of
+        {error, _Reason} = Error -> Error;
+        {ok, Conn2} ->
+            Chunk2 = decode_sequence_header(Chunk),
+            validate_peer_sequence(State, Conn2, Chunk2)
+    end;
 unlock(#uacp_chunk{security = TokenId} = Chunk,
        Conn, #state{token_id = TokenId} = State) ->
-    validate_peer_sequence(State, Conn, decode_sequence_header(Chunk));
+    Chunk2 = decode_sequence_header(Chunk),
+    validate_peer_sequence(State, Conn, Chunk2);
 unlock(_Chunk, _Conn, _State) ->
     {error, bad_security_checks_failed}.
 
 setup(#uacp_chunk{state = unlocked, message_type = Type, security = undefined} = Chunk,
-      Conn, #state{self_security_data = Policy, token_id = TokenId} = State) ->
+      Conn, #state{policy = PolicyUri, token_id = TokenId} = State) ->
     Security = case Type of
-        channel_open -> Policy;
+        channel_open -> #uacp_chunk_security{
+            policy_uri = PolicyUri
+            %sender_cert = opcua_connection:self_certificate(Conn),
+            %receiver_thumbprint = opcua_connection:peer_thumbprint(Conn)
+        };
         channel_message -> TokenId;
         channel_close -> TokenId
     end,
@@ -84,8 +85,12 @@ setup(#uacp_chunk{state = unlocked, message_type = Type, security = undefined} =
 
 prepare(#uacp_chunk{state = unlocked, security = Security, header_size = HSize,
                     unlocked_size = USize, request_id = ReqId, body = Body} = Chunk,
-        Conn, #state{self_security_data = Policy, token_id = TokenId} = State)
-  when (Security =:= TokenId orelse Security =:= Policy),
+        Conn, #state{policy = PolicyUri, token_id = TokenId} = State)
+  when Security =:= TokenId,
+       HSize =/= undefined, USize =/= undefined,
+       ReqId =/= undefined, Body =/= undefined;
+       is_record(Security, uacp_chunk_security),
+       Security#uacp_chunk_security.policy_uri =:= PolicyUri,
        HSize =/= undefined, USize =/= undefined,
        ReqId =/= undefined, Body =/= undefined ->
     ?assertEqual(USize, iolist_size(Body)),
@@ -98,8 +103,11 @@ prepare(#uacp_chunk{state = unlocked, security = Security, header_size = HSize,
 
 lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
                  request_id = ReqId, body = Body} = Chunk, Conn,
-     #state{self_security_data = Policy, token_id = TokenId} = State)
-  when (Security =:= Policy orelse Security =:= TokenId),
+     #state{policy = PolicyUri, token_id = TokenId} = State)
+  when Security =:= TokenId,
+       SeqNum =/= undefined, ReqId =/= undefined, Body =/= undefined;
+       is_record(Security, uacp_chunk_security),
+       Security#uacp_chunk_security.policy_uri =:= PolicyUri,
        SeqNum =/= undefined, ReqId =/= undefined, Body =/= undefined ->
     SeqHeader = opcua_uacp_codec:encode_sequence_header(SeqNum, ReqId),
     {ok, Chunk#uacp_chunk{
@@ -109,6 +117,19 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+validate_security(Conn, #uacp_chunk_security{} = Sec) ->
+    #uacp_chunk_security{sender_cert = Cert, receiver_thumbprint = Thumb} = Sec,
+    case opcua_connection:validate_peer(Conn, Cert) of
+        {error, _Reason} -> {error, invalid_peer_certificate};
+        {ok, Conn2} ->
+            %TODO: Figure out when we should really check the thumbprint....
+            case {opcua_connection:self_thumbprint(Conn2), Thumb} of
+                {_, undefined} -> {ok, Conn2};
+                {Same, Same} -> {ok, Conn2};
+                {_, _} -> {error, receiver_thumbprint_mismatch}
+            end
+    end.
 
 decode_sequence_header(#uacp_chunk{body = Body} = Chunk) ->
     {{SeqNum, ReqId}, RemBody} =

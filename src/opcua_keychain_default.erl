@@ -11,14 +11,15 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API functions
--export([start_link/2]).
+-export([start_link/1]).
 
 %% Keychain functions
+-export([lookup/2]).
 -export([info/1]).
 -export([certificate/2]).
 -export([public_key/2]).
 -export([private_key/2]).
--export([add_certificate/1]).
+-export([add_certificate/2]).
 -export([add_private/1]).
 -export([trust/1]).
 
@@ -32,11 +33,14 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_link(Mod, Args) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, {Mod, Args}, []).
+start_link(Opts) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, {Opts}, []).
 
 
 %%% KEYCHAIN FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+lookup(Method, Params) ->
+    gen_server:call(?MODULE, {lookup, Method, Params}).
 
 info(Ident) ->
     gen_server:call(?MODULE, {info, Ident}).
@@ -50,8 +54,8 @@ private_key(Ident, Format) ->
 public_key(Ident, Format) ->
     gen_server:call(?MODULE, {public_key, Ident, Format}).
 
-add_certificate(Data) ->
-    gen_server:call(?MODULE, {add_certificate, Data}).
+add_certificate(Data, Opts) ->
+    gen_server:call(?MODULE, {add_certificate, Data, Opts}).
 
 add_private(Data) ->
     gen_server:call(?MODULE, {add_private, Data}).
@@ -62,10 +66,21 @@ trust(Ident) ->
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init({Mod, Args}) ->
+init({Opts}) ->
     ?LOG_INFO("Starting default keychain process...", []),
-    opcua_keychain:new(undefined, Mod, Args).
+    Mod = maps:get(backend_module, Opts, opcua_keychain_ets),
+    Args = maps:get(backend_options, Opts, #{}),
+    Entries = maps:get(entries, Opts, []),
+    case opcua_keychain:new(undefined, Mod, Args) of
+        {error, _Reason} = Error -> Error;
+        {ok, Keychain} ->
+            try {ok, add_entries(Keychain, Entries)}
+            catch throw:Reason -> {stop, Reason}
+            end
+    end.
 
+handle_call({lookup, Method, Params}, _From, State) ->
+    {reply, opcua_keychain:lookup(State, Method, Params), State};
 handle_call({info, Ident}, _From, State) ->
     {reply, opcua_keychain:info(State, Ident), State};
 handle_call({certificate, Ident, Format}, _From, State) ->
@@ -74,8 +89,8 @@ handle_call({public_key, Ident, Format}, _From, State) ->
     {reply, opcua_keychain:public_key(State, Ident, Format), State};
 handle_call({private_key, Ident, Format}, _From, State) ->
     {reply, opcua_keychain:private_key(State, Ident, Format), State};
-handle_call({add_certificate, Data}, _From, State) ->
-    case opcua_keychain:add_certificate(State, Data) of
+handle_call({add_certificate, Data, Opts}, _From, State) ->
+    case opcua_keychain:add_certificate(State, Data, Opts) of
         {ok, Info, State2} -> {reply, {ok, Info}, State2};
         Other -> {reply, Other, State}
     end;
@@ -107,3 +122,64 @@ terminate(_Reason, _State) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+add_entries(Keychain, Entries) ->
+    lists:foldl(fun add_entry/2, Keychain, Entries).
+
+add_entry(Entry, Keychain) ->
+    IdentOpts = #{
+        alias => maps:get(alias, Entry, undefined),
+        password => maps:get(password, Entry, undefined),
+        is_trusted => maps:get(is_trusted, Entry, false)
+    },
+    add_key(add_cert(Keychain, Entry, IdentOpts), Entry, IdentOpts).
+
+add_cert(Keychain, #{cert := FileSpec} = Entry, Opts) ->
+    Path = resolve_path(FileSpec),
+    case opcua_keychain:load_pem(Keychain, Path, Opts) of
+        {ok, [], Keychain2} ->
+            case opcua_keychain:load_certificate(Keychain2, Path, Opts) of
+                {ok, _Info, Keychain3} -> Keychain3;
+                {error, Reason} -> maybe_fail(Keychain2, Entry, Reason)
+            end;
+        {ok, _, Keychain2} ->
+            Keychain2;
+        {error, Reason} ->
+            maybe_fail(Keychain, Entry, Reason)
+    end;
+add_cert(Keychain, _Entry, _Opts) ->
+    Keychain.
+
+add_key(Keychain, #{key := FileSpec} = Entry, Opts) ->
+    Path = resolve_path(FileSpec),
+    case opcua_keychain:load_pem(Keychain, Path, Opts) of
+        {ok, [], Keychain2} ->
+            case opcua_keychain:load_private(Keychain2, Path) of
+                {ok, _Info, Keychain3} -> Keychain3;
+                {error, Reason} -> maybe_fail(Keychain2, Entry, Reason)
+            end;
+        {ok, _, Keychain2} ->
+            %TODO: We should maybe check a private key actually got loaded ?
+            Keychain2;
+        {error, Reason} ->
+            maybe_fail(Keychain, Entry, Reason)
+    end;
+add_key(Keychain, _Entry, _Opts) ->
+    Keychain.
+
+maybe_fail(_Keychain, #{is_required := true} = Entry, Reason) ->
+    ?LOG_ERROR("Failed loading keychain entry ~p: ~p", [Entry, Reason]),
+    throw(missing_required_entry);
+maybe_fail(Keychain, Entry, Reason) ->
+    ?LOG_WARNING("Failed loading keychain entry ~p: ~p", [Entry, Reason]),
+    Keychain.
+
+resolve_path({priv, AppName, RelPath} = Spec) ->
+    case code:priv_dir(AppName) of
+        {error, bad_name} -> throw({bad_filename_spec, Spec});
+        PrivPath -> filename:join(PrivPath, RelPath)
+    end;
+resolve_path(Filename) when is_list(Filename) ->
+    list_to_binary(Filename);
+resolve_path(Filename) when is_binary(Filename) ->
+    Filename.

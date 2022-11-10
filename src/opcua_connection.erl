@@ -38,9 +38,12 @@
 -export([response/4]).
 
 %% Keychain API functions
--export([sender_certificate/1]).
--export([receiver_certificate_thumbprint/1]).
--export([validate_peer_certificate/3]).
+-export([self_certificate/1]).
+-export([self_thumbprint/1]).
+-export([peer_certificate/1]).
+-export([peer_public_key/1]).
+-export([peer_thumbprint/1]).
+-export([validate_peer/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -114,37 +117,65 @@ response(#uacp_connection{}, #uacp_message{sender = client} = Req, NodeId, ResPa
 
 %%% KEYCHAIN API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-sender_certificate(#uacp_connection{self_ident = undefined}) -> undefined;
-sender_certificate(#uacp_connection{self_ident = Ident, keychain = Keychain}) ->
+self_certificate(#uacp_connection{self_ident = undefined}) -> undefined;
+self_certificate(#uacp_connection{self_ident = Ident, keychain = Keychain}) ->
     %TODO: Figure out when more than one certificate is required
-    %TODO: Maybe fail if the certificate is not found ?
+    %TODO: Maybe fail if the identity is not found ?
     case opcua_keychain:certificate(Keychain, Ident, der) of
         not_found -> undefined;
         CertDer -> CertDer
     end.
 
-receiver_certificate_thumbprint(#uacp_connection{peer_ident = undefined}) -> undefined;
-receiver_certificate_thumbprint(#uacp_connection{peer_ident = Ident, keychain = Keychain}) ->
-    %TODO: Figure out when more than one certificate is required
-    %TODO: Maybe fail if the certificate is not found ?
+self_thumbprint(#uacp_connection{self_ident = undefined}) -> undefined;
+self_thumbprint(#uacp_connection{self_ident = Ident, keychain = Keychain}) ->
+    %TODO: Maybe fail if the identity is not found ?
     case opcua_keychain:info(Keychain, Ident) of
         not_found -> undefined;
         #{thumbprint := Thumbprint} -> Thumbprint
     end.
 
-validate_peer_certificate(#uacp_connection{keychain = Keychain,
-                                           peer_ident = undefined} = Conn,
-                          DerData, _PeerHostname) ->
-    %TODO: Split concatenated DER certificates and validate
-    %TODO: Validate the hostname
-    case opcua_keychain:add_certificate(Keychain, DerData) of
+peer_certificate(#uacp_connection{peer_ident = undefined}) -> undefined;
+peer_certificate(#uacp_connection{peer_ident = Ident, keychain = Keychain}) ->
+    %TODO: Maybe fail if the identity is not found ?
+    case opcua_keychain:certificate(Keychain, Ident, der) of
+        not_found -> undefined;
+        CertDer -> CertDer
+    end.
+
+peer_public_key(#uacp_connection{peer_ident = undefined}) -> undefined;
+peer_public_key(#uacp_connection{peer_ident = Ident, keychain = Keychain}) ->
+    %TODO: Maybe fail if the identity is not found ?
+    case opcua_keychain:public_key(Keychain, Ident, rec) of
+        not_found -> undefined;
+        KeyRec -> KeyRec
+    end.
+
+peer_thumbprint(#uacp_connection{peer_ident = undefined}) -> undefined;
+peer_thumbprint(#uacp_connection{peer_ident = Ident, keychain = Keychain}) ->
+    %TODO: Maybe fail if the identity is not found ?
+    case opcua_keychain:info(Keychain, Ident) of
+        not_found -> undefined;
+        #{thumbprint := Thumbprint} -> Thumbprint
+    end.
+
+validate_peer(#uacp_connection{peer_ident = undefined} = Conn, undefined) ->
+    {ok, Conn};
+validate_peer(#uacp_connection{keychain = Keychain, peer_ident = undefined} = Conn, DerData) ->
+    IdentOpts = #{alias => peer},
+    case opcua_keychain:add_certificate(Keychain, DerData, IdentOpts) of
         {error, _Reason} = Error -> Error;
         {ok, #{id := Ident}, Keychain2} ->
             case opcua_keychain:validate(Keychain2, Ident) of
-                % No error case yet, commented to make dialyzer happy
-                % {error, _Reason} = Error -> Error;
+                {error, _Reason} = Error -> Error;
                 ok ->
+                    %TODO: Validate certificate hostname if needed
                     {ok, Conn#uacp_connection{keychain = Keychain2,
                                               peer_ident = Ident}}
             end
+    end;
+validate_peer(#uacp_connection{keychain = Keychain, peer_ident = Ident} = Conn, DerData) ->
+    case opcua_keychain:certificate(Keychain, Ident, der) of
+        not_found -> {error, internal_error};
+        DerData -> {ok, Conn};
+        _OtherDer -> {error, peer_identity_changed}
     end.

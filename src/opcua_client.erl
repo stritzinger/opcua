@@ -103,10 +103,13 @@ connect(EndpointSpec) ->
 connect(EndpointSpec, Opts) ->
     Endpoint  = opcua_util:parse_endpoint(EndpointSpec),
     Pid = opcua_client_pool_sup:start_client(#{}),
-    FullOpts = prepare_connect_options(Opts),
-    case gen_statem:call(Pid, {connect, Endpoint, FullOpts}, infinity) of
-        {error, _Reason} = Error -> Error;
-        ok -> {ok, Pid}
+    try prepare_connect_options(Opts) of
+        FullOpts ->
+            case gen_statem:call(Pid, {connect, Endpoint, FullOpts}, infinity) of
+                {error, _Reason} = Error -> Error;
+                ok -> {ok, Pid}
+            end
+    catch throw:Reason -> {error, Reason}
     end.
 
 browse(Pid, NodeSpec) ->
@@ -348,16 +351,29 @@ prepare_connect_options(Opts) ->
         identity => undefined,
         auth => anonymous
     }, Opts),
-    #{keychain := Keychain, mode := Mode, policy := Policy, auth := AuthSpec} = Merged,
+    prepare_keychain(prepare_identity(prepare_selector(Merged))).
+
+prepare_keychain(#{keychain := Keychain} = Opts) ->
     % Make sure the keychain can be shared with other processes
-    Merged2 = Merged#{keychain := opcua_keychain:shareable(Keychain)},
+    Opts#{keychain := opcua_keychain:shareable(Keychain)}.
+
+prepare_selector(#{endpoint_selector := Selector} = Opts)
+  when Selector =/= undefined -> Opts;
+prepare_selector(#{mode := Mode, policy := Policy, auth := AuthSpec} = Opts) ->
     DefaultSelector = fun(Endpoints) ->
         select_endpoint(Mode, Policy, AuthSpec, Endpoints)
     end,
-    case maps:find(endpoint_selector, Merged2) of
-        error -> Merged2#{endpoint_selector => DefaultSelector};
-        {ok, undefined} -> Merged2#{endpoint_selector => DefaultSelector};
-        {ok, _} -> Merged2
+    Opts#{endpoint_selector => DefaultSelector}.
+
+prepare_identity(#{keychain := Keychain, identity := undefined} = Opts) ->
+    case opcua_keychain:lookup(Keychain, alias, client) of
+        [] -> Opts;
+        [Id | _] -> Opts#{identity => Id}
+    end;
+prepare_identity(#{keychain := Keychain, identity := Id} = Opts) ->
+    case opcua_keychain:info(Keychain, Id) of
+        not_found -> throw(identity_not_found);
+        #{id := Id} -> Opts
     end.
 
 proto_initial_mode(#data{opts = #{endpoint_lookup := true} = Opts}) ->
@@ -389,6 +405,7 @@ reconnect(Data, State, EndpointSpec, ProtoOpts) ->
     end.
 
 select_endpoint(Mode, Policy, AuthSpec, Endpoints) ->
+    %TODO: Validate the servers certificate ?
     PolicyUri = opcua_util:policy_uri(Policy),
     AuthType = auth_type(AuthSpec),
     FilteredEndpoints =
@@ -499,7 +516,7 @@ conn_init(#data{opts = CliOpts, socket = undefined} = Data, Endpoint)
                 {{error, _Reason} = Error, _} -> Error;
                 {_, {error, _Reason} = Error} -> Error;
                 {{ok, PeerName}, {ok, SockName}} ->
-                    Keychain = opcua_keychain_ets:new(ParentKeychain),
+                    {ok, Keychain} = opcua_keychain_ets:new(ParentKeychain),
                     Conn = opcua_connection:new(Keychain, Identity, Endpoint,
                                                 PeerName, SockName),
                     Data2 = Data#data{socket = Socket, conn = Conn},

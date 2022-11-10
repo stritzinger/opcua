@@ -1,5 +1,5 @@
 #!/bin/bash
-DST=../priv/_certificates/
+DST=../priv/certificates/
 mkdir ${DST}
 # Client
 openssl genrsa -out ${DST}client.key 2048

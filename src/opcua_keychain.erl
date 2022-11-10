@@ -24,6 +24,10 @@
 -callback shareable(State) -> State
     when State :: term().
 
+-callback lookup(State, Method, Params) -> [Ident] | not_found
+    when State :: term(), Method :: lookup_method(), Params :: lookup_params(),
+         Ident :: ident().
+
 -callback info(State, Ident) -> Info | not_found
     when State :: term(), Ident :: ident(), Info :: ident_info().
 
@@ -39,10 +43,10 @@
     when State :: term(), Ident :: ident(),
          Format :: format(), Key :: public_key().
 
--callback add_certificate(State, Data) ->
+-callback add_certificate(State, Data, Opts) ->
         {ok, Info, State} | {error, Reason}
     when State :: term(), Data :: binary(), Info :: ident_info(),
-         Reason :: read_only | term().
+         Opts :: ident_options(), Reason :: read_only | term().
 
 -callback add_private(State, Data) ->
         {ok, Info, State} | {error, Reason}
@@ -62,15 +66,16 @@
 
 -export([new/2, new/3]).
 -export([shareable/1]).
+-export([lookup/2, lookup/3]).
 -export([info/1, info/2]).
 -export([certificate/2, certificate/3]).
 -export([public_key/2, public_key/3]).
 -export([private_key/2, private_key/3]).
--export([load_pem/2, load_pem/3]).
--export([load_certificate/1, load_certificate/2]).
+-export([load_pem/1, load_pem/2, load_pem/3]).
+-export([load_certificate/1, load_certificate/2, load_certificate/3]).
 -export([load_private/1, load_private/2]).
--export([add_pem/2, add_pem/3]).
--export([add_certificate/1, add_certificate/2]).
+-export([add_pem/1, add_pem/2, add_pem/3]).
+-export([add_certificate/1, add_certificate/2, add_certificate/3]).
 -export([add_private/1, add_private/2]).
 -export([trust/1, trust/2]).
 -export([chain/2, chain/3]).
@@ -88,14 +93,22 @@
 
 -type state() :: default | term().
 -type ident() :: binary().
+-type lookup_method() :: alias.
+-type lookup_params() :: term().
 -type filename() :: binary().
 -type format() :: der | rec.
 -type certificate() :: binary() | #'OTPCertificate'{}.
 -type private_key() :: binary() | public_key:private_key().
 -type public_key() :: binary() | public_key:public_key().
+-type ident_options() :: #{
+    alias => atom(),
+    password => binary(),
+    is_trusted => boolean()
+}.
 -type capability() :: decrypt | encrypt | sign | authenticate | ca.
 -type ident_info() :: #{
     id := binary(),
+    alias := undefined | atom(),
     thumbprint := binary(),
     capabilities := [capability()],
     is_trusted := boolean(),
@@ -125,6 +138,21 @@ new(Parent, Mod, Args) ->
 shareable(default) -> default;
 shareable({Mod, Sub, Parent}) ->
     {Mod, Mod:shareable(Sub), shareable(Parent)}.
+
+% @doc Lookups an identity in default keychain.
+-spec lookup(lookup_method(), lookup_params()) -> [ident()] | not_found.
+lookup(Method, Params) ->
+    opcua_keychain_default:lookup(Method, Params).
+
+% @doc Lookups an identity in given keychain.
+-spec lookup(state(), lookup_method(), lookup_params()) -> [ident()] | not_found.
+lookup(undefined, _Method, _Params) -> not_found;
+lookup(default, Method, Params) -> lookup(Method, Params);
+lookup({Mod, Sub, Parent}, Method, Params) ->
+    case Mod:lookup(Sub, Method, Params) of
+        not_found -> lookup(Parent, Method, Params);
+        Result -> Result
+    end.
 
 % @doc Returns information about an identity from the default keychain.
 -spec info(ident()) -> not_found | ident_info().
@@ -195,62 +223,79 @@ private_key({Mod, Sub, Parent}, Ident, Format) ->
         Result -> Result
     end.
 
-% @doc Loads certificates and keys from given PEM file into the default keychain.
--spec load_pem(filename(), undefined | binary()) ->
+% @doc Loads certificates and keys from given PEM file into the default
+% keychain without ny options.
+-spec load_pem(filename()) ->
     {ok, [ident_info()]} | {error, Reason :: term()}.
-load_pem(Filename, Password) ->
+load_pem(Filename) ->
+    load_pem(Filename, #{}).
+
+% @doc Loads certificates and keys from given PEM file into the default keychain
+% with given options, or into given keychain without any options.
+-spec load_pem(state() | filename(), filename() | ident_options()) ->
+    {ok, [ident_info()]} | {ok, [ident_info()], state()} | {error, Reason :: term()}.
+load_pem(NamedState, Filename) when is_atom(NamedState) ->
+    load_pem(NamedState, Filename, #{});
+load_pem({_Mod, _Sub, _Parent} = State, Filename) ->
+    load_pem(State, Filename, #{});
+load_pem(Filename, Opts) ->
     case file:read_file(Filename) of
         {error, _Reason} = Error -> Error;
-        {ok, Data} -> add_pem(Data, Password)
+        {ok, Data} -> add_pem(Data, Opts)
     end.
 
 % @doc Loads certificates and keys from given PEM file into the given keychain.
 % Could fail if the keystore is read-only after being made shareable.
--spec load_pem(state(), filename(), undefined | binary()) ->
+-spec load_pem(state(), filename(), ident_options()) ->
     {ok, [ident_info()], state()} | {error, Reason :: term()}.
-load_pem(undefined, _Filename, _Password) -> {error, undefined_keychain};
-load_pem(default, Filename, Password) ->
-    case load_pem(Filename, Password) of
+load_pem(undefined, _Filename, _Opts) -> {error, undefined_keychain};
+load_pem(default, Filename, Opts) ->
+    case load_pem(Filename, Opts) of
         {ok, Infos} -> {ok, Infos, default};
         Result -> Result
     end;
-load_pem(State, Filename, Password) ->
+load_pem(State, Filename, Opts) ->
     case file:read_file(Filename) of
         {error, _Reason} = Error -> Error;
-        {ok, Data} ->
-            case add_pem(State, Data, Password) of
-                {ok, Infos, State2} -> {ok, Infos, State2};
-                Result -> Result
-            end
+        {ok, Data} -> add_pem(State, Data, Opts)
     end.
 
-% @doc Loads a certificate from given DER file into the default keychain.
+% @doc Loads a certificate from given DER file into the default keychain
+% without any options.
 -spec load_certificate(filename()) ->
     {ok, ident_info()} | {error, Reason :: term()}.
 load_certificate(Filename) ->
+    load_certificate(Filename, #{}).
+
+% @doc Loads a certificate from given DER file into the given keychain without
+% any options, or in the default keychain with given options.
+-spec load_certificate(state() | filename(), filename() | ident_options()) ->
+    {ok, ident_info()} | {ok, ident_info(), state()} | {error, Reason :: term()}.
+load_certificate(NameState, Filename) when is_atom(NameState) ->
+    load_certificate(NameState, Filename, #{});
+load_certificate({_Mod, _Sub, _Parent} = State, Filename) ->
+    load_certificate(State, Filename, #{});
+load_certificate(Filename, Opts) ->
     case file:read_file(Filename) of
         {error, _Reason} = Error -> Error;
-        {ok, Data} -> add_certificate(Data)
+        {ok, Data} -> add_certificate(Data, Opts)
     end.
 
-% @doc Loads a certificate from given DER file into the given keychain.
+% @doc Loads a certificate from given DER file into the given keychain with
+% given options.
 % Could fail if the keystore is read-only after being made shareable.
--spec load_certificate(state(), filename()) ->
+-spec load_certificate(state(), filename(), ident_options()) ->
     {ok, ident_info(), state()} | {error, Reason :: term()}.
-load_certificate(undefined, _Filename) -> {error, undefined_keychain};
-load_certificate(default, Filename) ->
-    case load_certificate(Filename) of
+load_certificate(undefined, _Filename, _Opts) -> {error, undefined_keychain};
+load_certificate(default, Filename, Opts) ->
+    case load_certificate(Filename, Opts) of
         {ok, Info} -> {ok, Info, default};
         Result -> Result
     end;
-load_certificate({Mod, Sub, Parent}, Filename) ->
+load_certificate(State, Filename, Opts) ->
     case file:read_file(Filename) of
         {error, _Reason} = Error -> Error;
-        {ok, Data} ->
-            case Mod:add_certificate(Sub, Data) of
-                {ok, Info, Sub2} -> {ok, Info, {Mod, Sub2, Parent}};
-                Result -> Result
-            end
+        {ok, Data} -> add_certificate(State, Data, Opts)
     end.
 
 % @doc Loads a privagte key from given DER file into the default keychain.
@@ -279,13 +324,25 @@ load_private({Mod, Sub, Parent}, Filename) ->
             end
     end.
 
-% @doc Adds certificates and keys from given PEM data into the default keychain.
--spec add_pem(binary(), undefined | binary()) ->
+% @doc Adds certificates and keys from given PEM data into the default keychain
+% without any options.
+-spec add_pem(binary()) ->
     {ok, [ident_info()]} | {error, Reason :: term()}.
-add_pem(Data, Password) ->
-    case decode_pem(Data, Password, undefined, fun
+add_pem(Data) ->
+    add_pem(Data, #{}).
+
+% @doc Adds certificates and keys from given PEM data into the default keychain
+% with given options, or into the given keychain without any options.
+-spec add_pem(state() | binary(), binary() | ident_options()) ->
+    {ok, [ident_info()], state()} | {ok, [ident_info()]} | {error, Reason :: term()}.
+add_pem(NamedState, Data) when is_atom(NamedState) ->
+    add_pem(NamedState, Data, #{});
+add_pem({_Mod, _Sub, _Parent} = State, Data) ->
+    add_pem(State, Data, #{});
+add_pem(Data, Opts) ->
+    case decode_pem(Data, Opts, undefined, fun
         (cert, undefined, Der) ->
-            case opcua_keychain_default:add_certificate(Der) of
+            case opcua_keychain_default:add_certificate(Der, Opts) of
                 {ok, Info} -> {ok, Info, undefined};
                 Result -> Result
             end;
@@ -299,43 +356,58 @@ add_pem(Data, Password) ->
         Result -> Result
     end.
 
-% @doc Adds certificates and keys from given PEM data into the given keychain.
+% @doc Adds certificates and keys from given PEM data into the given keychain
+% with given options.
 % Could fail if the keystore is read-only after being made shareable.
--spec add_pem(state(), binary(), undefined | binary()) ->
+-spec add_pem(state(), binary(), ident_options()) ->
     {ok, [ident_info()], state()} | {error, Reason :: term()}.
-add_pem(undefined, _Data, _Password) -> {error, undefined_keychain};
-add_pem(default, Data, Password) ->
-    case add_pem(Data, Password) of
+add_pem(undefined, _Data, _Opts) -> {error, undefined_keychain};
+add_pem(default, Data, Opts) ->
+    case add_pem(Data, Opts) of
         {ok, Infos} -> {ok, Infos, default};
         Result -> Result
     end;
-add_pem({Mod, Sub, Parent}, Data, Password) ->
-    case decode_pem(Data, Password, Sub, fun
-        (cert, State, Der) -> Mod:add_certificate(State, Der);
+add_pem({Mod, Sub, Parent}, Data, Opts) ->
+    case decode_pem(Data, Opts, Sub, fun
+        (cert, State, Der) -> Mod:add_certificate(State, Der, Opts);
         (priv, State, Der) -> Mod:add_private(State, Der)
     end) of
         {ok, Infos, Sub2} -> {ok, Infos, {Mod, Sub2, Parent}};
         Result -> Result
     end.
 
-% @doc Adds a certificate from given DER data into the default keychain.
+% @doc Adds a certificate from given DER data into the default keychain
+% without any options.
 -spec add_certificate(binary()) ->
     {ok, ident_info()} | {error, Reason :: term()}.
 add_certificate(Data) ->
-    opcua_keychain_default:add_certificate(Data).
+    add_certificate(Data, #{}).
 
-% @doc Adds a certificate from given DER data into the given keychain.
+% @doc Adds a certificate from given DER data into the given keychain without
+% any options, or in the default keychain with given options.
 % Could fail if the keystore is read-only after being made shareable.
--spec add_certificate(state(), binary()) ->
+-spec add_certificate(state() | binary(), binary() | ident_options()) ->
+    {ok, ident_info(), state()} | {ok, ident_info()} | {error, Reason :: term()}.
+add_certificate(NamedState, Data) when is_atom(NamedState) ->
+    add_certificate(NamedState, Data, #{});
+add_certificate({_Mod, _Sub, _Parent} = State, Data) ->
+    add_certificate(State, Data, #{});
+add_certificate(Data, Opts) ->
+    opcua_keychain_default:add_certificate(Data, Opts).
+
+% @doc Adds a certificate from given DER data into the given keychain with
+% given options.
+% Could fail if the keystore is read-only after being made shareable.
+-spec add_certificate(state(), binary(), ident_options()) ->
     {ok, ident_info(), state()} | {error, Reason :: term()}.
-add_certificate(undefined, _Data) -> {error, undefined_keychain};
-add_certificate(default, Data) ->
-    case add_certificate(Data) of
+add_certificate(undefined, _Data, _Opts) -> {error, undefined_keychain};
+add_certificate(default, Data, Opts) ->
+    case add_certificate(Data, Opts) of
         {ok, Info} -> {ok, Info, default};
         Result -> Result
     end;
-add_certificate({Mod, Sub, Parent}, Data) ->
-    case Mod:add_certificate(Sub, Data) of
+add_certificate({Mod, Sub, Parent}, Data, Opts) ->
+    case Mod:add_certificate(Sub, Data, Opts) of
         {ok, Info, Sub2} -> {ok, Info, {Mod, Sub2, Parent}};
         Result -> Result
     end.
@@ -409,8 +481,12 @@ validate(_Ident) ->
 % @doc Validates the certification chain for an identity in given keychain or
 % validates the given chain of certificate in either DER or record agains the
 % default keychain.
--spec validate(state() | [certificate()], ident() | format()) ->
+-spec validate(state() | [certificate()], dummy | ident() | format()) ->
     ok | {error, Reason :: term()}.
+validate(_Chain, dummy) ->
+    % Did this dummy implementation to make dialyzer happy and behave like it
+    % can return an error
+    {error, dummy};
 validate(Chain, _Format) when is_list(Chain) ->
     %TODO: implemente chain validation
     ok;
@@ -419,8 +495,12 @@ validate(_State, _Ident) ->
     ok.
 
 % @doc Validates a given certification chain against the given keychain.
--spec validate(state(), [certificate()], format()) ->
+-spec validate(state(), [certificate()], dummy | format()) ->
     ok | {error, Reason :: term()}.
+validate(_State, _Chain, dummy) ->
+    % Did this dummy implementation to make dialyzer happy and behave like it
+    % can return an error
+    {error, dummy};
 validate(_State, _Chain, _Format) ->
     %TODO: implemente chain validation
     ok.
@@ -450,30 +530,30 @@ certificate_capabilities(_CertRec) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-decode_pem(Data, Password, State, Fun) ->
+decode_pem(Data, Opts, State, Fun) ->
     %TODO: Add suport for EC keys
     %TODO: Handle the private key being before the certificate
     %TODO: Maybe keep the certificate order ?
-    decode_pem_entries(public_key:pem_decode(Data), Password, State, Fun, #{}).
+    decode_pem_entries(public_key:pem_decode(Data), Opts, State, Fun, #{}).
 
-decode_pem_entries([], _Password, State, _Fun, Acc) ->
+decode_pem_entries([], _Opts, State, _Fun, Acc) ->
     {ok, maps:values(Acc), State};
-decode_pem_entries([{Type, _EncDer, Algo} = Entry | Rest], Password, State, Fun, Acc)
+decode_pem_entries([{Type, _EncDer, Algo} = Entry | Rest], Opts, State, Fun, Acc)
   when Algo =/= not_encrypted ->
     %TODO: Do some type checking ? See public_key:decode_pem_entries/2
-    DecDer = pubkey_pem:decipher(Entry, Password),
-    decode_pem_entries([{Type, DecDer, not_encrypted} | Rest], Password, State, Fun, Acc);
-decode_pem_entries([{'Certificate', CertDer, not_encrypted} | Rest], Password, State, Fun, Acc) ->
+    DecDer = pubkey_pem:decipher(Entry, maps:get(password, Opts, undefined)),
+    decode_pem_entries([{Type, DecDer, not_encrypted} | Rest], Opts, State, Fun, Acc);
+decode_pem_entries([{'Certificate', CertDer, not_encrypted} | Rest], Opts, State, Fun, Acc) ->
     case Fun(cert, State, CertDer) of
         {ok, #{id := Id} = Info, State2} ->
-            decode_pem_entries(Rest, Password, State2, Fun, Acc#{Id => Info});
+            decode_pem_entries(Rest, Opts, State2, Fun, Acc#{Id => Info});
         Result -> Result
     end;
-decode_pem_entries([{'RSAPrivateKey', KeyDer, not_encrypted} | Rest], Password, State, Fun, Acc) ->
+decode_pem_entries([{'RSAPrivateKey', KeyDer, not_encrypted} | Rest], Opts, State, Fun, Acc) ->
     case Fun(priv, State, KeyDer) of
         {ok, #{id := Id} = Info, State2} ->
-            decode_pem_entries(Rest, Password, State2, Fun, Acc#{Id => Info});
+            decode_pem_entries(Rest, Opts, State2, Fun, Acc#{Id => Info});
         Result -> Result
     end;
-decode_pem_entries([_Other | Rest], Password, State, Fun, Acc) ->
-    decode_pem_entries(Rest, Password, State, Fun, Acc).
+decode_pem_entries([_Other | Rest], Opts, State, Fun, Acc) ->
+    decode_pem_entries(Rest, Opts, State, Fun, Acc).

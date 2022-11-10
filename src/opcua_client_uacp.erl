@@ -38,8 +38,7 @@
     sess                            :: term(),
     endpoint_selector               :: function(),
     security_mode                   :: atom(),
-    security_policy                 :: atom(),
-    identity                        :: undefined | opcua_keychain:ident()
+    security_policy                 :: atom()
 }).
 
 
@@ -56,7 +55,6 @@ init(Mode, Opts) ->
                 endpoint_selector = maps:get(endpoint_selector, AllOpts),
                 security_mode = maps:get(mode, AllOpts),
                 security_policy = maps:get(policy, AllOpts),
-                identity = maps:get(identity, AllOpts),
                 proto = Proto
             },
             {ok, State}
@@ -108,7 +106,7 @@ terminate(Reason, Conn, State) ->
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 default_options() ->
-    #{mode => none, policy => none, auth => anonymous, identity => undefined}.
+    #{mode => none, policy => none, auth => anonymous}.
 
 handle_responses(State, Conn, Msgs) ->
     handle_responses(State, Conn, Msgs, []).
@@ -155,8 +153,7 @@ handle_response(#state{channel = undefined} = State, Conn, _Response) ->
     {ok, Conn, State};
 handle_response(#state{mode = lookup_endpoint} = State, Conn, Response) ->
     case channel_handle_response(State, Conn, Response) of
-        % No error use-case yet, disabled to make dialyzer happy
-        % {error, _Reason, _State2} = Error -> Error;
+        {error, _Reason, _State2} = Error -> Error;
         {open, Conn2, State2} ->
             no_result(channel_get_endpoints(State2, Conn2));
         {endpoints, Endpoints, Conn2, State2} ->
@@ -173,8 +170,7 @@ handle_response(#state{mode = lookup_endpoint} = State, Conn, Response) ->
     end;
 handle_response(#state{mode = open_session} = State, Conn, Response) ->
     case channel_handle_response(State, Conn, Response) of
-        % No error use-case yet, disabled to make dialyzer happy
-        % {error, _Reason, _State2} = Error -> Error;
+        {error, _Reason, _State2} = Error -> Error;
         {open, Conn2, #state{endpoint_selector = Selector} = State2} ->
             no_result(session_create(State2, Conn2, Selector));
         {closed, Conn2, State2} ->
@@ -189,20 +185,20 @@ handle_response(#state{mode = open_session} = State, Conn, Response) ->
             end
     end.
 
-select_endpoint(State, Endpoints) ->
-    #state{endpoint_selector = Selector, identity = Identity} = State,
+select_endpoint(#state{endpoint_selector = Selector}, Endpoints) ->
     case Selector(Endpoints) of
         {error, not_found} -> {error, no_compatible_server_endpoint};
         {ok, Endpoint, _AuthPolicyId, _AuthSpec} ->
-            #{endpoint_url := EndPointUrl,
+            #{%server_certificate := Cert,
+              endpoint_url := EndPointUrl,
               security_mode := Mode,
               security_policy_uri := PolicyUri} = Endpoint,
+            %TODO: Validate the server certificate ?
             EndpointSpec = opcua_util:parse_endpoint(EndPointUrl),
             ProtoOpts = #{
                 endpoint_selector => Selector,
                 mode => Mode,
-                policy => opcua_util:policy_type(PolicyUri),
-                identity => Identity
+                policy => opcua_util:policy_type(PolicyUri)
             },
             {ok, EndpointSpec, ProtoOpts}
     end.
@@ -293,8 +289,8 @@ session_handle_response(#state{channel = Channel, sess = Sess} = State, Conn, Re
 %== Channel Module Abstraction Functions =======================================
 
 channel_open(#state{channel = undefined, security_mode = Mode,
-                    security_policy = Policy, identity = Identity} = State, Conn) ->
-    case opcua_client_channel:init(Conn, Mode, Policy, Identity) of
+                    security_policy = Policy} = State, Conn) ->
+    case opcua_client_channel:init(Conn, Mode, Policy) of
         {error, Reason} ->
             {error, Reason, State};
         {ok, Channel} ->
@@ -326,9 +322,8 @@ channel_terminate(#state{channel = Channel}, Conn, Reason) ->
 
 channel_handle_response(#state{channel = Channel} = State, Conn, Req) ->
     case opcua_client_channel:handle_response(Req, Conn, Channel) of
-        % No error use-case yet, disabled to make dialyzer happy
-        % {error, Reason} ->
-        %     {error, Reason, State};
+        {error, Reason} ->
+            {error, Reason, State};
         {Tag, Conn2, Channel2} ->
             {Tag, Conn2, State#state{channel = Channel2}};
         {Tag, Resp, Conn2, Channel2} ->

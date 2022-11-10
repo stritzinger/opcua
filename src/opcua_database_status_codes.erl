@@ -5,6 +5,8 @@
 
 %% API Functions
 -export([load/1]).
+-export([encode/2]).
+-export([decode/2]).
 -export([name/1, name/2]).
 -export([code/1]).
 -export([is_name/1]).
@@ -32,6 +34,28 @@ load(FilePath) ->
             ok
         end,
     ok).
+
+decode(Status, undefined) when is_integer(Status) ->
+    case lookup(Status, undefined) of
+        undefined -> {Status, undefined};
+        {_, Name, DefaultDesc} -> {Name, DefaultDesc}
+    end;
+decode(Status, Desc) ->
+    case lookup(Status, undefined) of
+        undefined -> {Status, Desc};
+        {_, Name, _} -> {Name, Desc}
+    end.
+
+encode(Status, undefined) ->
+    case lookup(Status, undefined) of
+        undefined when is_integer(Status) -> {Status, undefined};
+        {Code, _, DefaultDesc} -> {Code, DefaultDesc}
+    end;
+encode(Status, Desc) ->
+    case lookup(Status, undefined) of
+        undefined when is_integer(Status) -> {Status, Desc};
+        {Code, _, DefaultDesc} -> {Code, DefaultDesc}
+    end.
 
 name(Status) ->
     case lookup(Status, undefined) of
