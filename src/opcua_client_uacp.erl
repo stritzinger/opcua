@@ -157,11 +157,11 @@ handle_response(#state{mode = lookup_endpoint} = State, Conn, Response) ->
         {open, Conn2, State2} ->
             no_result(channel_get_endpoints(State2, Conn2));
         {endpoints, Endpoints, Conn2, State2} ->
-            case select_endpoint(State2, Endpoints) of
+            case select_endpoint(State2, Conn, Endpoints) of
                 {error, Reason} ->
                     {error, Reason, State2};
-                {ok, EndpointSpec, ProtoOpts} ->
-                    opcua_connection:notify(Conn2, {reconnect, EndpointSpec, ProtoOpts}),
+                {ok, Endpoint} ->
+                    opcua_connection:notify(Conn2, {reconnect, Endpoint}),
                     {ok, Conn2, State2}
             end;
         {closed, Conn2, State2} ->
@@ -185,22 +185,10 @@ handle_response(#state{mode = open_session} = State, Conn, Response) ->
             end
     end.
 
-select_endpoint(#state{endpoint_selector = Selector}, Endpoints) ->
-    case Selector(Endpoints) of
+select_endpoint(#state{endpoint_selector = Selector}, Conn, Endpoints) ->
+    case Selector(Conn, Endpoints) of
         {error, not_found} -> {error, no_compatible_server_endpoint};
-        {ok, Endpoint, _AuthPolicyId, _AuthSpec} ->
-            #{%server_certificate := Cert,
-              endpoint_url := EndPointUrl,
-              security_mode := Mode,
-              security_policy_uri := PolicyUri} = Endpoint,
-            %TODO: Validate the server certificate ?
-            EndpointSpec = opcua_util:parse_endpoint(EndPointUrl),
-            ProtoOpts = #{
-                endpoint_selector => Selector,
-                mode => Mode,
-                policy => opcua_util:policy_type(PolicyUri)
-            },
-            {ok, EndpointSpec, ProtoOpts}
+        {ok, Endpoint, _AuthPolicyId, _AuthSpec} -> {ok, Endpoint}
     end.
 
 

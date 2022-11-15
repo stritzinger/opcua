@@ -234,7 +234,7 @@ handle_response(State, Channel, Conn, Status, _Handle, NodeId, Payload) ->
 
 select_endpoint(#state{endpoint = undefined} = State, Conn, Endpoints) ->
     #state{selector = Selector} = State,
-    case Selector(Endpoints) of
+    case Selector(Conn, Endpoints) of
         {error, not_found} -> {error, no_compatible_server_endpoint};
         {ok, Endpoint, TokenPolicyId, AuthSpec} ->
             #{server_certificate := Cert,

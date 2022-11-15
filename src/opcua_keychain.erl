@@ -46,7 +46,7 @@
 -callback add_certificate(State, Data, Opts) ->
         {ok, Info, State} | {error, Reason}
     when State :: term(), Data :: binary(), Info :: ident_info(),
-         Opts :: ident_options(), Reason :: read_only | term().
+         Opts :: callback_ident_options(), Reason :: read_only | term().
 
 -callback add_private(State, Data) ->
         {ok, Info, State} | {error, Reason}
@@ -55,6 +55,9 @@
 
 -callback trust(State, Ident) -> {ok, State} | {error, Reason}
     when State :: term(), Ident :: ident(), Reason :: read_only | term().
+
+-callback add_alias(State, Ident, Alias) -> {ok, State} | not_found
+    when State :: term(), Ident :: ident(), Alias :: atom().
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -78,6 +81,7 @@
 -export([add_certificate/1, add_certificate/2, add_certificate/3]).
 -export([add_private/1, add_private/2]).
 -export([trust/1, trust/2]).
+-export([add_alias/2, add_alias/3]).
 -export([chain/2, chain/3]).
 -export([validate/1, validate/2, validate/3]).
 
@@ -101,14 +105,18 @@
 -type private_key() :: binary() | public_key:private_key().
 -type public_key() :: binary() | public_key:public_key().
 -type ident_options() :: #{
-    alias => atom(),
+    alias => atom() | [atom()],
     password => binary(),
     is_trusted => boolean()
+}.
+-type callback_ident_options() :: #{
+    aliases := [atom()],
+    is_trusted := boolean()
 }.
 -type capability() :: decrypt | encrypt | sign | authenticate | ca.
 -type ident_info() :: #{
     id := binary(),
-    alias := undefined | atom(),
+    aliases := [atom()],
     thumbprint := binary(),
     capabilities := [capability()],
     is_trusted := boolean(),
@@ -369,8 +377,10 @@ add_pem(default, Data, Opts) ->
     end;
 add_pem({Mod, Sub, Parent}, Data, Opts) ->
     case decode_pem(Data, Opts, Sub, fun
-        (cert, State, Der) -> Mod:add_certificate(State, Der, Opts);
-        (priv, State, Der) -> Mod:add_private(State, Der)
+        (cert, State, Der) ->
+            Mod:add_certificate(State, Der, normalize_ident_opts(Opts));
+        (priv, State, Der) ->
+            Mod:add_private(State, Der)
     end) of
         {ok, Infos, Sub2} -> {ok, Infos, {Mod, Sub2, Parent}};
         Result -> Result
@@ -407,7 +417,7 @@ add_certificate(default, Data, Opts) ->
         Result -> Result
     end;
 add_certificate({Mod, Sub, Parent}, Data, Opts) ->
-    case Mod:add_certificate(Sub, Data, Opts) of
+    case Mod:add_certificate(Sub, Data, normalize_ident_opts(Opts)) of
         {ok, Info, Sub2} -> {ok, Info, {Mod, Sub2, Parent}};
         Result -> Result
     end.
@@ -453,6 +463,31 @@ trust({Mod, Sub, Parent}, Ident) ->
         {ok, Sub2} -> {ok, {Mod, Sub2, Parent}};
         not_found ->
             case trust(Parent, Ident) of
+                {ok, Parent2} -> {ok, {Mod, Sub, Parent2}};
+                Result -> Result
+            end;
+        Result -> Result
+    end.
+
+% @doc Add an alias to an existing identity in default keychain.
+-spec add_alias(ident(), atom()) -> ok | not_found.
+add_alias(Ident, Alias) ->
+    opcua_keychain_default:add_alias(Ident, Alias).
+
+% @doc Add an alias to an existing identity in given keychain.
+% Could fail if the keystore is read-only after being made shareable.
+-spec add_alias(state(), ident(), atom()) -> {ok, state()} | not_found.
+add_alias(undefined, _Ident, _Alias) -> {error, undefined_keychain};
+add_alias(default, Ident, Alias) ->
+    case add_alias(Ident, Alias) of
+        ok -> {ok, default};
+        Result -> Result
+    end;
+add_alias({Mod, Sub, Parent}, Ident, Alias) ->
+    case Mod:add_alias(Sub, Ident, Alias) of
+        {ok, Sub2} -> {ok, {Mod, Sub2, Parent}};
+        not_found ->
+            case add_alias(Parent, Ident, Alias) of
                 {ok, Parent2} -> {ok, {Mod, Sub, Parent2}};
                 Result -> Result
             end;
@@ -529,6 +564,14 @@ certificate_capabilities(_CertRec) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+normalize_ident_opts(Opts) ->
+    Aliases = case maps:get(alias, Opts, []) of
+        L when is_list(L) -> L;
+        A when is_atom(A) -> [A]
+    end,
+    IsTrusted = maps:get(is_trusted, Opts, false),
+    #{aliases => Aliases, is_trusted => IsTrusted}.
 
 decode_pem(Data, Opts, State, Fun) ->
     %TODO: Add suport for EC keys

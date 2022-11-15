@@ -77,7 +77,8 @@
 -record(opcua_endpoint, {
     url                         :: binary(),
     host                        :: inet:ip4_address() | inet:hostname(),
-    port                        :: inet:port_number()
+    port                        :: inet:port_number(),
+    cert                        :: undefined | binary()
 }).
 
 %-- Codec Records --------------------------------------------------------------

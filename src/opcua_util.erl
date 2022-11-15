@@ -26,7 +26,7 @@
 -export([get_int/3]).
 -export([convert_name/1]).
 -export([parse_range/1]).
--export([parse_endpoint/1]).
+-export([parse_endpoint/1, parse_endpoint/2]).
 -export([policy_uri/1]).
 -export([policy_type/1]).
 
@@ -131,6 +131,10 @@ convert_name([FirstLetter|Rest]) ->
 parse_range(undefined) -> undefined;
 parse_range(<<>>) -> undefined;
 parse_range(Range) -> parse_range_dims(Range, []).
+
+parse_endpoint(EndpointSpec, ServerCert) ->
+    Endpoint = parse_endpoint(EndpointSpec),
+    Endpoint#opcua_endpoint{cert = ServerCert}.
 
 parse_endpoint({{A, B, C, D} = Ip, Port})
   when is_integer(A), A >= 0, A < 256, is_integer(B), B >= 0, B < 256,

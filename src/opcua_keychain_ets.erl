@@ -24,6 +24,7 @@
 -export([add_certificate/3]).
 -export([add_private/2]).
 -export([trust/2]).
+-export([add_alias/3]).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -36,7 +37,7 @@
 
 -record(entry, {
     id :: binary(),
-    alias :: atom(),
+    aliases :: [atom()],
     thumbprint :: binary(),
     capabilities :: [opcua_keychain:capabilities()],
     cert_der :: binary(),
@@ -119,8 +120,7 @@ private_key(#state{table = Table}, Ident, rec) ->
 add_certificate(#state{read_only = true}, _CertDer, _Opts) ->
     {error, read_only};
 add_certificate(#state{table = Table} = State, CertDer, Opts) ->
-    Alias = maps:get(alias, Opts, undefined),
-    IsTrusted = maps:get(is_trusted, Opts, false),
+    #{aliases := Aliases, is_trusted := IsTrusted} = Opts,
     try public_key:pkix_decode_cert(CertDer, otp) of
         CertRec ->
             Id = opcua_keychain:certificate_id(CertRec),
@@ -130,7 +130,7 @@ add_certificate(#state{table = Table} = State, CertDer, Opts) ->
                 [] ->
                     Entry = #entry{
                         id = Id,
-                        alias = Alias,
+                        aliases = Aliases,
                         thumbprint = CertThumbprint,
                         capabilities = CertCaps,
                         cert_der = CertDer,
@@ -176,20 +176,38 @@ trust(#state{table = Table} = State, Ident) ->
             {ok, State}
     end.
 
+add_alias(#state{read_only = true}, _Ident, _Alias) -> {error, read_only};
+add_alias(#state{table = Table} = State, Ident, Alias) ->
+    case ets:lookup(Table, Ident) of
+        [] -> not_found;
+        [#entry{aliases = Aliases} = Entry] ->
+            case lists:member(Alias, Aliases) of
+                true -> {ok, State};
+                false ->
+                    Entry2 = Entry#entry{aliases = [Alias | Aliases]},
+                    ets:insert(Table, Entry2),
+                    {ok, State}
+            end
+    end.
+
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-get_info(#entry{id = Id, alias = Alias, thumbprint = Thumb, capabilities = Caps,
-                key_der = undefined, is_trusted = IsTrusted}) ->
-    #{id => Id, alias => Alias, thumbprint => Thumb, capabilities => Caps,
-      is_trusted => IsTrusted, has_private => false};
-get_info(#entry{id = Id, alias = Alias, thumbprint = Thumb, capabilities = Caps,
+get_info(#entry{id = Id, aliases = Aliases, thumbprint = Thumb,
+                capabilities = Caps, key_der = undefined,
                 is_trusted = IsTrusted}) ->
-    #{id => Id, alias => Alias, thumbprint => Thumb, capabilities => Caps,
+    #{id => Id, aliases => Aliases, thumbprint => Thumb, capabilities => Caps,
+      is_trusted => IsTrusted, has_private => false};
+get_info(#entry{id = Id, aliases = Aliases, thumbprint = Thumb,
+                capabilities = Caps, is_trusted = IsTrusted}) ->
+    #{id => Id, aliases => Aliases, thumbprint => Thumb, capabilities => Caps,
       is_trusted => IsTrusted, has_private => true}.
 
-
-update_lookups(_State, #entry{alias = undefined}) -> ok;
-update_lookups(#state{aliases = Aliases}, #entry{id = Id, alias = Alias}) ->
-    ets:insert(Aliases, {Alias, Id}),
+update_lookups(#state{aliases = Table}, #entry{id = Id, aliases = Aliases}) ->
+    update_alias_lookups(Table, Aliases, Id),
     ok.
+
+update_alias_lookups(_Table, [], _Id) -> ok;
+update_alias_lookups(Table, [Alias | Aliases], Id) ->
+    ets:insert(Table, {Alias, Id}),
+    update_alias_lookups(Table, Aliases, Id).

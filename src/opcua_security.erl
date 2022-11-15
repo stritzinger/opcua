@@ -118,6 +118,11 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+validate_security(Conn, #uacp_chunk_security{policy_uri = ?POLICY_NONE,
+                                             sender_cert = undefined}) ->
+    % We may have a defined peer certificate, but without any security, peer do
+    % have to give a certificate, so we can't enforce peer validation.
+    {ok, Conn};
 validate_security(Conn, #uacp_chunk_security{} = Sec) ->
     #uacp_chunk_security{sender_cert = Cert, receiver_thumbprint = Thumb} = Sec,
     case opcua_connection:validate_peer(Conn, Cert) of

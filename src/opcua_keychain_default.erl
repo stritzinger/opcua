@@ -22,6 +22,7 @@
 -export([add_certificate/2]).
 -export([add_private/1]).
 -export([trust/1]).
+-export([add_alias/2]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -63,6 +64,9 @@ add_private(Data) ->
 trust(Ident) ->
     gen_server:call(?MODULE, {trust, Ident}).
 
+add_alias(Ident, Alias) ->
+    gen_server:call(?MODULE, {add_alias, Ident, Alias}).
+
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -101,6 +105,11 @@ handle_call({add_private, Data}, _From, State) ->
     end;
 handle_call({trust, Ident}, _From, State) ->
     case opcua_keychain:trust(State, Ident) of
+        {ok, State2} -> {reply, ok, State2};
+        Other -> {reply, Other, State}
+    end;
+handle_call({add_alias, Ident, Alias}, _From, State) ->
+    case opcua_keychain:add_alias(State, Ident, Alias) of
         {ok, State2} -> {reply, ok, State2};
         Other -> {reply, Other, State}
     end;

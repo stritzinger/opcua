@@ -43,6 +43,7 @@
 -export([peer_certificate/1]).
 -export([peer_public_key/1]).
 -export([peer_thumbprint/1]).
+-export([lock_peer/2]).
 -export([validate_peer/2]).
 
 
@@ -156,6 +157,15 @@ peer_thumbprint(#uacp_connection{peer_ident = Ident, keychain = Keychain}) ->
     case opcua_keychain:info(Keychain, Ident) of
         not_found -> undefined;
         #{thumbprint := Thumbprint} -> Thumbprint
+    end.
+
+lock_peer(#uacp_connection{peer_ident = Ident} = Conn, Ident) -> {ok, Conn};
+lock_peer(#uacp_connection{keychain = Keychain, peer_ident = undefined} = Conn, Ident) ->
+    %TODO: Should we validate anything, or just trust the caller ?
+    case opcua_keychain:add_alias(Keychain, Ident, peer) of
+        not_found -> {error, peer_certificate_not_found};
+        {ok, Keychain2} ->
+            {ok, Conn#uacp_connection{keychain = Keychain2, peer_ident = Ident}}
     end.
 
 validate_peer(#uacp_connection{peer_ident = undefined} = Conn, undefined) ->

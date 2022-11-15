@@ -42,7 +42,7 @@
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -type client_auth_spec() :: anonymous | {user_name, binary(), binary()} | {certificate, opcua_keychain:ident()}.
--type endpoint_selector() :: fun((Endpoints :: [map()]) ->
+-type endpoint_selector() :: fun((Conn :: opcua:connection(), Endpoints :: [map()]) ->
      {ok, Endpoint :: term(), TokenPolicyId :: binary(),
           AuthMethod :: client_auth_spec()}
    | {error, not_found}).
@@ -58,14 +58,16 @@
     % The keychain manager to use, if not specfied it uses the default one.
     keychain => term(),
     % If the client should lookup the server endpoints first.
-    % Default: false
+    % The default is false if mode is none, true otherwise.
     endpoint_lookup => boolean(),
     % The security to use for endpoint lookup, if not specified,
-    % mode and policy will be none and the identity will be the root one.
+    % mode and policy will be none.
+    % Note that to be able to establish a secure connection, the client
+    % needs to know the server certificate/identity, this is what the endpoint
+    % lookup is usually used for.
     endpoint_lookup_security => #{
         mode => opcua:security_mode(),
-        policy => opcua:security_policy_type(),
-        identity => undefined | opcua_keychain:ident()
+        policy => opcua:security_policy_type()
     },
     % The endpoint selector function to use if endpoint lookup is enabled.
     % If not specified, the first endpoint and token type that match the then
@@ -79,6 +81,11 @@
     policy => opcua:security_policy_type(),
     % The client identity, must be defined if the policy type is not none.
     identity => undefined | opcua_keychain:ident(),
+    % The server identity, if not defined, the identity will be found by
+    % looking up the server endpoints. This could be specified to force the
+    % use of a specific endpoint, or do a secured endpoint lookup (if that
+    % ever make sense).
+    server_identity => undefined | opcua_keychain:ident(),
     % The authentication method to use if the endpoint_selector is not defined
     % or the endpoint selection is not enabled. By default it uses anonymous.
     auth => client_auth_spec()
@@ -95,17 +102,18 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-connect(EndpointSpec) ->
-    connect(EndpointSpec, #{}).
+connect(EndpointUrl) ->
+    connect(EndpointUrl, #{}).
 
--spec connect(EndpointSpec :: binary(), Opts :: client_connect_options()) ->
+-spec connect(EndpointUrl :: binary(), Opts :: client_connect_options()) ->
     {ok, ClientPid :: pid()} | {error, Reason :: term()}.
-connect(EndpointSpec, Opts) ->
-    Endpoint  = opcua_util:parse_endpoint(EndpointSpec),
+connect(EndpointUrl, Opts) ->
+    EndpointRec  = opcua_util:parse_endpoint(EndpointUrl),
     Pid = opcua_client_pool_sup:start_client(#{}),
     try prepare_connect_options(Opts) of
         FullOpts ->
-            case gen_statem:call(Pid, {connect, Endpoint, FullOpts}, infinity) of
+            Msg = {connect, EndpointRec, FullOpts},
+            case gen_statem:call(Pid, Msg, infinity) of
                 {error, _Reason} = Error -> Error;
                 ok -> {ok, Pid}
             end
@@ -170,7 +178,7 @@ init(_Opts) ->
 callback_mode() -> [handle_event_function, state_enter].
 
 %% STATE: disconnected
-handle_event({call, From}, {connect, Endpoint, Opts}, disconnected = State,
+handle_event({call, From}, {connect, EndpointRec, Opts}, disconnected = State,
              #data{conn = undefined} = Data) ->
     Data2 = Data#data{opts = Opts},
     {ProtoMode, ProtoOpts} = proto_initial_mode(Data2),
@@ -180,10 +188,10 @@ handle_event({call, From}, {connect, Endpoint, Opts}, disconnected = State,
         %     stop_and_reply_all(normal, Data2, {error, Reason});
         {ok, Proto} ->
             Data3 = Data2#data{proto = Proto},
-            next_state_and_reply_later({connecting, 0, Endpoint}, Data3,
+            next_state_and_reply_later({connecting, 0, EndpointRec}, Data3,
                                        on_ready, From, event_timeouts(State, Data2))
     end;
-%% STATE: {connecting, N, Endpoint}
+%% STATE: {connecting, N, EndpointRec}
 handle_event(enter, _OldState, {connecting, N, _} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered ~p", [self(), State]),
     #data{opts = #{connect_retry := MaxRetry}} = Data,
@@ -193,12 +201,12 @@ handle_event(enter, _OldState, {connecting, N, _} = State, Data) ->
         false ->
             stop_and_reply_all(normal, Data, {error, retry_exhausted})
     end;
-handle_event(state_timeout, retry, {connecting, N, Endpoint} = State, Data) ->
-    case conn_init(Data, Endpoint) of
+handle_event(state_timeout, retry, {connecting, N, EndpointRec} = State, Data) ->
+    case conn_init(Data, EndpointRec) of
         {ok, Data2} ->
             {next_state, handshaking, Data2, event_timeouts(State, Data2)};
         {error, _Reason} ->
-            {next_state, {connecting, N + 1, Endpoint}, Data,
+            {next_state, {connecting, N + 1, EndpointRec}, Data,
                 event_timeouts(State, Data)}
     end;
 %% STATE: handshaking
@@ -211,10 +219,10 @@ handle_event(enter, _OldState, handshaking = State, Data) ->
         {ok, Data2} ->
             {keep_state, Data2, enter_timeouts(State, Data2)}
     end;
-handle_event(info, {opcua_connection, {reconnect, EndpointSpec, ProtoOpts}},
+handle_event(info, {opcua_connection, {reconnect, Endpoint}},
              handshaking = State, Data) ->
-    ?LOG_INFO("Reconnecting to endpoint ~s", [EndpointSpec #opcua_endpoint.url]),
-    {next_state, {reconnecting, EndpointSpec, ProtoOpts}, Data, event_timeouts(State, Data)};
+    ?LOG_INFO("Reconnecting to endpoint ~s", [maps:get(endpoint_url, Endpoint)]),
+    {next_state, {reconnecting, Endpoint}, Data, event_timeouts(State, Data)};
 handle_event(info, {opcua_connection, ready}, handshaking = State, Data) ->
     {next_state, connected, Data, event_timeouts(State, Data)};
 handle_event(info, {opcua_connection, _}, handshaking, Data) ->
@@ -237,8 +245,8 @@ handle_event({call, From}, {write, NodeId, AVPairs, Opts},
 handle_event({call, From}, close, connected = State, Data) ->
     next_state_and_reply_later(closing, Data, on_closed, From,
                                event_timeouts(State, Data));
-%% STATE: {reconnecting, EndpointSpec, ProtoOpts}
-handle_event(enter, _OldState, {reconnecting, _EndpointSpec, _ProtoOpts} = State, Data) ->
+%% STATE: {reconnecting, Endpoint}
+handle_event(enter, _OldState, {reconnecting, _Endpoint} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered reconnecting", [self()]),
     case proto_close(Data) of
         % No error use-case yet, diabling to make dialyzer happy
@@ -249,14 +257,14 @@ handle_event(enter, _OldState, {reconnecting, _EndpointSpec, _ProtoOpts} = State
             {keep_state, Data2, enter_timeouts(State, Data2)}
     end;
 handle_event(info, {opcua_connection, closed},
-             {reconnecting, EndpointSpec, ProtoOpts} = State, Data) ->
-    reconnect(Data, State, EndpointSpec, ProtoOpts);
-handle_event(state_timeout, abort, {reconnecting, EndpointSpec, ProtoOpts} = State, Data) ->
-    reconnect(Data, State, EndpointSpec, ProtoOpts);
-handle_event(info, {tcp_closed, Sock}, {reconnecting, EndpointSpec, ProtoOpts} = State,
+             {reconnecting, Endpoint} = State, Data) ->
+    reconnect(Data, State, Endpoint);
+handle_event(state_timeout, abort, {reconnecting, Endpoint} = State, Data) ->
+    reconnect(Data, State, Endpoint);
+handle_event(info, {tcp_closed, Sock}, {reconnecting, Endpoint} = State,
              #data{socket = Sock} = Data) ->
     %% When closing the server may close the socket at any time
-    reconnect(Data, State, EndpointSpec, ProtoOpts);
+    reconnect(Data, State, Endpoint);
 %% STATE: closing
 handle_event(enter, _OldState, closing = State, Data) ->
     ?LOG_DEBUG("Client ~p entered closing", [self()]),
@@ -338,52 +346,71 @@ prepare_connect_options(Opts) ->
         connect_retry => 3,
         connect_timeout => infinity,
         keychain => default,
-        endpoint_lookup => false,
+        endpoint_lookup => undefined,
         endpoint_lookup_security =>
             maps:merge(#{
                 mode => none,
-                policy => none,
-                auth => anonimous,
-                identity => maps:get(identity, Opts, undefined)
+                policy => none
             }, EndpointLookupSec),
         mode => none,
         policy => none,
         identity => undefined,
+        server_identity => undefined,
         auth => anonymous
     }, Opts),
-    prepare_keychain(prepare_identity(prepare_selector(Merged))).
+    prepare_keychain(
+        prepare_lookup(
+            prepare_server_identity(
+                prepare_client_identity(
+                    prepare_selector(Merged))))).
 
 prepare_keychain(#{keychain := Keychain} = Opts) ->
     % Make sure the keychain can be shared with other processes
     Opts#{keychain := opcua_keychain:shareable(Keychain)}.
 
+prepare_lookup(#{mode := none, endpoint_lookup := undefined} = Opts) ->
+    Opts#{endpoint_lookup := false};
+prepare_lookup(#{endpoint_lookup := undefined} = Opts) ->
+    Opts#{endpoint_lookup := true};
+prepare_lookup(Opts) ->
+    Opts.
+
 prepare_selector(#{endpoint_selector := Selector} = Opts)
   when Selector =/= undefined -> Opts;
 prepare_selector(#{mode := Mode, policy := Policy, auth := AuthSpec} = Opts) ->
-    DefaultSelector = fun(Endpoints) ->
-        select_endpoint(Mode, Policy, AuthSpec, Endpoints)
+    DefaultSelector = fun(Conn, Endpoints) ->
+        select_endpoint(Conn, Mode, Policy, AuthSpec, Endpoints)
     end,
     Opts#{endpoint_selector => DefaultSelector}.
 
-prepare_identity(#{keychain := Keychain, identity := undefined} = Opts) ->
+prepare_client_identity(#{keychain := Keychain, identity := undefined} = Opts) ->
     case opcua_keychain:lookup(Keychain, alias, client) of
         [] -> Opts;
         [Id | _] -> Opts#{identity => Id}
     end;
-prepare_identity(#{keychain := Keychain, identity := Id} = Opts) ->
+prepare_client_identity(#{keychain := Keychain, identity := Id} = Opts) ->
     case opcua_keychain:info(Keychain, Id) of
-        not_found -> throw(identity_not_found);
+        not_found -> throw(client_identity_not_found);
         #{id := Id} -> Opts
     end.
 
+prepare_server_identity(#{keychain := Keychain, server_identity := Id} = Opts)
+  when Id =/= undefined ->
+    case opcua_keychain:info(Keychain, Id) of
+        not_found -> throw(server_identity_not_found);
+        #{id := Id} -> Opts
+    end;
+prepare_server_identity(Opts) ->
+    Opts.
+
 proto_initial_mode(#data{opts = #{endpoint_lookup := true} = Opts}) ->
     #{endpoint_selector := Selector, endpoint_lookup_security := SubOpts} = Opts,
-    #{mode := Mode, policy := Policy, identity := Ident} = SubOpts,
-    ProtoOpts = #{endpoint_selector => Selector, mode => Mode, policy => Policy, identity => Ident},
+    #{mode := Mode, policy := Policy} = SubOpts,
+    ProtoOpts = #{endpoint_selector => Selector, mode => Mode, policy => Policy},
     {lookup_endpoint, ProtoOpts};
 proto_initial_mode(#data{opts = #{endpoint_lookup := false} = Opts}) ->
-    #{endpoint_selector := Selector, mode := Mode, policy := Policy, identity := Ident} = Opts,
-    ProtoOpts = #{endpoint_selector => Selector, mode => Mode, policy => Policy, identity => Ident},
+    #{endpoint_selector := Selector, mode := Mode, policy := Policy} = Opts,
+    ProtoOpts = #{endpoint_selector => Selector, mode => Mode, policy => Policy},
     {open_session, ProtoOpts}.
 
 % No error use-case yet, diabling to make dialyzer happy
@@ -392,25 +419,42 @@ proto_initial_mode(#data{opts = #{endpoint_lookup := false} = Opts}) ->
 pack_command_result(From, State, {async, Handle, Data}) ->
     keep_state_and_reply_later(Data, Handle, From, enter_timeouts(State, Data)).
 
-reconnect(Data, State, EndpointSpec, ProtoOpts) ->
+reconnect(#data{opts = Opts} = Data, State, Endpoint) ->
     Data2 = conn_close(Data),
+
+    #{endpoint_selector := Selector} = Opts,
+    %TODO: Validate the server certificate again ?
+    #{server_certificate := ServCert,
+      endpoint_url := EndPointUrl,
+      security_mode := Mode,
+      security_policy_uri := PolicyUri} = Endpoint,
+    EndpointRec = opcua_util:parse_endpoint(EndPointUrl, ServCert),
+    ProtoOpts = #{
+        endpoint_selector => Selector,
+        mode => Mode,
+        policy => opcua_util:policy_type(PolicyUri)
+    },
     case opcua_client_uacp:init(open_session, ProtoOpts) of
         % No error use-case yet, diabling to make dialyzer happy
         % {error, Reason} ->
         %     stop_and_reply_all(internal_error, Data2, {error, Reason});
         {ok, Proto} ->
             Data3 = Data2#data{proto = Proto},
-            {next_state, {connecting, 0, EndpointSpec}, Data3,
+            {next_state, {connecting, 0, EndpointRec}, Data3,
              event_timeouts(State, Data3)}
     end.
 
-select_endpoint(Mode, Policy, AuthSpec, Endpoints) ->
-    %TODO: Validate the servers certificate ?
+select_endpoint(Conn, Mode, Policy, AuthSpec, Endpoints) ->
+    %TODO: Validate the servers certificates ?
+    ServerCert = opcua_connection:peer_certificate(Conn),
     PolicyUri = opcua_util:policy_uri(Policy),
     AuthType = auth_type(AuthSpec),
     FilteredEndpoints =
-        [E || E = #{security_mode := M, security_policy_uri := P} <- Endpoints,
-              M =:= Mode, P =:= PolicyUri],
+        [E || E = #{security_mode := M,
+                    security_policy_uri := P,
+                    server_certificate := C} <- Endpoints,
+              M =:= Mode, P =:= PolicyUri,
+              ServerCert =:= undefined orelse C =:= ServerCert],
     case FilteredEndpoints of
         [] -> {error, not_found};
         [#{user_identity_tokens := Tokens} = Endpoint | _] ->
@@ -499,12 +543,13 @@ proto_terminate(#data{conn = Conn, proto = Proto}, Reason) ->
 
 %== Connection Managment =======================================================
 
-conn_init(#data{opts = CliOpts, socket = undefined} = Data, Endpoint)
-  when Endpoint =/= undefined ->
+conn_init(#data{opts = CliOpts, socket = undefined} = Data, EndpointRec)
+  when EndpointRec =/= undefined ->
     #{keychain := ParentKeychain,
       identity := Identity,
       connect_timeout := Timeout} = CliOpts,
-    #opcua_endpoint{host = Host, port = Port, url = Url} = Endpoint,
+    #opcua_endpoint{host = Host, port = Port,
+                    url = Url, cert = Cert} = EndpointRec,
     ?LOG_DEBUG("Connecting to ~s", [Url]),
     Opts = [binary, {active, false}, {packet, raw}],
     case gen_tcp:connect(Host, Port, Opts, Timeout) of
@@ -517,14 +562,34 @@ conn_init(#data{opts = CliOpts, socket = undefined} = Data, Endpoint)
                 {_, {error, _Reason} = Error} -> Error;
                 {{ok, PeerName}, {ok, SockName}} ->
                     {ok, Keychain} = opcua_keychain_ets:new(ParentKeychain),
-                    Conn = opcua_connection:new(Keychain, Identity, Endpoint,
+                    Conn = opcua_connection:new(Keychain, Identity, EndpointRec,
                                                 PeerName, SockName),
                     Data2 = Data#data{socket = Socket, conn = Conn},
-                    case conn_activate(Data2) of
+                    case conn_lock_peer(Data2, Cert) of
                         {error, _Reason} = Error -> Error;
-                        ok -> {ok, Data2}
+                        {ok, Data3} ->
+                            case conn_activate(Data3) of
+                                {error, _Reason} = Error -> Error;
+                                ok -> {ok, Data3}
+                            end
                     end
             end
+    end.
+
+conn_lock_peer(#data{opts = #{server_identity := undefined}} = Data, undefined) ->
+    {ok, Data};
+conn_lock_peer(#data{opts = #{server_identity := Ident}, conn = Conn} = Data, undefined) ->
+    % We don't have a server ceritificate, but an expected server identity,
+    % the certificate MUST already be in the keychain.
+    case opcua_connection:lock_peer(Conn, Ident) of
+        {error, _Reason} = Error -> Error;
+        {ok, Conn2} -> {ok, Data#data{conn = Conn2}}
+    end;
+conn_lock_peer(#data{conn = Conn} = Data, CertDer) ->
+    % we got an excplicit server certificate, validate and lock it
+    case opcua_connection:validate_peer(Conn, CertDer) of
+        {error, _Reason} = Error -> Error;
+        {ok, Conn2} -> {ok, Data#data{conn = Conn2}}
     end.
 
 conn_activate(#data{socket = Socket}) ->
@@ -600,14 +665,14 @@ enter_timeouts({connecting, _, _} = State, Data) ->
     [{state_timeout, 10000, retry} | event_timeouts(State, Data)];
 enter_timeouts(handshaking = State, Data) ->
     [{state_timeout, 3000, abort} | event_timeouts(State, Data)];
-enter_timeouts({reconnecting, _, _} = State, Data) ->
+enter_timeouts({reconnecting, _} = State, Data) ->
     [{state_timeout, 3000, abort} | event_timeouts(State, Data)];
 enter_timeouts(closing = State, Data) ->
     [{state_timeout, 4000, abort} | event_timeouts(State, Data)];
 enter_timeouts(State, Data) ->
     event_timeouts(State, Data).
 
-event_timeouts({reconnecting, _, _}, Data) ->
+event_timeouts({reconnecting, _}, Data) ->
     event_timeouts(reconnecting, Data);
 event_timeouts(State, Data)
   when State =:= handshaking; State =:= connected;
