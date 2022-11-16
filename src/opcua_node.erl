@@ -10,13 +10,35 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -export([format/1, format/2]).
+-export([parse/1]).
 -export([class/1]).
 -export([attribute/2]).
 -export([attribute_type/2]).
+-export([parse_access_level/1]).
+-export([format_access_level/1]).
+
+
+%%% MACROS FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(ACCESS_LEVEL_SPEC, [
+    % https://reference.opcfoundation.org/v104/Core/docs/Part3/8.57/
+    {current_read,          2#00000000001},
+    {current_write,         2#00000000010},
+    {history_read,          2#00000000100},
+    {history_write,         2#00000001000},
+    {semantic_change,       2#00000010000},
+    {status_write,          2#00000100000},
+    {timestamp_write,       2#00001000000},
+    % https://reference.opcfoundation.org/v104/Core/docs/Part3/8.58/
+    {nonatomic_read,        2#00010000000},
+    {nonatomic_write,       2#00100000000},
+    {write_full_array_only, 2#01000000000}
+]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%TODO: Add support for URI namespaces (nsu=)
 format(List)
   when is_list(List) ->
     format(",", List);
@@ -49,15 +71,53 @@ format(#opcua_node_id{ns = N, type = string, value = V})
     iolist_to_binary(io_lib:format("ns=~w;s=~s", [N, V]));
 format(#opcua_node_id{ns = 0, type = guid, value = V})
   when is_binary(V) ->
-    iolist_to_binary(io_lib:format("g=~s", [V]));
+    Id = uuid:uuid_to_string(V, binary_standard),
+    iolist_to_binary(io_lib:format("g=~s", [Id]));
 format(#opcua_node_id{ns = N, type = guid, value = V})
   when is_integer(N), is_binary(V) ->
-    iolist_to_binary(io_lib:format("ns=~w;g=~s", [N, V]));
+    Id = uuid:uuid_to_string(V, binary_standard),
+    iolist_to_binary(io_lib:format("ns=~w;g=~s", [N, Id]));
+format(#opcua_node_id{ns = 0, type = opaque, value = V})
+  when is_binary(V) ->
+    Id = base64:encode(V),
+    iolist_to_binary(io_lib:format("b=~s", [Id]));
+format(#opcua_node_id{ns = N, type = opaque, value = V})
+  when is_integer(N), is_binary(V) ->
+    Id = base64:encode(V),
+    iolist_to_binary(io_lib:format("ns=~w;b=~s", [N, Id]));
 format(#opcua_node{node_id = Id}) ->
     format(Id).
 
 format(Sep, Items) ->
     iolist_to_binary(lists:join(Sep, [format(I) || I <- Items])).
+
+%TODO: Add support for URI namespaces (nsu=)
+parse(<<"i=", Rest/binary>>) ->
+    case string:to_integer(Rest) of
+        {Id, <<>>} ->
+            #opcua_node_id{ns = 0, type = numeric, value = Id};
+        _ ->
+            erlang:error(badarg)
+    end;
+parse(<<"s=", Id/binary>>) ->
+    #opcua_node_id{ns = 0, type = string, value = Id};
+parse(<<"g=", Rest/binary>>) ->
+    Id = uuid:string_to_uuid(Rest),
+    #opcua_node_id{ns = 0, type = guid, value = Id};
+parse(<<"b=", Rest/binary>>) ->
+    Id = base64:decode(Rest),
+    #opcua_node_id{ns = 0, type = opaque, value = Id};
+parse(<<"ns=", Rest/binary>>) ->
+    [NSBin, Rest2] = binary:split(Rest, <<";">>),
+    case string:to_integer(NSBin) of
+        {NS, <<>>} ->
+            NID = parse(Rest2),
+            NID#opcua_node_id{ns = NS};
+        _ ->
+            erlang:error(badarg)
+    end;
+parse(_Data) ->
+    erlang:error(badarg).
 
 class(#opcua_node{node_class = #opcua_object{}})         -> object;
 class(#opcua_node{node_class = #opcua_variable{}})       -> variable;
@@ -166,3 +226,17 @@ attribute_type(data_type, _Node) -> node_id;
 % attribute_type(access_restrictions, _Node) -> undefined;
 % attribute_type(access_level_ex, _Node) -> undefined;
 attribute_type(_Attr, _Node) -> error(bad_attribute_id_invalid).
+
+parse_access_level(Flags) when is_integer(Flags) ->
+    lists:foldl(fun({Key, Mask}, Result) ->
+        Result#{Key => ((Flags band Mask) =/= 0)}
+    end, #{}, ?ACCESS_LEVEL_SPEC).
+
+format_access_level(#{} = Map) ->
+    lists:foldl(fun({Key, Mask}, Result) ->
+        case maps:find(Key, Map) of
+            error -> Result;
+            {ok, false} -> Result;
+            {ok, true} -> Result band Mask
+        end
+    end, 0, ?ACCESS_LEVEL_SPEC).

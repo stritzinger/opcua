@@ -8,6 +8,7 @@
     stdlib,
     ranch,
     xmerl,
+    uuid,
     crypto,
     public_key
    ]},
