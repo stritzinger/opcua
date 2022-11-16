@@ -96,6 +96,7 @@ parse_node({Tag, Attrs, Content} = Elem, {Meta, Nodes}) when ?IS_NODE(Tag) ->
     NodeId = get_attr(<<"NodeId">>, Attrs, node_id, Meta),
     Node = #opcua_node{
         node_id = NodeId,
+        origin = standard,
         browse_name = maps:get(<<"BrowseName">>, Attrs, undefined),
         display_name = hd(get_value([<<"DisplayName">>], Content)),
         node_class = parse_node_class(Elem, Meta)

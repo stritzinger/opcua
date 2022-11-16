@@ -31,6 +31,7 @@ add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
     ParentId = opcua_database:lookup_id(ParentSpec),
     opcua_address_space:add_nodes(default, [#opcua_node{
         node_id = NodeId,
+        origin = local,
         browse_name = Name,
         node_class = #opcua_object{}
     }]),
@@ -60,6 +61,7 @@ add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
     ValueTypeId = opcua_database:lookup_id(ValueTypeSpec),
     opcua_address_space:add_nodes(default, [#opcua_node{
         node_id = NodeId,
+        origin = local,
         browse_name = Name,
         node_class = #opcua_variable{
             data_type = ValueTypeId,

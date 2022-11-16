@@ -53,6 +53,7 @@
 -type endpoint() :: #opcua_endpoint{}.
 -type node_id_type() :: numeric | string | guid | opaque.
 -type node_id() :: #opcua_node_id{}.
+-type node_origin() :: nodeset | local | remote.
 -type expanded_node_id() :: #opcua_expanded_node_id{}.
 -type qualified_name() :: #opcua_qualified_name{}.
 -type localized_text() :: #opcua_localized_text{}.

@@ -89,19 +89,28 @@
     permissions                 :: opcua:permissions()
 }).
 
-%% TODO: What about optional fields? E.g. display_name should be binary() | undefined?
-
 -record(opcua_node, {
     node_id                     :: opcua:node_id(),
     node_class                  :: opcua:node_class_rec(),
+    origin                      :: opcua:node_origin(),
     browse_name                 :: opcua:optional(binary()),
     display_name                :: opcua:optional(binary()),
     description                 :: opcua:optional(binary()),
     write_mask                  :: opcua:optional(non_neg_integer()),
     user_write_mask             :: opcua:optional(non_neg_integer()),
-    role_permissions            :: opcua:optional(opcua:role_permission()),
-    user_role_permissions       :: opcua:optional(opcua:role_permissions()),
-    access_restrictions         :: opcua:optional(non_neg_integer())
+    value                       :: opcua:optional(term()),
+    data_type                   :: opcua:optional(opcua:data_type()),
+    value_rank                  :: opcua:optional(opcua:value_rank()),
+    array_dimensions            :: opcua:optional(opcua:array_dimensions()),
+    access_level                :: opcua:optional(opcua:access_level()),
+    user_access_level           :: opcua:optional(opcua:access_level()),
+    minimum_sampling_interval   :: opcua:optional(float()),
+    historizing                 :: opcua:optional(boolean())
+    % data_type_definition        :: opcua:optional(???),
+    % role_permissions            :: opcua:optional(opcua:role_permission()),
+    % user_role_permissions       :: opcua:optional(opcua:role_permissions()),
+    % access_restrictions         :: opcua:optional(non_neg_integer())
+    % access_level_ex             :: opcua:optional(opcua:access_level()),
 }).
 
 -record(opcua_object, {
