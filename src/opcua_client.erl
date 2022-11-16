@@ -145,8 +145,11 @@ batch_read(Pid, ReadSpecs, Opts) when is_list(ReadSpecs) ->
     MkList = fun(L) when is_list(L) -> L; (A) when is_atom(A) -> [A] end,
     PrepedSpecs = [{opcua:node_id(N), MkList(A)} || {N, A} <- ReadSpecs],
     Command = {read, PrepedSpecs, Opts},
-    {ok, Result} = gen_statem:call(Pid, Command),
-    Result.
+    case gen_statem:call(Pid, Command) of
+        {ok, Result} -> Result;
+        {error, Reason} ->
+            erlang:error(Reason)
+    end.
 
 write(Pid, NodeSpec, AttribValuePairs) ->
     write(Pid, NodeSpec, AttribValuePairs, #{}).

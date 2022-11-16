@@ -5,7 +5,7 @@
     allow_partial = false :: boolean(),
     stack = [] :: [binary() | atom() | integer() | string()
                    | {binary()} | {atom()} | {integer()} | {string()}],
-    issues = [] :: [opcua_codec_context:issue()]
+    issues = [] :: [term()] % Internal format is opaque
 }).
 
 

@@ -72,7 +72,6 @@ handshake(Conn, #state{proto = Proto} = State) ->
     Request = opcua_connection:request(Conn, hello, undefined, undefined, Payload),
     proto_consume(State, Conn, Request).
 
-
 browse(NodeId, Opts, Conn, State) ->
     maybe_consume(async, session_browse(State, Conn, NodeId, Opts)).
 
@@ -96,7 +95,12 @@ produce(Conn, State) ->
 handle_data(Data, Conn, State) ->
     case proto_handle_data(State, Conn, Data) of
         {error, _Reason, _State2} = Error -> Error;
-        {ok, Msgs, Conn2, State2} -> handle_responses(State2, Conn2, Msgs)
+        {ok, Msgs, Issues, Conn2, State2} ->
+            case handle_issues(State2, Conn2, Issues) of
+                {error, _Reason, _State3} = Error -> Error;
+                {ok, Results, Conn3, State3} ->
+                    handle_responses(State3, Conn3, Msgs, Results)
+            end
     end.
 
 terminate(Reason, Conn, State) ->
@@ -108,23 +112,48 @@ terminate(Reason, Conn, State) ->
 default_options() ->
     #{mode => none, policy => none, auth => anonymous}.
 
-handle_responses(State, Conn, Msgs) ->
-    handle_responses(State, Conn, Msgs, []).
+handle_issues(State, Conn, Issues) ->
+    handle_issues(State, Conn, Issues, []).
 
-handle_responses(State, Conn, [], Acc) ->
+handle_issues(State, Conn, [], Results) ->
+    {ok, lists:append(Results), Conn, State};
+handle_issues(State, Conn, [Issue | Rest], Results) ->
+    case handle_issue(State, Conn, Issue) of
+        {error, _Reason, _State} = Error -> Error;
+        % Disabled to make dialyzer happy for now
+        % {ok, Conn2, State2} ->
+        %     handle_issues(State2, Conn2, Rest, Results);
+        {ok, IssueResults, Conn2, State2} ->
+            handle_issues(State2, Conn2, Rest, [IssueResults | Results])
+    end.
+
+handle_issue(#state{sess = undefined} = State, _Conn,
+             {schema_not_found, _PartialMsg, Schemas, _Cont}) ->
+    ?LOG_WARNING("Failed to handle response, schema(s) ~s not found",
+                 [opcua_node:format(Schemas)]),
+    {error, bad_decoding_error, State};
+handle_issue(State, Conn, {schema_not_found, PartialMsg, Schemas, _Cont}) ->
+    ?LOG_WARNING("Failed to handle response, schema(s) ~s not found",
+                 [opcua_node:format(Schemas)]),
+    session_abort_response(State, Conn, PartialMsg, schema_not_found).
+
+handle_responses(State, Conn, Msgs, Results) ->
+    handle_responses_loop(State, Conn, Msgs, [Results]).
+
+handle_responses_loop(State, Conn, [], Acc) ->
     {ok, lists:append(Acc), Conn, State};
-handle_responses(State, Conn, [Msg | Rest], Acc) ->
+handle_responses_loop(State, Conn, [Msg | Rest], Acc) ->
     ?DUMP("Receiving message: ~p", [Msg]),
     case handle_response(State, Conn, Msg) of
         {error, _Reason, _State2} = Error -> Error;
         {ok, Conn2, State2} ->
-            handle_responses(State2, Conn2, Rest);
+            handle_responses_loop(State2, Conn2, Rest, Acc);
         {ok, Results, Requests, Conn2, State2} ->
             case proto_consume(State2, Conn2, Requests) of
                 % No error use-case yet, disabled to make dialyzer happy
                 % {error, _Reason, _State2} = Error -> Error;
                 {ok, Conn3, State3} ->
-                    handle_responses(State3, Conn3, Rest, [Results | Acc])
+                    handle_responses_loop(State3, Conn3, Rest, [Results | Acc])
             end
     end.
 
@@ -273,6 +302,13 @@ session_handle_response(#state{channel = Channel, sess = Sess} = State, Conn, Re
             {ok, Results, Requests, Conn2, State2}
     end.
 
+session_abort_response(#state{channel = Channel, sess = Sess} = State, Conn, Msg, Reason) ->
+    case opcua_client_session:abort_response(Msg, Reason, Conn, Channel, Sess) of
+        {error, Reason2} -> {error, Reason2, State};
+        {ok, Results, Conn2, Channel2, Sess2} ->
+            State2 = State#state{channel = Channel2, sess = Sess2},
+            {ok, Results, Conn2, State2}
+    end.
 
 %== Channel Module Abstraction Functions =======================================
 
@@ -345,8 +381,9 @@ proto_handle_data(#state{channel = Channel, proto = Proto} = State, Conn, Data) 
     case opcua_uacp:handle_data(Data, Conn, Channel, Proto) of
         {error, Reason, Channel2, Proto2} ->
             {error, Reason, State#state{channel = Channel2, proto = Proto2}};
-        {ok, Messages, Conn2, Channel2, Proto2} ->
-            {ok, Messages, Conn2, State#state{channel = Channel2, proto = Proto2}}
+        {ok, Messages, Issues, Conn2, Channel2, Proto2} ->
+            State2 = State#state{channel = Channel2, proto = Proto2},
+            {ok, Messages, Issues, Conn2, State2}
     end.
 
 proto_consume(#state{channel = Channel, proto = Proto} = State, Conn, Msgs) ->

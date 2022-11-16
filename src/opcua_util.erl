@@ -180,8 +180,7 @@ decode_client_message(Data) ->
             Chunk2 = Chunk#uacp_chunk{security = TokenId},
             {ok, Chunk3, _Conn2, _Sec3} = opcua_security:unlock(Chunk2, Conn, Sec2),
             #uacp_chunk{message_type = MsgType, body = Body} = Chunk3,
-            {NodeId, Payload} = opcua_uacp_codec:decode_payload(MsgType, Body),
-            {ok, NodeId, Payload}
+            opcua_uacp_codec:decode_payload(MsgType, Body)
     end.
 
 

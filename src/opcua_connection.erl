@@ -84,7 +84,8 @@ notify(#uacp_connection{pid = Pid}, Notif) ->
     Pid ! {opcua_connection, Notif}.
 
 handle(#uacp_connection{}, #uacp_message{payload = #{request_header := #{request_handle := Handle}}}) -> Handle;
-handle(#uacp_connection{}, #uacp_message{payload = #{response_header := #{request_handle := Handle}}}) -> Handle.
+handle(#uacp_connection{}, #uacp_message{payload = #{response_header := #{request_handle := Handle}}}) -> Handle;
+handle(#uacp_connection{}, _Msg) -> undefined.
 
 request(#uacp_connection{}, Type, ReqId, NodeId, Payload) ->
     #uacp_message{

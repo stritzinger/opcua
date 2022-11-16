@@ -7,7 +7,7 @@
 %%% catch_and_throw/3 or catch_first_issue/3 to resolve the issue format.
 %%%
 %%% If a codec error could be ignored resulting in a partial result,
-%%% the catch_and_continue/5 should be used to optionally support
+%%% the catch_and_continue/6 should be used to optionally support
 %%% partial results.
 %%%
 %%% @end
@@ -27,12 +27,14 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([new/1]).
+-export([new/2]).
+-export([export_issues/1]).
 -export([throw_first_issue/1]).
 -export([first_issue_reason/1]).
 -export([catch_and_throw/3]).
 -export([catch_first_issue/3]).
--export([catch_and_continue/5]).
+-export([catch_issues/3]).
+-export([catch_and_continue/6]).
 -export([push/3]).
 -export([pop/3]).
 -export([format_path/1]).
@@ -44,16 +46,24 @@
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -type mode() :: encoding | decoding.
--type issue() :: term().
+-type issue() :: {generic_codec_error, Reason :: term(), Stack :: binary()}
+               | {schema_not_found, NodeId :: opcua:node_id(), Stack :: binary()}
+               | {encoding_not_supported, atom(), Stack :: binary()}.
+-type issues() :: [] | [issue()].
 -type ctx() :: #ctx{}.
 
--export_type([mode/0, issue/0, ctx/0]).
+-export_type([mode/0, issue/0, issues/0, ctx/0]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-new(Mode) when Mode =:= encoding; Mode =:= decoding ->
-    #ctx{mode = Mode}.
+new(Mode, Safe)
+  when is_boolean(Safe), Mode =:= encoding;
+       is_boolean(Safe), Mode =:= decoding ->
+    #ctx{mode = Mode, allow_partial = Safe}.
+
+export_issues(#ctx{issues = Issues}) ->
+    [{N, R, format_stack(S)} || {N, R, S} <- lists:reverse(Issues)].
 
 % Throws the externally formated version of the first issue from the given context.
 throw_first_issue(Ctx) ->
@@ -79,13 +89,21 @@ catch_first_issue(throw, {?MODULE, #ctx{} = Ctx}, _Stack) ->
 catch_first_issue(Method, Reason, Stack) ->
     erlang:raise(Method, Reason, Stack).
 
+% Handles an exception and returns all the externally formated issues.
+% All other exceptions are re-thrown as-is.
+catch_issues(throw, {?MODULE, #ctx{} = Ctx}, _Stack) ->
+    export_issues(Ctx);
+catch_issues(Method, Reason, Stack) ->
+    erlang:raise(Method, Reason, Stack).
+
 % Handles and exception and optionally recover and continue with the given
 % result and data.
 % If the context is not configured for partial resolution, the exception
 % will bubble up
-catch_and_continue(throw, {?MODULE, #ctx{allow_partial = true} = Ctx}, _Stack, Result, Data) ->
-    {Result, Data, Ctx};
-catch_and_continue(Method, Reason, Stack, _Result, _Data) ->
+catch_and_continue(throw, {?MODULE, #ctx{allow_partial = true} = ErrorCtx},
+                   _Stack, #ctx{stack = OrigStack}, Result, Data) ->
+    {Result, Data, ErrorCtx#ctx{stack = OrigStack}};
+catch_and_continue(Method, Reason, Stack, _OrigCtx, _Result, _Data) ->
     erlang:raise(Method, Reason, Stack).
 
 push(#ctx{stack = Stack} = Ctx, key, Tag) ->
@@ -121,14 +139,17 @@ add_issue(#ctx{issues = Issues, stack = Stack} = Ctx, Name, Params) ->
 throw_issue(Ctx, Name, Params) ->
     throw({?MODULE, add_issue(Ctx, Name, Params)}).
 
-format_stack(Stack) ->
+format_stack(undefined) -> <<>>;
+format_stack(Stack) when is_list(Stack) ->
     iolist_to_binary([format_stack_item(I) || I <- lists:reverse(Stack)]).
 
-format_stack_item({K}) -> [$[, format_stack_item(K), $]];
-format_stack_item(B) when is_binary(B) -> B;
-format_stack_item(I) when is_integer(I) -> integer_to_binary(I);
-format_stack_item(A) when is_atom(A) -> atom_to_binary(A);
-format_stack_item(L) when is_list(L) -> list_to_binary(L).
+format_stack_item({K}) -> [$[, format_stack_value(K), $]];
+format_stack_item(V) -> [$., format_stack_value(V)].
+
+format_stack_value(B) when is_binary(B) -> B;
+format_stack_value(I) when is_integer(I) -> integer_to_binary(I);
+format_stack_value(A) when is_atom(A) -> atom_to_binary(A);
+format_stack_value(L) when is_list(L) -> list_to_binary(L).
 
 first_issue(#ctx{issues = []}) -> undefined;
 first_issue(#ctx{issues = Issues}) -> lists:last(Issues).

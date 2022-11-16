@@ -49,7 +49,12 @@ produce(Conn, State) ->
 handle_data(Data, Conn, State) ->
     case proto_handle_data(State, Conn, Data) of
         {error, _Reason, _State2} = Error -> Error;
-        {ok, Msgs, Conn2, State2} -> handle_requests(State2, Conn2, Msgs)
+        {ok, Msgs, Issues, Conn2, State2} ->
+            case handle_issues(State2, Conn2, Issues, Msgs) of
+                {error, _Reason, _State3} = Error -> Error;
+                {ok, Msgs2, Conn3, State3} ->
+                    handle_requests(State3, Conn3, Msgs2)
+            end
     end.
 
 terminate(Reason, Conn, State) ->
@@ -61,6 +66,22 @@ terminate(Reason, Conn, State) ->
 negotiate_limit(0, B) when is_integer(B), B >= 0 -> B;
 negotiate_limit(A, 0) when is_integer(A), A > 0-> A;
 negotiate_limit(A, B) when is_integer(A), A > 0, is_integer(B), B > 0 -> min(A, B).
+
+handle_issues(State, Conn, [], Acc) -> {ok, Acc, Conn, State};
+handle_issues(State, Conn, [Issue | _Rest], _Acc) ->
+    case handle_issue(State, Conn, Issue) of
+        {error, _Reason, _State} = Error -> Error
+        % Disabled to make dialyzer happy for now
+        % {ok, Conn2, State2} ->
+        %     handle_issues(State2, Conn2, Rest, Acc)
+        % {ok, Msg, Conn2, State2} ->
+        %     handle_issues(State2, Conn2, Rest, [Msg | Acc])
+    end.
+
+handle_issue(State, _Conn, {schema_not_found, _PartialMsg, Schemas, _Cont}) ->
+    ?LOG_WARNING("Failed to handle request, schema(s) ~s not found",
+                 [opcua_node:format(Schemas)]),
+    {error, bad_data_type_id_unknown, State}.
 
 handle_requests(State, Conn, []) -> {ok, Conn, State};
 handle_requests(State, Conn, [Msg | Rest]) ->
@@ -200,8 +221,9 @@ proto_handle_data(#state{channel = Channel, proto = Proto} = State, Conn, Data) 
     case opcua_uacp:handle_data(Data, Conn, Channel, Proto) of
         {error, Reason, Channel2, Proto2} ->
             {error, Reason, State#state{channel = Channel2, proto = Proto2}};
-        {ok, Messages, Conn2, Channel2, Proto2} ->
-            {ok, Messages, Conn2, State#state{channel = Channel2, proto = Proto2}}
+        {ok, Messages, Issues, Conn2, Channel2, Proto2} ->
+            State2 = State#state{channel = Channel2, proto = Proto2},
+            {ok, Messages, Issues, Conn2, State2}
     end.
 
 proto_consume(#state{channel = Channel, proto = Proto} = State, Conn, Msg) ->

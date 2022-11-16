@@ -92,10 +92,21 @@ encode_payload(error, undefined, Payload) ->
 encode_payload(_MsgType, NodeId, Payload) ->
     opcua_uacp_codec:encode_object(NodeId, Payload).
 
-decode_payload(hello, Data) -> {undefined, decode_hello(Data)};
-decode_payload(acknowledge, Data) -> {undefined, decode_acknowledge(Data)};
-decode_payload(error, Data) -> {undefined, decode_error(Data)};
-decode_payload(_MsgType, Data) -> decode_object(Data).
+-spec decode_payload(PayloadType, Data) ->
+    {ok, undefined | NodeId, Payload}
+  | {schema_not_found, undefined | NodeId, undefined | Payload, [NodeId]}
+  when PayloadType :: hello | acknowledge | error | NodeId,
+       Data :: iodata(), NodeId :: opcua:node_id(),
+       Payload :: opcua:hello_payload() | opcua:acknowledge_payload()
+                | opcua:error_payload() | opcua:node_object().
+decode_payload(hello, Data) ->
+    {ok, undefined, decode_hello(Data)};
+decode_payload(acknowledge, Data) ->
+    {ok, undefined, decode_acknowledge(Data)};
+decode_payload(error, Data) ->
+    {ok, undefined, decode_error(Data)};
+decode_payload(_MsgType, Data) ->
+    decode_object(Data).
 
 -spec encode_hello(opcua:hello_payload()) -> iodata().
 encode_hello(Data) ->
@@ -157,19 +168,26 @@ decode_error(Data) ->
 
 -spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
 encode_object(NodeId, Data) ->
-    {EncNodeId, _} = opcua_database:lookup_encoding(NodeId, binary),
-    {Header, _} = opcua_codec_binary:encode(node_id, EncNodeId),
-    {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
-    [Header, Msg].
+    case opcua_database:lookup_encoding(NodeId, binary) of
+        {EncNodeId, binary} ->
+            {Header, _} = opcua_codec_binary:encode(node_id, EncNodeId),
+            {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
+            [Header, Msg];
+        {_, _} -> throw({bad_data_encoding_unsupported, NodeId})
+    end.
 
--spec decode_object(iodata()) -> {opcua:node_id(), opcua:node_object()}.
+-spec decode_object(iodata()) ->
+     {ok, opcua:node_id(), opcua:node_object()}
+   | {schema_not_found, undefined | opcua:node_id(),
+                        undefined | opcua:node_object(),
+                       [] | [opcua:node_id()]}.
 decode_object(Data) ->
     {NodeId, RemData} = opcua_codec_binary:decode(node_id, iolist_to_binary(Data)),
     case opcua_database:resolve_encoding(NodeId) of
         {ObjNodeId, binary} ->
-            {Obj, _} = opcua_codec_binary:decode(ObjNodeId, RemData),
-            {ObjNodeId, Obj};
-        {_, _} -> throw(bad_data_encoding_unsupported)
+            {Obj, _, Issues} = opcua_codec_binary:safe_decode(ObjNodeId, RemData),
+            filter_decode_issues(ObjNodeId, Obj, Issues);
+        {_, _} -> throw({bad_data_encoding_unsupported, NodeId})
     end.
 
 -spec encode_sequence_header(SeqNum, ReqId) -> iodata()
@@ -189,6 +207,22 @@ decode_sequence_header(Data) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+filter_decode_issues(Id, Obj, Issues) ->
+    filter_decode_issues(Id, Obj, Issues, []).
+
+filter_decode_issues(Id, Obj, [], []) ->
+    {ok, Id, Obj};
+filter_decode_issues(Id, Obj, [], Acc) ->
+    {schema_not_found, Id, Obj, Acc};
+filter_decode_issues(_Id, _Obj, [{generic_codec_error, Reason, Details} | _Rest], _Acc) ->
+    throw({bad_decoding_error, {Reason, Details}});
+filter_decode_issues(_Id, _Obj, [{encoding_not_supported, Reason, Details} | _Rest], _Acc) ->
+    throw({bad_data_encoding_unsupported, {Reason, Details}});
+filter_decode_issues(Id, Obj, [{schema_not_found, Schema, Details} | Rest], Acc) ->
+    ?LOG_DEBUG("Schema ~s not found while decoding ~s",
+               [opcua_node:format(Schema), Details]),
+    filter_decode_issues(Id, Obj, Rest, [Schema | Acc]).
 
 decode_chunks(<<MessageHeader:8/binary, Rest/binary>> = Data, Acc) ->
     <<EncMsgType:3/binary,

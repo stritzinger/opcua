@@ -23,6 +23,7 @@
 -export([write/6]).
 -export([close/3]).
 -export([handle_response/4]).
+-export([abort_response/5]).
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -140,6 +141,15 @@ handle_response(#uacp_message{node_id = NodeId, payload = Payload} = Msg, Conn,
                 Channel, #state{status = Status} = State) ->
     Handle = opcua_connection:handle(Conn, Msg),
     handle_response(State, Channel, Conn, Status, Handle, NodeId, Payload).
+
+abort_response(Msg, Reason, Conn, Channel, State) ->
+    case opcua_connection:handle(Conn, Msg) of
+        undefined ->
+            ?LOG_WARNING("Unknown request has been aborted", []),
+            {error, unknown_request};
+        Handle ->
+            {ok, [{Handle, {error, Reason}}], Conn, Channel, State}
+    end.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

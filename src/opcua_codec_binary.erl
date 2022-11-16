@@ -14,13 +14,15 @@
 %% API Functions
 -export([decode/2]).
 -export([encode/2]).
+-export([safe_decode/2]).
+-export([safe_encode/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec decode(opcua:codec_spec(), binary()) -> {term(), binary()}.
 decode(Spec, Data) ->
-    Ctx = opcua_codec_context:new(decoding),
+    Ctx = opcua_codec_context:new(decoding, false),
     try decode_type(Ctx, Spec, iolist_to_binary(Data)) of
         {Result, Rest, #ctx{issues = []}} -> {Result, Rest};
         {_Result, _Rest, Ctx2} ->
@@ -32,11 +34,36 @@ decode(Spec, Data) ->
 
 -spec encode(opcua:codec_spec(), term()) -> {iolist(), term()}.
 encode(Spec, Data) ->
-    Ctx = opcua_codec_context:new(encoding),
+    Ctx = opcua_codec_context:new(encoding, false),
     try encode_type(Ctx, Spec, Data) of
         {Result, Rest, #ctx{issues = []}} -> {Result, Rest};
         {_Result, _Rest, Ctx2} ->
             opcua_codec_context:throw_first_issue(Ctx2)
+    catch
+        T:R:S ->
+            opcua_codec_context:catch_and_throw(T, R, S)
+    end.
+
+
+-spec safe_decode(opcua:codec_spec(), binary()) ->
+    {term(), binary(), opcua_codec_conrtext:issues()}.
+safe_decode(Spec, Data) ->
+    Ctx = opcua_codec_context:new(decoding, true),
+    try decode_type(Ctx, Spec, iolist_to_binary(Data)) of
+        {Result, Rest, Ctx2} ->
+            {Result, Rest, opcua_codec_context:export_issues(Ctx2)}
+    catch
+        T:R:S ->
+            opcua_codec_context:catch_and_throw(T, R, S)
+    end.
+
+-spec safe_encode(opcua:codec_spec(), term()) ->
+    {iolist(), term(), opcua_codec_conrtext:issues()}.
+safe_encode(Spec, Data) ->
+    Ctx = opcua_codec_context:new(encoding, true),
+    try encode_type(Ctx, Spec, Data) of
+        {Result, Rest, Ctx2} ->
+            {Result, Rest, opcua_codec_context:export_issues(Ctx2)}
     catch
         T:R:S ->
             opcua_codec_context:catch_and_throw(T, R, S)
@@ -59,7 +86,7 @@ decode_type(Ctx, #opcua_node_id{type = numeric, value = Num}, Data)
     decode_builtin(Ctx, opcua_codec:builtin_type_name(Num), Data);
 decode_type(Ctx, #opcua_node_id{} = NodeId, Data) ->
     case opcua_database:lookup_schema(NodeId) of
-        undefined -> opcus_codec_context:issue_schema_not_found(Ctx, NodeId);
+        undefined -> opcua_codec_context:issue_schema_not_found(Ctx, NodeId);
         Schema -> decode_schema(Ctx, Schema, Data)
     end;
 decode_type(Ctx, NodeSpec, Data) ->
@@ -187,7 +214,7 @@ decode_extension_object(Ctx, Data) ->
                         ErrorType:ErrorReason:Stack ->
                             opcua_codec_context:catch_and_continue(ErrorType,
                                                     ErrorReason, Stack,
-                                                    ?UNDEF_EXT_OBJ, Data2)
+                                                    Ctx, ?UNDEF_EXT_OBJ, Data2)
                     end
             end;
         {#opcua_extension_object{encoding = EncInfo}, _Data2, Ctx3} ->
@@ -302,7 +329,7 @@ encode_type(Ctx, #opcua_node_id{type = numeric, value = Num}, Data)
     encode_builtin(Ctx, opcua_codec:builtin_type_name(Num), Data);
 encode_type(Ctx, #opcua_node_id{} = NodeId, Data) ->
     case opcua_database:lookup_schema(NodeId) of
-        undefined -> opcus_codec_context:issue_schema_not_found(Ctx, NodeId);
+        undefined -> opcua_codec_context:issue_schema_not_found(Ctx, NodeId);
         Schema -> encode_schema(Ctx, Schema, Data)
     end;
 encode_type(Ctx, NodeSpec, Data) ->

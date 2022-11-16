@@ -9,7 +9,7 @@
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--export([format/1]).
+-export([format/1, format/2]).
 -export([class/1]).
 -export([attribute/2]).
 -export([attribute_type/2]).
@@ -17,6 +17,9 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+format(List)
+  when is_list(List) ->
+    format(",", List);
 format(Builtin)
   when is_atom(Builtin) ->
     Builtin;
@@ -44,8 +47,17 @@ format(#opcua_node_id{ns = 0, type = string, value = V})
 format(#opcua_node_id{ns = N, type = string, value = V})
   when is_integer(N), is_binary(V) ->
     iolist_to_binary(io_lib:format("ns=~w;s=~s", [N, V]));
+format(#opcua_node_id{ns = 0, type = guid, value = V})
+  when is_binary(V) ->
+    iolist_to_binary(io_lib:format("g=~s", [V]));
+format(#opcua_node_id{ns = N, type = guid, value = V})
+  when is_integer(N), is_binary(V) ->
+    iolist_to_binary(io_lib:format("ns=~w;g=~s", [N, V]));
 format(#opcua_node{node_id = Id}) ->
     format(Id).
+
+format(Sep, Items) ->
+    iolist_to_binary(lists:join(Sep, [format(I) || I <- Items])).
 
 class(#opcua_node{node_class = #opcua_object{}})         -> object;
 class(#opcua_node{node_class = #opcua_variable{}})       -> variable;

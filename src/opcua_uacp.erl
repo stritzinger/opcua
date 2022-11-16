@@ -203,33 +203,39 @@ produce_chunk(State, Channel, Conn,
     channel_lock(State, Channel, Conn, Chunk).
 
 handle_chunks(State, Channel, Conn, Chunks) ->
-    handle_chunks(State, Channel, Conn, Chunks, []).
+    handle_chunks(State, Channel, Conn, Chunks, [], []).
 
-handle_chunks(State, Channel, Conn, [], Acc) ->
-    {ok, lists:reverse(Acc), Conn, Channel, State};
-handle_chunks(State, Channel, Conn, [Chunk | Rest], Acc) ->
+handle_chunks(State, Channel, Conn, [], MAcc, IAcc) ->
+    {ok, lists:reverse(MAcc), lists:reverse(IAcc), Conn, Channel, State};
+handle_chunks(State, Channel, Conn, [Chunk | Rest], MAcc, IAcc) ->
     %TODO: handle errors so non-fatal errors do not break the chunk processing
     case handle_chunk(State, Channel, Conn, Chunk) of
         {error, _Reason, _Channel2, _State2} = Error -> Error;
         {ok, Conn2, Channel2, State2} ->
-            handle_chunks(State2, Channel2, Conn2, Rest, Acc);
+            handle_chunks(State2, Channel2, Conn2, Rest, MAcc, IAcc);
         {ok, Msg, Conn2, Channel2, State2} ->
-            handle_chunks(State2, Channel2, Conn2, Rest, [Msg | Acc])
+            handle_chunks(State2, Channel2, Conn2, Rest, [Msg | MAcc], IAcc);
+        {issue, Issue, Conn2, Channel2, State2} ->
+            handle_chunks(State2, Channel2, Conn2, Rest, MAcc, [Issue | IAcc])
     end.
 
 handle_chunk(State, Channel, Conn, #uacp_chunk{state = undefined} = Chunk) ->
-    case inflight_input_update(State, Chunk) of
-        {ok, State3} -> {ok, Conn, Channel, State3};
-        {ok, Message, State3} -> {ok, Message, Conn, Channel, State3}
-    end;
+    handle_unlocked_chunk(State, Channel, Conn, Chunk);
 handle_chunk(State, Channel, Conn, #uacp_chunk{state = locked} = Chunk) ->
     case channel_unlock(State, Channel, Conn, Chunk) of
         {error, _Reason, _Channel2, _State2} = Error -> Error;
         {ok, Chunk2, Conn2, Channel2, State2} ->
-            case inflight_input_update(State2, Chunk2) of
-                {ok, State3} -> {ok, Conn2, Channel2, State3};
-                {ok, Message, State3} -> {ok, Message, Conn2, Channel2, State3}
-            end
+            handle_unlocked_chunk(State2, Channel2, Conn2, Chunk2)
+    end.
+
+handle_unlocked_chunk(State, Channel, Conn, Chunk) ->
+    case inflight_input_update(State, Chunk) of
+        {ok, State2} ->
+            {ok, Conn, Channel, State2};
+        {ok, Message, State2} ->
+            {ok, Message, Conn, Channel, State2};
+        {issue, Issue, State2} ->
+            {issue, Issue, Conn, Channel, State2}
     end.
 
 inflight_output_add(State, Channel, Conn, MsgType, ReqId, Data) ->
@@ -319,16 +325,25 @@ inflight_input_update(State, #uacp_chunk{chunk_type = final} = Chunk) ->
     end,
     #inflight_input{reversed_data = FinalReversedData} = Inflight2,
     FinalData = lists:reverse(FinalReversedData),
-    {NodeId, Payload} = opcua_uacp_codec:decode_payload(MsgType, FinalData),
-    Message = #uacp_message{
+    Msg = #uacp_message{
         type = MsgType,
         sender = peer_side(State),
-        request_id = ReqId,
-        node_id = NodeId,
-        payload = Payload
+        request_id = ReqId
     },
-    {ok, Message, State2}.
+    decode_payload(State2, 0, Msg, FinalData).
 
+%TODO: Limit the number of retry...
+decode_payload(State, RetryCount,
+               #uacp_message{type = MsgType} = Msg, Data) ->
+    case opcua_uacp_codec:decode_payload(MsgType, Data) of
+        {ok, NodeId, Payload} ->
+            {ok, Msg#uacp_message{node_id = NodeId, payload = Payload}, State};
+        {schema_not_found, NodeId, Payload, Schemas} ->
+            PartialMsg = Msg#uacp_message{node_id = NodeId, payload = Payload},
+            ContData = {decode_payload, RetryCount + 1, Msg, Data},
+            Issue = {schema_not_found, PartialMsg, Schemas, ContData},
+            {issue, Issue, State}
+    end.
 
 %== Channel Module Abstraction Functions =======================================
 
