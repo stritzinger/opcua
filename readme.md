@@ -96,3 +96,14 @@ With expanded arrays of structs (server dependent):
 
 
 == Server
+
+== Database
+
+OPCUA needs a database of standard node, they are provided by XML NodeSet files.
+To speedup the startup of the client and server, these files are preprocessed
+and stored as term files. The NodeSet files used to generate current database
+are stored in `priv/nodesets` as `XXX.NodeSet2.xml` files. The generated
+database files are in `priv` as `nodesets.XXX.bterm` files.
+
+To update the NodeSet, update the files in `priv/nodesets`, start a shell with
+`rebar3 shell` and run the command `opcua_database_parser:parse().`.
