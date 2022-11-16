@@ -250,7 +250,7 @@ resolver_get_value(NodeId, DataType, CurrVal) ->
 %-- HARDCODED MODEL ------------------------------------------------------------
 
 setup_static_data(Vals, Nodes, Refs) ->
-    lists:foreach(fun({K, V}) -> opcua:set_value(K, V) end, Vals),
+    lists:foreach(fun({K, V}) -> opcua_server:set_value(K, V) end, Vals),
     opcua_address_space:add_nodes(default, Nodes),
     opcua_address_space:add_references(default, Refs),
     ok.
