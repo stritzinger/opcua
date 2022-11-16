@@ -22,6 +22,7 @@
 -export([produce/3]).
 -export([consume/4]).
 -export([handle_data/4]).
+-export([continue/4]).
 
 -export([iolist_chunk/2]).
 
@@ -31,7 +32,7 @@
 -define(DEFAULT_MAX_CHUNK_SIZE, 65535).
 -define(DEFAULT_MAX_MESSAGE_SIZE, 0).
 -define(DEFAULT_MAX_CHUNK_COUNT, 0).
-
+-define(MAX_DECODING_RETRIES, 4).
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -145,6 +146,13 @@ handle_data(Data, Conn, Channel, #state{buff = Buff} = State) ->
             handle_chunks(State2, Channel, Conn, Chunks)
     end.
 
+continue({decode_payload, RetryCount, Msg, Data}, Conn, Channel, State) ->
+    case decode_payload(State, RetryCount, Msg, Data) of
+        {error, Reason} -> {error, Reason, Channel, State};
+        {ok, Message, State2} -> {ok, [Message], [], Conn, Channel, State2};
+        {issue, Issue, State2} -> {ok, [], [Issue], Conn, Channel, State2}
+    end.
+
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -230,6 +238,8 @@ handle_chunk(State, Channel, Conn, #uacp_chunk{state = locked} = Chunk) ->
 
 handle_unlocked_chunk(State, Channel, Conn, Chunk) ->
     case inflight_input_update(State, Chunk) of
+        {error, Reason} ->
+            {error, Reason, Conn, Channel, State};
         {ok, State2} ->
             {ok, Conn, Channel, State2};
         {ok, Message, State2} ->
@@ -332,7 +342,9 @@ inflight_input_update(State, #uacp_chunk{chunk_type = final} = Chunk) ->
     },
     decode_payload(State2, 0, Msg, FinalData).
 
-%TODO: Limit the number of retry...
+decode_payload(_State, MaxRetryCount, _Msg, _Data)
+  when MaxRetryCount > ?MAX_DECODING_RETRIES ->
+    {error, decoding_retries_exhausted};
 decode_payload(State, RetryCount,
                #uacp_message{type = MsgType} = Msg, Data) ->
     case opcua_uacp_codec:decode_payload(MsgType, Data) of

@@ -47,7 +47,7 @@
           AuthMethod :: client_auth_spec()}
    | {error, not_found}).
 
--type client_connect_options() :: #{
+-type connect_options() :: #{
     % The parent keychain to use for the connection, if not defined it will use
     % the default keychain.
     keychain => opcua_keychain:state(),
@@ -91,6 +91,18 @@
     auth => client_auth_spec()
 }.
 
+-type browse_options() :: #{
+    direction => opcua:direction(),
+    include_subtypes => boolean(),
+    type => opcua:node_spec()
+}.
+
+-type read_options() :: #{
+}.
+
+-type write_options() :: #{
+}.
+
 -record(data, {
     opts                        :: undefined | map(),
     socket                      :: undefined | inet:socket(),
@@ -99,13 +111,16 @@
     calls = #{}                 :: #{term() => gen_statem:from()}
 }).
 
+-export_type([connect_options/0, browse_options/0,
+              read_options/0, write_options/0]).
+
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 connect(EndpointUrl) ->
     connect(EndpointUrl, #{}).
 
--spec connect(EndpointUrl :: binary(), Opts :: client_connect_options()) ->
+-spec connect(EndpointUrl :: binary(), Opts :: connect_options()) ->
     {ok, ClientPid :: pid()} | {error, Reason :: term()}.
 connect(EndpointUrl, Opts) ->
     EndpointRec  = opcua_util:parse_endpoint(EndpointUrl),

@@ -32,6 +32,7 @@
 
 -record(state, {
     mode                            :: lookup_endpoint | open_session,
+    introspection                   :: boolean(),
     server_ver                      :: undefined | pos_integer(),
     channel                         :: term(),
     proto                           :: term(),
@@ -52,6 +53,7 @@ init(Mode, Opts) ->
         {ok, Proto} ->
             State = #state{
                 mode = Mode,
+                introspection = maps:get(introspection, AllOpts),
                 endpoint_selector = maps:get(endpoint_selector, AllOpts),
                 security_mode = maps:get(mode, AllOpts),
                 security_policy = maps:get(policy, AllOpts),
@@ -96,10 +98,10 @@ handle_data(Data, Conn, State) ->
     case proto_handle_data(State, Conn, Data) of
         {error, _Reason, _State2} = Error -> Error;
         {ok, Msgs, Issues, Conn2, State2} ->
-            case handle_issues(State2, Conn2, Issues) of
+            case handle_issues(State2, Conn2, Msgs, Issues) of
                 {error, _Reason, _State3} = Error -> Error;
-                {ok, Results, Conn3, State3} ->
-                    handle_responses(State3, Conn3, Msgs, Results)
+                {ok, Results, Msgs2, Conn3, State3} ->
+                    handle_responses(State3, Conn3, Msgs2, Results)
             end
     end.
 
@@ -110,21 +112,24 @@ terminate(Reason, Conn, State) ->
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 default_options() ->
-    #{mode => none, policy => none, auth => anonymous}.
+    #{mode => none, policy => none, auth => anonymous, introspection => true}.
 
-handle_issues(State, Conn, Issues) ->
-    handle_issues(State, Conn, Issues, []).
+handle_issues(State, Conn, Msgs, Issues) ->
+    handle_issues(State, Conn, [Msgs], Issues, []).
 
-handle_issues(State, Conn, [], Results) ->
-    {ok, lists:append(Results), Conn, State};
-handle_issues(State, Conn, [Issue | Rest], Results) ->
+handle_issues(State, Conn, Msgs, [], Results) ->
+    {ok, lists:append(Results), lists:append(Msgs), Conn, State};
+handle_issues(State, Conn, Msgs, [Issue | Rest], Results) ->
     case handle_issue(State, Conn, Issue) of
         {error, _Reason, _State} = Error -> Error;
         % Disabled to make dialyzer happy for now
         % {ok, Conn2, State2} ->
-        %     handle_issues(State2, Conn2, Rest, Results);
-        {ok, IssueResults, Conn2, State2} ->
-            handle_issues(State2, Conn2, Rest, [IssueResults | Results])
+        %     handle_issues(State2, Conn2, Msgs, Rest, Results);
+        {ok, NewResults, Conn2, State2} ->
+            handle_issues(State2, Conn2, Msgs, Rest, [NewResults | Results])
+        % {ok, NewResults, NewMsgs, NewIssues, Conn2, State2} ->
+        %     handle_issues(State2, Conn2, [NewMsgs | Msgs], NewIssues ++ Rest,
+        %                   [NewResults | Results])
     end.
 
 handle_issue(#state{sess = undefined} = State, _Conn,
@@ -132,10 +137,29 @@ handle_issue(#state{sess = undefined} = State, _Conn,
     ?LOG_WARNING("Failed to handle response, schema(s) ~s not found",
                  [opcua_node:format(Schemas)]),
     {error, bad_decoding_error, State};
-handle_issue(State, Conn, {schema_not_found, PartialMsg, Schemas, _Cont}) ->
+handle_issue(#state{introspection = false} = State, Conn,
+             {schema_not_found, PartialMsg, Schemas, _Cont}) ->
     ?LOG_WARNING("Failed to handle response, schema(s) ~s not found",
                  [opcua_node:format(Schemas)]),
-    session_abort_response(State, Conn, PartialMsg, schema_not_found).
+    session_abort_response(State, Conn, PartialMsg, schema_not_found);
+handle_issue(#state{introspection = true} = State, Conn,
+             {schema_not_found, PartialMsg, Schemas, _Cont}) ->
+    ?LOG_WARNING("Failed to handle response, schema(s) ~s not found, trying introspection...",
+                 [opcua_node:format(Schemas)]),
+    case introspect(State, Conn, Schemas) of
+        {error, Reason, State2} ->
+            ?LOG_ERROR("Failed to resolve missing schema: ~p", [Reason]),
+            session_abort_response(State2, Conn, PartialMsg, schema_not_found)
+        % Disabled to make dialyzer happy
+        % {ok, Conn2, State2} ->
+        %     case proto_continue(State2, Conn2, Cont) of
+        %         {ok, Msgs, Issues, Conn3, State3} ->
+        %             {ok, [], Msgs, Issues, Conn3, State3};
+        %         {error, Reason, State3} ->
+        %             ?LOG_ERROR("Failed to resolve missing schema: ~p", [Reason]),
+        %             session_abort_response(State3, Conn2, PartialMsg, schema_not_found)
+        %     end
+    end.
 
 handle_responses(State, Conn, Msgs, Results) ->
     handle_responses_loop(State, Conn, Msgs, [Results]).
@@ -240,6 +264,12 @@ maybe_consume(Tag, {ok, Result, Requests, Conn, State}) ->
 
 no_result({error, _Reason, _State} = Error) -> Error;
 no_result({ok, Req, Conn, State}) -> {ok, [], Req, Conn, State}.
+
+
+%== Introspection Functions ====================================================
+
+introspect(State, _Conn, _Schemas) ->
+    {error, not_implemented, State}.
 
 
 %== Session Module Abstraction Functions =======================================
@@ -407,3 +437,11 @@ proto_consume_loop(Proto, Channel, Conn, Msg) ->
     ?DUMP("Sending message: ~p", [Msg]),
     opcua_uacp:consume(Msg, Conn, Channel, Proto).
 
+% proto_continue(#state{channel = Channel, proto = Proto} = State, Conn, ContData) ->
+%     case opcua_uacp:continue(ContData, Conn, Channel, Proto) of
+%         {error, Reason, Channel2, Proto2} ->
+%             {error, Reason, State#state{channel = Channel2, proto = Proto2}};
+%         {ok, Messages, Issues, Conn2, Channel2, Proto2} ->
+%             State2 = State#state{channel = Channel2, proto = Proto2},
+%             {ok, Messages, Issues, Conn2, State2}
+%     end.
