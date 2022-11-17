@@ -146,7 +146,7 @@ decode_acknowledge(Data) ->
 
 -spec encode_error(opcua:error_payload()) -> iodata().
 encode_error(#{error := C, reason := D} = Data) ->
-    {C2, D2} = opcua_database_status_codes:encode(C, D),
+    {C2, D2} = opcua_nodeset_status:encode(C, D),
     Data2 = Data#{error := C2, reason := D2},
     case opcua_codec_binary:encode(?ERR_SPEC, Data2) of
         {Result, Extra} when Extra =:= #{} -> Result;
@@ -159,7 +159,7 @@ encode_error(#{error := C, reason := D} = Data) ->
 decode_error(Data) ->
     case opcua_codec_binary:decode(?ERR_SPEC, iolist_to_binary(Data)) of
         {#{error := C, reason := D} = Result, <<>>} ->
-            {C2, D2} = opcua_database_status_codes:decode(C, D),
+            {C2, D2} = opcua_nodeset_status:decode(C, D),
             Result#{error := C2, reason := D2};
         {_Result, Extra} ->
             ?LOG_ERROR("ERROR message decoding error; extra data: ~p", [Extra]),

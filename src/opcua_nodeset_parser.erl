@@ -5,7 +5,7 @@
 %%%
 %%% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
--module(opcua_database_parser).
+-module(opcua_nodeset_parser).
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -282,7 +282,7 @@ extract_data_type_schemas(NodesProplist) ->
     DataTypeNodesProplist = lists:filter(fun({_, {Node, _}}) ->
         is_record(Node#opcua_node.node_class, opcua_data_type)
     end, NodesProplist),
-    opcua_database_data_types:generate_schemas(DataTypeNodesProplist).
+    opcua_nodeset_types:generate_schemas(DataTypeNodesProplist).
 
 extract_encodings(NodesProplist) ->
     [{TargetNodeId, {SourceNodeId, binary}} ||

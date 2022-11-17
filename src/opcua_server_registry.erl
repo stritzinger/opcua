@@ -177,7 +177,7 @@ static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} 
                        [opcua_node:format(Node), Attr, Reason]),
             #opcua_data_value{status = Reason};
         _:Reason ->
-            Status = case opcua_database_status_codes:is_name(Reason) of
+            Status = case opcua_nodeset_status:is_name(Reason) of
                 true -> Reason;
                 false -> bad_internal_error
             end,

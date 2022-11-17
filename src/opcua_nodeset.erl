@@ -1,4 +1,4 @@
--module(opcua_database_nodes).
+-module(opcua_nodeset).
 
 % Original NodeSet from https://github.com/OPCFoundation/UA-Nodeset/tree/v1.04/Schema
 
@@ -20,9 +20,9 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 setup(Dir) ->
-    opcua_database_encodings:setup(),
-    opcua_database_data_types:setup(),
-    opcua_database_namespaces:setup(),
+    opcua_nodeset_encodings:setup(),
+    opcua_nodeset_types:setup(),
+    opcua_nodeset_namespaces:setup(),
     ?LOG_INFO("Loading OPCUA namespaces..."),
     load_namespaces(Dir),
     ?LOG_INFO("Loading OPCUA nodes..."),
@@ -39,7 +39,7 @@ setup(Dir) ->
 
 load_namespaces(Dir) ->
     load_all_terms(Dir, "namespaces", fun({ID, URI}) ->
-        opcua_database_namespaces:store(ID, URI)
+        opcua_nodeset_namespaces:store(ID, URI)
     end).
 
 load_nodes(Dir) ->
@@ -54,12 +54,12 @@ load_references(Dir) ->
 
 load_data_type_schemas(Dir) ->
     load_all_terms(Dir, "data_type_schemas", fun({Keys, DataType}) ->
-        opcua_database_data_types:store(Keys, DataType)
+        opcua_nodeset_types:store(Keys, DataType)
     end).
 
 load_encodings(Dir) ->
     load_all_terms(Dir, "encodings", fun({NodeId, {TargetNodeId, Encoding}}) ->
-        opcua_database_encodings:store(NodeId, TargetNodeId, Encoding)
+        opcua_nodeset_encodings:store(NodeId, TargetNodeId, Encoding)
     end).
 
 load_all_terms(DirPath, Tag, Fun) ->

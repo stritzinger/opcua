@@ -1,4 +1,4 @@
--module(opcua_database_encodings).
+-module(opcua_nodeset_encodings).
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

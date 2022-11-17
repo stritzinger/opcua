@@ -339,13 +339,13 @@ attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
         #opcua_qualified_name{ns = 0, name = Name}
           when Name =:= <<"Default Binary">>; Name =:= undefined ->
             Command = #opcua_read_command{
-                attr = opcua_database_attributes:name(AttributeId),
+                attr = opcua_nodeset_attributes:name(AttributeId),
                 range = opcua_util:parse_range(RangeStr),
                 opts = ReadOpts
             },
             case opcua_server_registry:perform(NodeId, [Command]) of
                 [{error, Reason}] ->
-                    Status = opcua_database_status_codes:name(Reason, bad_internal_error),
+                    Status = opcua_nodeset_status:name(Reason, bad_internal_error),
                     Result = #opcua_data_value{status = Status},
                     attribute_read(Data, ReadOpts, Rest, [Result | Acc]);
                 [#opcua_data_value{} = Result] ->
@@ -397,7 +397,7 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
     },
     case opcua_server_registry:perform(NodeId, [Command]) of
         [{error, Reason}] ->
-            Status = opcua_database_status_codes:name(Reason, bad_internal_error),
+            Status = opcua_nodeset_status:name(Reason, bad_internal_error),
             BrowseResult = #{
                 status_code => Status,
                 continuation_point => undefined,

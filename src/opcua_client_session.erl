@@ -107,7 +107,7 @@ read(ReadSpecs, _Opts, Conn, Channel, #state{status = activated} = State) ->
         nodes_to_read => [
             #{
                 node_id => NodeId,
-                attribute_id => opcua_database_attributes:id(spec_attr(Spec)),
+                attribute_id => opcua_nodeset_attributes:id(spec_attr(Spec)),
                 index_range => spec_range(Spec),
                 data_encoding => ?UNDEF_QUALIFIED_NAME
             }
@@ -122,7 +122,7 @@ write(NodeId, AttribValuePairs, _Opts, Conn, Channel,
         nodes_to_write => [
             #{
                 node_id => NodeId,
-                attribute_id => opcua_database_attributes:id(spec_attr(Spec)),
+                attribute_id => opcua_nodeset_attributes:id(spec_attr(Spec)),
                 index_range => spec_range(Spec),
                 value => pack_write_value(Val)
             }

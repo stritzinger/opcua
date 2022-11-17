@@ -43,7 +43,7 @@ decode(xml, Bin) ->
     decode(string, Bin);
 decode(status_code, Bin) ->
     {Code, Rest} = decode(uint32, Bin),
-    {opcua_database_status_codes:name(Code, Code), Rest};
+    {opcua_nodeset_status:name(Code, Code), Rest};
 decode(byte_string, Bin) ->
     decode(string, Bin);
 decode(node_id, <<Mask:8, Bin/binary>>) ->
@@ -98,7 +98,7 @@ encode(guid, Guid) when is_binary(Guid) ->
 encode(xml, Bin) when is_binary(Bin) ->
     encode(string, Bin);
 encode(status_code, Atom) when is_atom(Atom) ->
-    encode(uint32, opcua_database_status_codes:code(Atom));
+    encode(uint32, opcua_nodeset_status:code(Atom));
 encode(status_code, UInt32) when is_integer(UInt32), UInt32 >= 0 ->
     encode(uint32, UInt32);
 encode(byte_string, Bin) ->

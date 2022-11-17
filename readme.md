@@ -106,4 +106,4 @@ are stored in `priv/nodesets` as `XXX.NodeSet2.xml` files. The generated
 database files are in `priv` as `nodesets.XXX.bterm` files.
 
 To update the NodeSet, update the files in `priv/nodesets`, start a shell with
-`rebar3 shell` and run the command `opcua_database_parser:parse().`.
+`rebar3 shell` and run the command `opcua_nodeset_parser:parse().`.

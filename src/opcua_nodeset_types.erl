@@ -1,4 +1,4 @@
--module(opcua_database_data_types).
+-module(opcua_nodeset_types).
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

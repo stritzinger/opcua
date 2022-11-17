@@ -40,7 +40,7 @@ start_link(Opts) ->
 
 -spec lookup_schema(opcua:node_spec()) -> opcua:schema().
 lookup_schema(NodeSpec) ->
-    opcua_database_data_types:lookup(opcua_codec:node_id(NodeSpec)).
+    opcua_nodeset_types:lookup(opcua_codec:node_id(NodeSpec)).
 
 -spec lookup_id(opcua:node_spec()) -> opcua:node_id().
 lookup_id(NodeSpec) ->
@@ -53,7 +53,7 @@ lookup_id(NodeSpec) ->
 -spec lookup_encoding(opcua:node_spec(), opcua:stream_encoding())
     -> {opcua:node_id(), undefined | opcua:stream_encoding()}.
 lookup_encoding(NodeId = #opcua_node_id{}, Encoding) ->
-    opcua_database_encodings:lookup(NodeId, Encoding);
+    opcua_nodeset_encodings:lookup(NodeId, Encoding);
 lookup_encoding(NodeSpec, Encoding) ->
     lookup_encoding(lookup_id(NodeSpec), Encoding).
 
@@ -61,7 +61,7 @@ lookup_encoding(NodeSpec, Encoding) ->
 -spec resolve_encoding(opcua:node_spec())
     -> {opcua:node_id(), undefined | opcua:stream_encoding()}.
 resolve_encoding(NodeId = #opcua_node_id{}) ->
-    opcua_database_encodings:resolve(NodeId);
+    opcua_nodeset_encodings:resolve(NodeId);
 resolve_encoding(NodeSpec) ->
     resolve_encoding(lookup_id(NodeSpec)).
 
@@ -100,19 +100,19 @@ code_change(_OldVsn, State, _Extra) ->
 load_nodesets() ->
     PrivDir = code:priv_dir(opcua),
     opcua_address_space:create(default),
-    opcua_database_nodes:setup(PrivDir),
+    opcua_nodeset:setup(PrivDir),
     ok.
 
 load_status_codes() ->
     PrivDir = code:priv_dir(opcua),
     StatusCodeFileName = "StatusCode.csv",
     StatusCodeFilePath = filename:join([PrivDir, StatusCodeFileName]),
-    opcua_database_status_codes:load(StatusCodeFilePath),
+    opcua_nodeset_status:load(StatusCodeFilePath),
     ok.
 
 load_attributes() ->
     PrivDir = code:priv_dir(opcua),
     AttributeIdsFileName = "AttributeIds.csv",
     AttributeIdsFilePath = filename:join([PrivDir, AttributeIdsFileName]),
-    opcua_database_attributes:load(AttributeIdsFilePath),
+    opcua_nodeset_attributes:load(AttributeIdsFilePath),
     ok.

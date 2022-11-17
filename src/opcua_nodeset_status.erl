@@ -1,4 +1,4 @@
--module(opcua_database_status_codes).
+-module(opcua_nodeset_status).
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

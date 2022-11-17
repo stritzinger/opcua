@@ -1,4 +1,4 @@
--module(opcua_database_attributes).
+-module(opcua_nodeset_attributes).
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,4 +1,4 @@
--module(opcua_database_namespaces).
+-module(opcua_nodeset_namespaces).
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
