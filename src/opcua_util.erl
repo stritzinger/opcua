@@ -94,7 +94,7 @@ get_node_id(Key, Attributes) ->
 
 parse_node_id(String) ->
     [_, String1] = string:split(String, "="),
-    opcua_codec:node_id(list_to_integer(String1)).
+    opcua_node:id(list_to_integer(String1)).
 
 get_attr(Key, Attributes) ->
     get_attr(Key, Attributes, undefined).

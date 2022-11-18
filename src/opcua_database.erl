@@ -14,7 +14,6 @@
 %% API Functions
 -export([start_link/1]).
 -export([lookup_schema/1]).
--export([lookup_id/1]).
 -export([lookup_encoding/2]).
 -export([resolve_encoding/1]).
 
@@ -40,14 +39,7 @@ start_link(Opts) ->
 
 -spec lookup_schema(opcua:node_spec()) -> opcua:schema().
 lookup_schema(NodeSpec) ->
-    opcua_nodeset_datatypes:lookup(opcua_codec:node_id(NodeSpec)).
-
--spec lookup_id(opcua:node_spec()) -> opcua:node_id().
-lookup_id(NodeSpec) ->
-    case opcua_codec:node_id(NodeSpec) of
-        %TODO: Are we supposed to resolve non-numeric node ids ?
-        #opcua_node_id{} = NodeId -> NodeId
-    end.
+    opcua_nodeset_datatypes:lookup(opcua_node:id(NodeSpec)).
 
 %% The returned node id is canonical, meaning it is always numeric.
 -spec lookup_encoding(opcua:node_spec(), opcua:stream_encoding())
@@ -55,7 +47,7 @@ lookup_id(NodeSpec) ->
 lookup_encoding(NodeId = #opcua_node_id{}, Encoding) ->
     opcua_nodeset_encodings:lookup(NodeId, Encoding);
 lookup_encoding(NodeSpec, Encoding) ->
-    lookup_encoding(lookup_id(NodeSpec), Encoding).
+    lookup_encoding(opcua_node:id(NodeSpec), Encoding).
 
 %% The returned node id is canonical, meaning it is always numeric.
 -spec resolve_encoding(opcua:node_spec())
@@ -63,7 +55,7 @@ lookup_encoding(NodeSpec, Encoding) ->
 resolve_encoding(NodeId = #opcua_node_id{}) ->
     opcua_nodeset_encodings:resolve(NodeId);
 resolve_encoding(NodeSpec) ->
-    resolve_encoding(lookup_id(NodeSpec)).
+    resolve_encoding(opcua_node:id(NodeSpec)).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

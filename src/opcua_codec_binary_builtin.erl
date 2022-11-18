@@ -219,7 +219,7 @@ encode_node_id(#opcua_node_id{ns = Ns, type = opaque, value = Id}) ->
     BinId = encode(string, Id),
     [<<16#05:8, Ns:16/little-unsigned-integer>>, BinId];
 encode_node_id(NodeSpec) ->
-    encode_node_id(opcua_codec:node_id(NodeSpec)).
+    encode_node_id(opcua_node:id(NodeSpec)).
 
 encode_expanded_node_id(#opcua_node_id{} = NodeId) ->
     encode_expanded_node_id(#opcua_expanded_node_id{node_id = NodeId});
@@ -241,10 +241,10 @@ encode_expanded_node_id(#opcua_expanded_node_id{node_id = #opcua_node_id{ns = NS
     [<<(Mask + NamespaceUriFlag + ServerIndexFlag):8>>, Rest,
      BinNamespaceUri, BinServerIndex];
 encode_expanded_node_id(#opcua_expanded_node_id{node_id = NodeSpec} = ExtNodeId) ->
-    NodeId = opcua_codec:node_id(NodeSpec),
+    NodeId = opcua_node:id(NodeSpec),
     encode_expanded_node_id(ExtNodeId#opcua_expanded_node_id{node_id = NodeId});
 encode_expanded_node_id(NodeSpec) ->
-    encode_expanded_node_id(opcua_codec:node_id(NodeSpec)).
+    encode_expanded_node_id(opcua_node:id(NodeSpec)).
 
 encode_diagnostic_info(DI = #opcua_diagnostic_info{}) ->
     Types = [{int32, DI#opcua_diagnostic_info.symbolic_id},

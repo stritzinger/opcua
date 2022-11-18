@@ -117,7 +117,7 @@ dispatch_request(Data, State, From, Conn, Req, Validators, HandlerMap, Reason, E
             {keep_state, Data, [{reply, From, Error} | Extra]};
         ok ->
             #uacp_message{node_id = NodeSpec} = Req,
-            #opcua_node_id{value = Num} = opcua_database:lookup_id(NodeSpec),
+            #opcua_node_id{value = Num} = opcua_node:id(NodeSpec),
             case maps:find(Num, HandlerMap) of
                 error ->
                     ?LOG_ERROR("Unexpected request ~w in state ~w: ~p",
@@ -294,7 +294,7 @@ session_close_command(Data, Conn, #uacp_message{payload = _Msg} = Req) ->
 
 check_identity(ExtObj) ->
     #opcua_extension_object{type_id = NodeSpec, body = Body} = ExtObj,
-    case opcua_database:lookup_id(NodeSpec) of
+    case opcua_node:id(NodeSpec) of
         #opcua_node_id{value = 319} -> %% AnonymousIdentityToken
             #{policy_id := PolicyId} = Body,
             {ok, PolicyId};

@@ -90,7 +90,7 @@ decode_type(Ctx, #opcua_node_id{} = NodeId, Data) ->
         Schema -> decode_schema(Ctx, Schema, Data)
     end;
 decode_type(Ctx, NodeSpec, Data) ->
-    decode_type(Ctx, opcua_codec:node_id(NodeSpec), Data).
+    decode_type(Ctx, opcua_node:id(NodeSpec), Data).
 
 decode_map(Ctx, Spec, Data) ->
     decode_map(Ctx, Spec, Data, #{}).
@@ -333,7 +333,7 @@ encode_type(Ctx, #opcua_node_id{} = NodeId, Data) ->
         Schema -> encode_schema(Ctx, Schema, Data)
     end;
 encode_type(Ctx, NodeSpec, Data) ->
-    encode_type(Ctx, opcua_codec:node_id(NodeSpec), Data).
+    encode_type(Ctx, opcua_node:id(NodeSpec), Data).
 
 encode_map(Ctx, Spec, Data) ->
     encode_map(Ctx, Spec, Data, []).

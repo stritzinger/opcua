@@ -21,9 +21,6 @@
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% API
--export([node_id/1]).
-
 %% BEHAVIOUR application CALLBACK FUNCTIONS
 -export([start/2]).
 -export([stop/1]).
@@ -293,14 +290,6 @@
     acknowledge_payload/0,
     error_payload/0
 ]).
-
-
-%%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-node_id(root)     -> ?NNID(?OBJ_ROOT_FOLDER);
-node_id(objects)  -> ?NNID(?OBJ_OBJECTS_FOLDER);
-node_id(server)   -> ?NNID(?OBJ_SERVER);
-node_id(NodeSpec) -> opcua_database:lookup_id(NodeSpec).
 
 
 %%% BEHAVIOUR application CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

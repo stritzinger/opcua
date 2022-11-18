@@ -154,7 +154,7 @@ handle_request(#state{sess = Sess} = State, Conn,
                #uacp_message{type = channel_message} = Request) ->
     #uacp_message{node_id = NodeSpec} = Request,
     %TODO: figure a way to not hardcode the ids...
-    NodeId = opcua_database:lookup_id(NodeSpec),
+    NodeId = opcua_node:id(NodeSpec),
     Request2 = Request#uacp_message{node_id = NodeId},
     Result = case {Sess, NodeId} of
         {_, #opcua_node_id{value = 426}} -> %% GetEndpoints

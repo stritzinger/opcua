@@ -59,7 +59,7 @@ release_secure_channel(ChannelId) ->
     gen_server:call(?SERVER, {release_secure_channel, ChannelId}).
 
 perform(NodeSpec, Commands) ->
-    case get_node(opcua_database:lookup_id(NodeSpec)) of
+    case get_node(opcua_node:id(NodeSpec)) of
         undefined ->
             [{error, bad_node_id_unknown} || _ <- Commands];
         {Mode, #opcua_node{} = Node} ->

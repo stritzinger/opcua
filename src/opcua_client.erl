@@ -141,9 +141,9 @@ browse(Pid, NodeSpec) ->
 browse(Pid, NodeSpec, Opts) ->
     FixedOpts = case maps:find(type, Opts) of
         error -> Opts;
-        {ok, TypeSpec} -> Opts#{type := opcua:node_id(TypeSpec)}
+        {ok, TypeSpec} -> Opts#{type := opcua_node:id(TypeSpec)}
     end,
-    Command = {browse, opcua:node_id(NodeSpec), FixedOpts},
+    Command = {browse, opcua_node:id(NodeSpec), FixedOpts},
     {ok, Result} = gen_statem:call(Pid, Command),
     Result.
 
@@ -158,7 +158,7 @@ read(Pid, NodeSpec, AttribSpec, Opts) ->
 
 batch_read(Pid, ReadSpecs, Opts) when is_list(ReadSpecs) ->
     MkList = fun(L) when is_list(L) -> L; (A) when is_atom(A) -> [A] end,
-    PrepedSpecs = [{opcua:node_id(N), MkList(A)} || {N, A} <- ReadSpecs],
+    PrepedSpecs = [{opcua_node:id(N), MkList(A)} || {N, A} <- ReadSpecs],
     Command = {read, PrepedSpecs, Opts},
     case gen_statem:call(Pid, Command) of
         {ok, Result} -> Result;
@@ -170,7 +170,7 @@ write(Pid, NodeSpec, AttribValuePairs) ->
     write(Pid, NodeSpec, AttribValuePairs, #{}).
 
 write(Pid, NodeSpec, AttribValuePairs, Opts) when is_list(AttribValuePairs) ->
-    Command = {write, opcua:node_id(NodeSpec), AttribValuePairs, Opts},
+    Command = {write, opcua_node:id(NodeSpec), AttribValuePairs, Opts},
     {ok, Result} = gen_statem:call(Pid, Command),
     Result;
 write(Pid, NodeSpec, AttribValuePair, Opts) ->

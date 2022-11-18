@@ -55,7 +55,7 @@ example(#opcua_union{fields = [#opcua_field{name=Name, node_id = NodeId}|_]}) ->
 example(#opcua_builtin{builtin_node_id = #opcua_node_id{value = Id}}) ->
     opcua_codec:builtin_type_name(Id);
 example(Id) ->
-    example(opcua_codec:node_id(Id)).
+    example(opcua_node:id(Id)).
 
 
 %%% PROTECTED FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

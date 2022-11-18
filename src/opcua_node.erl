@@ -9,6 +9,7 @@
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-export([id/1]).
 -export([format/1, format/2]).
 -export([parse/1]).
 -export([class/1]).
@@ -37,6 +38,23 @@
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec id(opcua:node_spec()) -> opcua:node_id().
+id(root) -> ?NNID(?OBJ_ROOT_FOLDER);
+id(objects) -> ?NNID(?OBJ_OBJECTS_FOLDER);
+id(server) -> ?NNID(?OBJ_SERVER);
+id(#opcua_node_id{} = NodeId) -> NodeId;
+id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
+id(Name) when is_atom(Name), ?IS_BUILTIN_TYPE_NAME(Name) ->
+    #opcua_node_id{value = opcua_codec:builtin_type_id(Name)};
+id(Name) when is_atom(Name) -> #opcua_node_id{type = string, value = Name};
+id(Name) when is_binary(Name) -> #opcua_node_id{type = string, value = Name};
+id({NS, Num}) when is_integer(NS), is_integer(Num), NS >= 0, Num > 0 ->
+    #opcua_node_id{ns = NS, value = Num};
+id({NS, Name}) when is_integer(NS), is_atom(Name), NS >= 0 ->
+    #opcua_node_id{type = string, ns = NS, value = Name};
+id({NS, Name}) when is_integer(NS), is_binary(Name), NS >= 0 ->
+    #opcua_node_id{type = string, ns = NS, value = Name}.
 
 %TODO: Add support for URI namespaces (nsu=)
 format(List)

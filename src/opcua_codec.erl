@@ -11,7 +11,6 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([node_id/1]).
 -export([pack_variant/2]).
 -export([unpack_variant/2]).
 -export([builtin_type_name/1]).
@@ -19,20 +18,6 @@
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--spec node_id(opcua:node_spec()) -> opcua:node_id().
-node_id(#opcua_node_id{} = NodeId) -> NodeId;
-node_id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
-node_id(Name) when is_atom(Name), ?IS_BUILTIN_TYPE_NAME(Name) ->
-    #opcua_node_id{value = builtin_type_id(Name)};
-node_id(Name) when is_atom(Name) -> #opcua_node_id{type = string, value = Name};
-node_id(Name) when is_binary(Name) -> #opcua_node_id{type = string, value = Name};
-node_id({NS, Num}) when is_integer(NS), is_integer(Num), NS >= 0, Num > 0 ->
-    #opcua_node_id{ns = NS, value = Num};
-node_id({NS, Name}) when is_integer(NS), is_atom(Name), NS >= 0 ->
-    #opcua_node_id{type = string, ns = NS, value = Name};
-node_id({NS, Name}) when is_integer(NS), is_binary(Name), NS >= 0 ->
-    #opcua_node_id{type = string, ns = NS, value = Name}.
 
 -spec pack_variant(opcua:node_spec(), term()) -> opcua:variant().
 pack_variant(#opcua_node_id{ns = 0, type = numeric, value = Num}, Value)
@@ -52,7 +37,7 @@ pack_variant(#opcua_node_id{} = NodeId, Value) ->
             #opcua_variant{type = extension_object, value = ExtObj}
     end;
 pack_variant(NodeSpec, Value) ->
-    pack_variant(node_id(NodeSpec), Value).
+    pack_variant(opcua_node:id(NodeSpec), Value).
 
 -spec unpack_variant(opcua:node_spec(), opcua:variant()) -> term().
 unpack_variant(_Type, _Value) ->
