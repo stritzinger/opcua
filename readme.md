@@ -101,9 +101,18 @@ With expanded arrays of structs (server dependent):
 
 OPCUA needs a database of standard node, they are provided by XML NodeSet files.
 To speedup the startup of the client and server, these files are preprocessed
-and stored as term files. The NodeSet files used to generate current database
-are stored in `priv/nodesets` as `XXX.NodeSet2.xml` files. The generated
-database files are in `priv` as `nodesets.XXX.bterm` files.
+and stored as term files. The special directory `priv/nodeset/Schema` must
+contain the standard OPCUA node-set definition `Opc.Ua.NodeSet2.Services.xml`,
+the attributes mapping definition `AttributeIds.csv` and the status code mapping
+`StatusCode.csv`. The generated data files needed for runtime are stored in
+`priv/nodeset/data`.
 
-To update the NodeSet, update the files in `priv/nodesets`, start a shell with
-`rebar3 shell` and run the command `opcua_nodeset_parser:parse().`.
+The node-set can be extended by adding custom definitions in
+`priv/nodeset/reference` sub-directories as `XXX.NodeSet2.xml` files.
+
+To update the node-set, you can use the provided script:
+
+	`scripts/update_nodeset.sh -v v1.04`
+
+To only regenerate the internal data without updating the reference files:
+	`scripts/update_nodeset.sh refresh`

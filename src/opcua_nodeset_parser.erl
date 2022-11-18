@@ -20,7 +20,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([parse/0, parse/2]).
+-export([parse/0]).
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -40,17 +40,51 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 parse() ->
-    Root = filename:join([code:priv_dir(opcua), "nodesets"]),
-    Files = filelib:wildcard(filename:join([Root, "*.xml"])),
-    parse(Root, Files).
-
-parse(DestDir, Files) ->
-    Namespaces = #{0 => <<"http://opcfoundation.org/UA/">>},
-    Meta = #{namespaces => Namespaces},
-    parse(DestDir, Files, Meta, []).
+    PrivDir = code:priv_dir(opcua),
+    BaseDir = filename:join([PrivDir, "nodeset"]),
+    InputDir = filename:join([BaseDir, "reference"]),
+    OutputDir = filename:join([BaseDir, "data"]),
+    parse_attributes(InputDir, OutputDir),
+    parse_status(InputDir, OutputDir),
+    parse_nodeset(InputDir, OutputDir).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+parse_attributes(InputDir, OutputDir) ->
+    InputPath = filename:join([InputDir, "Schema", "AttributeIds.csv"]),
+    OutputPath = filename:join([OutputDir, "nodeset.attributes.bterm"]),
+    ?LOG_INFO("Loading OPCUA attributes mapping from ~s ...", [InputPath]),
+    Terms = opcua_util_csv:fold(InputPath,
+        fun([NameStr, IdStr], Acc) ->
+            Name = opcua_util:convert_name(NameStr),
+            Id = list_to_integer(IdStr),
+            [{Id, Name} | Acc]
+        end, []),
+    ?LOG_INFO("Saving OPCUA attributes mapping into ~s ...", [OutputPath]),
+    opcua_util_bterm:save(OutputPath, Terms).
+
+parse_status(InputDir, OutputDir) ->
+    InputPath = filename:join([InputDir, "Schema", "StatusCode.csv"]),
+    OutputPath = filename:join([OutputDir, "nodeset.status.bterm"]),
+    ?LOG_INFO("Loading OPCUA status code mapping from ~s ...", [InputPath]),
+    Terms = opcua_util_csv:fold(InputPath,
+        fun([NameStr, "0x" ++ CodeStr | DescList], Acc) ->
+            Name = opcua_util:convert_name(NameStr),
+            Code = list_to_integer(CodeStr, 16),
+            Desc = iolist_to_binary(lists:join("," , DescList)),
+            [{Code, Name, Desc} | Acc]
+        end, []),
+    ?LOG_INFO("Saving OPCUA status code mapping into ~s ...", [OutputPath]),
+    opcua_util_bterm:save(OutputPath, Terms).
+
+parse_nodeset(InputDir, OutputDir) ->
+    Namespaces = #{0 => <<"http://opcfoundation.org/UA/">>},
+    Meta = #{namespaces => Namespaces},
+    BaseInputPath = filename:join([InputDir, "Schema", "Opc.Ua.NodeSet2.Services.xml"]),
+    InputPatternPath = filename:join([InputDir, "*", "*.NodeSet2.xml"]),
+    InputPathList = [BaseInputPath | filelib:wildcard(InputPatternPath)],
+    parse(OutputDir, InputPathList, Meta, []).
 
 parse(DestDir, [], Meta, Nodes) ->
     NodesProplist = lists:reverse(Nodes),
@@ -59,10 +93,8 @@ parse(DestDir, [], Meta, Nodes) ->
     NodeSpecs = extract_nodes(NodesProplist),
     References = extract_references(NodesProplist),
     Namespaces = maps:to_list(maps:get(namespaces, Meta, #{})),
-    write_terms(DestDir, "OPCUA data type schemas",
-                "data_type_schemas", DataTypesSchemas),
-    write_terms(DestDir, "OPCUA encoding specifications",
-                "encodings", Encodings),
+    write_terms(DestDir, "OPCUA data type schemas", "datatypes", DataTypesSchemas),
+    write_terms(DestDir, "OPCUA encoding specifications", "encodings", Encodings),
     write_terms(DestDir, "OPCUA nodes", "nodes", NodeSpecs),
     write_terms(DestDir, "OPCUA references", "references", References),
     write_terms(DestDir, "OPCUA namespaces", "namespaces", Namespaces),
@@ -282,7 +314,7 @@ extract_data_type_schemas(NodesProplist) ->
     DataTypeNodesProplist = lists:filter(fun({_, {Node, _}}) ->
         is_record(Node#opcua_node.node_class, opcua_data_type)
     end, NodesProplist),
-    opcua_nodeset_types:generate_schemas(DataTypeNodesProplist).
+    opcua_nodeset_datatypes:generate_schemas(DataTypeNodesProplist).
 
 extract_encodings(NodesProplist) ->
     [{TargetNodeId, {SourceNodeId, binary}} ||
@@ -299,7 +331,7 @@ extract_encodings(NodesProplist) ->
         } <- References
     ].
 
-write_terms(BasePath, Desc, Tag, Terms) ->
-    FilePath = BasePath ++ "." ++ Tag ++ ".bterm",
-    ?LOG_INFO("Saving ~s into ~s ...", [Desc, FilePath]),
-    opcua_util_bterm:save(FilePath, Terms).
+write_terms(BaseDir, Desc, Tag, Terms) ->
+    OutputPath = filename:join([BaseDir, "nodeset."++ Tag ++ ".bterm"]),
+    ?LOG_INFO("Saving ~s into ~s ...", [Desc, OutputPath]),
+    opcua_util_bterm:save(OutputPath, Terms).

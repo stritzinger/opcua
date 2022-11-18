@@ -1,13 +1,19 @@
--module(opcua_nodeset_types).
+-module(opcua_nodeset_datatypes).
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%% API Functions
 -export([lookup/1]).
 -export([generate_schemas/1]).
--export([setup/0]).
--export([store/2]).
+
+%% Example ???
 -export([example/1]).
+
+%% Functions to be used only by opcua_nodeset
+-export([setup/0]).
+-export([store/1]).
+
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -28,12 +34,9 @@ generate_schemas(DataTypeNodesProplist) ->
     SortedNodes = digraph_utils:topsort(Digraph),
     generate_schemas(Digraph, SortedNodes, #{}).
 
-setup() ->
-    _Tid = ets:new(?MODULE, [named_table]).
 
-store(Keys, DataType) ->
-    KeyValuePairs = [{Key, DataType} || Key <- Keys],
-    true = ets:insert(?MODULE, KeyValuePairs).
+
+%%% EXAMPLE ??? %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 example(#opcua_node_id{value = Id}) when ?IS_BUILTIN_TYPE_ID(Id) ->
     opcua_codec:builtin_type_name(Id);
@@ -53,6 +56,18 @@ example(#opcua_builtin{builtin_node_id = #opcua_node_id{value = Id}}) ->
     opcua_codec:builtin_type_name(Id);
 example(Id) ->
     example(opcua_codec:node_id(Id)).
+
+
+%%% PROTECTED FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+setup() ->
+    ets:new(?MODULE, [named_table]),
+    ok.
+
+store({Keys, DataType}) ->
+    KeyValuePairs = [{Key, DataType} || Key <- Keys],
+    ets:insert(?MODULE, KeyValuePairs),
+    ok.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

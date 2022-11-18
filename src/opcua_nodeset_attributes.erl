@@ -4,42 +4,32 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([load/1]).
 -export([name/1]).
 -export([id/1]).
 
-%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--define(ETS_OPTS, [named_table, protected, {read_concurrency, true}]).
--define(DB_ATTRIBUTE_NAMES, db_attribute_names).
--define(DB_ATTRIBUTE_IDS, db_attribute_ids).
+%% Functions to be used only by opcua_nodeset
+-export([setup/0]).
+-export([store/1]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-load(FilePath) ->
-    ets:new(?DB_ATTRIBUTE_NAMES, ?ETS_OPTS),
-    ets:new(?DB_ATTRIBUTE_IDS, ?ETS_OPTS),
-    opcua_util_csv:fold(FilePath,
-        fun([NameStr, IdStr], ok) ->
-            Name = opcua_util:convert_name(NameStr),
-            Id = list_to_integer(IdStr),
-            ets:insert(?DB_ATTRIBUTE_NAMES, {Id, Name}),
-            ets:insert(?DB_ATTRIBUTE_IDS, {Name, Id}),
-            ok
-        end,
-    ok).
+name(Attr) ->
+    {_, Name} = persistent_term:get({?MODULE, Attr}),
+    Name.
 
-name(AttrName) when is_atom(AttrName) -> AttrName;
-name(AttrId) when is_integer(AttrId), AttrId > 0 ->
-    case ets:lookup(?DB_ATTRIBUTE_NAMES, AttrId) of
-        [{_, AttrName}] -> AttrName;
-        [] -> undefined
-    end.
 
-id(AttrId) when is_integer(AttrId), AttrId > 0 -> AttrId;
-id(AttrName) when is_atom(AttrName) ->
-    case ets:lookup(?DB_ATTRIBUTE_IDS, AttrName) of
-        [{_, AttrId}] -> AttrId;
-        [] -> undefined
-    end.
+id(Attr) ->
+    {Id, _} = persistent_term:get({?MODULE, Attr}),
+    Id.
+
+
+%%% PROTECTED FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+setup() ->
+    ok.
+
+store({Id, Name} = Spec) when is_integer(Id), is_atom(Name) ->
+    persistent_term:put({?MODULE, Id}, Spec),
+    persistent_term:put({?MODULE, Name}, Spec),
+    ok.

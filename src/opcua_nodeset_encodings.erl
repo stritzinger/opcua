@@ -6,8 +6,10 @@
 %% API Functions
 -export([resolve/1]).
 -export([lookup/2]).
+
+%% Functions to be used only by opcua_nodeset
 -export([setup/0]).
--export([store/3]).
+-export([store/1]).
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -31,10 +33,16 @@ lookup(NodeId, Encoding) ->
         [{_, Result}] -> {Result, Encoding}
     end.
 
-setup() -> ets:new(?MODULE, [named_table]).
 
-store(NodeId, TargetNodeId, Encoding) ->
+%%% PROTECTED FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+setup() ->
+    ets:new(?MODULE, [named_table]),
+    ok.
+
+store({NodeId, {TargetNodeId, Encoding}}) ->
     ets:insert(?MODULE, [
         {NodeId, {TargetNodeId, Encoding}},
         {{TargetNodeId, Encoding}, NodeId}
-    ]).
+    ]),
+    ok.

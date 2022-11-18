@@ -19,51 +19,57 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-setup(Dir) ->
+setup(BaseDir) ->
+    opcua_nodeset_attributes:setup(),
+    opcua_nodeset_status:setup(),
     opcua_nodeset_encodings:setup(),
-    opcua_nodeset_types:setup(),
+    opcua_nodeset_datatypes:setup(),
     opcua_nodeset_namespaces:setup(),
+    ?LOG_INFO("Loading OPCUA attributes mapping..."),
+    load_attributes(BaseDir),
+    ?LOG_INFO("Loading OPCUA status code mapping..."),
+    load_status(BaseDir),
     ?LOG_INFO("Loading OPCUA namespaces..."),
-    load_namespaces(Dir),
+    load_namespaces(BaseDir),
     ?LOG_INFO("Loading OPCUA nodes..."),
-    load_nodes(Dir),
+    load_nodes(BaseDir),
     ?LOG_INFO("Loading OPCUA references..."),
-    load_references(Dir),
+    load_references(BaseDir),
     ?LOG_INFO("Loading OPCUA data type schemas..."),
-    load_data_type_schemas(Dir),
+    load_datatypes(BaseDir),
     ?LOG_INFO("Loading OPCUA encoding specifications..."),
-    load_encodings(Dir).
+    load_encodings(BaseDir).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-load_namespaces(Dir) ->
-    load_all_terms(Dir, "namespaces", fun({ID, URI}) ->
-        opcua_nodeset_namespaces:store(ID, URI)
-    end).
+load_attributes(BaseDir) ->
+    load_all_terms(BaseDir, "attributes", fun opcua_nodeset_attributes:store/1).
 
-load_nodes(Dir) ->
-    load_all_terms(Dir, "nodes", fun(Node) ->
+load_status(BaseDir) ->
+    load_all_terms(BaseDir, "status", fun opcua_nodeset_status:store/1).
+
+load_namespaces(BaseDir) ->
+    load_all_terms(BaseDir, "namespaces", fun opcua_nodeset_namespaces:store/1).
+
+load_nodes(BaseDir) ->
+    load_all_terms(BaseDir, "nodes", fun(Node) ->
         opcua_address_space:add_nodes(default, [Node])
     end).
 
-load_references(Dir) ->
-    load_all_terms(Dir, "references", fun(Reference) ->
+load_references(BaseDir) ->
+    load_all_terms(BaseDir, "references", fun(Reference) ->
         opcua_address_space:add_references(default, [Reference])
     end).
 
-load_data_type_schemas(Dir) ->
-    load_all_terms(Dir, "data_type_schemas", fun({Keys, DataType}) ->
-        opcua_nodeset_types:store(Keys, DataType)
-    end).
+load_datatypes(BaseDir) ->
+    load_all_terms(BaseDir, "datatypes", fun opcua_nodeset_datatypes:store/1).
 
-load_encodings(Dir) ->
-    load_all_terms(Dir, "encodings", fun({NodeId, {TargetNodeId, Encoding}}) ->
-        opcua_nodeset_encodings:store(NodeId, TargetNodeId, Encoding)
-    end).
+load_encodings(BaseDir) ->
+    load_all_terms(BaseDir, "encodings", fun opcua_nodeset_encodings:store/1).
 
-load_all_terms(DirPath, Tag, Fun) ->
-    Pattern = filename:join(DirPath, "**/*." ++ Tag ++ ".bterm"),
+load_all_terms(BaseDir, Tag, Fun) ->
+    Pattern = filename:join(BaseDir, "**/*." ++ Tag ++ ".bterm"),
     NoAccCB = fun(V, C) ->
         Fun(V),
         case C rem 500 of

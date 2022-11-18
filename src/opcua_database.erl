@@ -40,7 +40,7 @@ start_link(Opts) ->
 
 -spec lookup_schema(opcua:node_spec()) -> opcua:schema().
 lookup_schema(NodeSpec) ->
-    opcua_nodeset_types:lookup(opcua_codec:node_id(NodeSpec)).
+    opcua_nodeset_datatypes:lookup(opcua_codec:node_id(NodeSpec)).
 
 -spec lookup_id(opcua:node_spec()) -> opcua:node_id().
 lookup_id(NodeSpec) ->
@@ -70,8 +70,6 @@ resolve_encoding(NodeSpec) ->
 
 init(Opts) ->
     ?LOG_DEBUG("OPCUA database process starting with options: ~p", [Opts]),
-    load_status_codes(),
-    load_attributes(),
     load_nodesets(),
     {ok, #state{}}.
 
@@ -99,20 +97,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 load_nodesets() ->
     PrivDir = code:priv_dir(opcua),
+    NodeSetDir = filename:join([PrivDir, "nodeset", "data"]),
     opcua_address_space:create(default),
-    opcua_nodeset:setup(PrivDir),
-    ok.
-
-load_status_codes() ->
-    PrivDir = code:priv_dir(opcua),
-    StatusCodeFileName = "StatusCode.csv",
-    StatusCodeFilePath = filename:join([PrivDir, StatusCodeFileName]),
-    opcua_nodeset_status:load(StatusCodeFilePath),
-    ok.
-
-load_attributes() ->
-    PrivDir = code:priv_dir(opcua),
-    AttributeIdsFileName = "AttributeIds.csv",
-    AttributeIdsFilePath = filename:join([PrivDir, AttributeIdsFileName]),
-    opcua_nodeset_attributes:load(AttributeIdsFilePath),
+    opcua_nodeset:setup(NodeSetDir),
     ok.

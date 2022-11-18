@@ -4,11 +4,14 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([setup/0]).
--export([store/2]).
 -export([uri/1]).
 -export([id/1]).
 -export([all/0]).
+
+%% Functions to be used only by opcua_nodeset
+-export([setup/0]).
+-export([store/1]).
+
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -18,16 +21,6 @@
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-setup() ->
-    ets:new(?DB_NAMESPACE_URIS, ?ETS_OPTS),
-    ets:new(?DB_NAMESPACE_IDS, ?ETS_OPTS),
-    ok.
-
-store(Id, Uri) ->
-    ets:insert(?DB_NAMESPACE_URIS, {Id, Uri}),
-    ets:insert(?DB_NAMESPACE_IDS, {Uri, Id}),
-    ok.
 
 uri(Id) when is_integer(Id), Id > 0 ->
     case ets:lookup(?DB_NAMESPACE_URIS, Id) of
@@ -43,3 +36,16 @@ id(Uri) when is_binary(Uri) ->
 
 all() ->
     maps:from_list(ets:tab2list(?DB_NAMESPACE_URIS)).
+
+
+%%% PROTECTED FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+setup() ->
+    ets:new(?DB_NAMESPACE_URIS, ?ETS_OPTS),
+    ets:new(?DB_NAMESPACE_IDS, ?ETS_OPTS),
+    ok.
+
+store({Id, Uri}) ->
+    ets:insert(?DB_NAMESPACE_URIS, {Id, Uri}),
+    ets:insert(?DB_NAMESPACE_IDS, {Uri, Id}),
+    ok.

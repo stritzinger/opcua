@@ -4,7 +4,6 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([load/1]).
 -export([encode/2]).
 -export([decode/2]).
 -export([name/1, name/2]).
@@ -12,94 +11,64 @@
 -export([is_name/1]).
 -export([is_code/1]).
 
-%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--define(ETS_OPTS, [named_table, protected, {read_concurrency, true}]).
--define(DB_STATUS_CODES, db_status_codes).
--define(DB_STATUS_NAME_TO_CODE, db_status_name_to_code).
+%% Functions to be used only by opcua_nodeset
+-export([setup/0]).
+-export([store/1]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-load(FilePath) ->
-    ets:new(?DB_STATUS_CODES, ?ETS_OPTS),
-    ets:new(?DB_STATUS_NAME_TO_CODE, ?ETS_OPTS),
-    opcua_util_csv:fold(FilePath,
-        fun([NameStr, "0x" ++ CodeStr | DescList], ok) ->
-            Name = opcua_util:convert_name(NameStr),
-            Code = list_to_integer(CodeStr, 16),
-            Desc = iolist_to_binary(lists:join("," , DescList)),
-            ets:insert(?DB_STATUS_CODES, {Code, Name, Desc}),
-            ets:insert(?DB_STATUS_NAME_TO_CODE, {Name, Code}),
-            ok
-        end,
-    ok).
-
-decode(Status, undefined) when is_integer(Status) ->
-    case lookup(Status, undefined) of
-        undefined -> {Status, undefined};
-        {_, Name, DefaultDesc} -> {Name, DefaultDesc}
-    end;
+decode(Status, undefined) ->
+    {_, Name, DefaultDesc} = persistent_term:get({?MODULE, Status}),
+    {Name, DefaultDesc};
 decode(Status, Desc) ->
-    case lookup(Status, undefined) of
-        undefined -> {Status, Desc};
-        {_, Name, _} -> {Name, Desc}
-    end.
+    {_, Name, _} = persistent_term:get({?MODULE, Status}),
+    {Name, Desc}.
 
 encode(Status, undefined) ->
-    case lookup(Status, undefined) of
-        undefined when is_integer(Status) -> {Status, undefined};
-        {Code, _, DefaultDesc} -> {Code, DefaultDesc}
-    end;
+    {Code, _, DefaultDesc} = persistent_term:get({?MODULE, Status}),
+    {Code, DefaultDesc};
 encode(Status, Desc) ->
-    case lookup(Status, undefined) of
-        undefined when is_integer(Status) -> {Status, Desc};
-        {Code, _, DefaultDesc} -> {Code, DefaultDesc}
-    end.
+    {Code, _, _} = persistent_term:get({?MODULE, Status}),
+    {Code, Desc}.
 
 name(Status) ->
-    case lookup(Status, undefined) of
-        undefined -> throw(bad_internal_error);
-        {_, Name, _} -> Name
-    end.
+    {_, Name, _} = persistent_term:get({?MODULE, Status}),
+    Name.
 
 name(Status, Default) ->
-    {_, Name, _} = lookup(Status, Default),
+    {_, Name, _} = persistent_term:get({?MODULE, Status},
+                                       {undefined, Default, undefined}),
     Name.
 
 code(Status) ->
-    case lookup(Status, undefined) of
-        undefined -> throw(bad_internal_error);
-        {Code, _, _} -> Code
-    end.
+    {Code, _, _} = persistent_term:get({?MODULE, Status}),
+    Code.
 
 is_name(StatusName) when is_atom(StatusName) ->
-    case ets:lookup(?DB_STATUS_NAME_TO_CODE, StatusName) of
-        [] -> false;
-        _ -> true
+    try persistent_term:get({?MODULE, StatusName}) of
+        {_, StatusName, _} -> true
+    catch  error:badarg -> false
     end;
 is_name(_Other) ->
     false.
 
-is_code(StatusCode) when is_atom(StatusCode) ->
-    case ets:lookup(?DB_STATUS_CODES, StatusCode) of
-        [] -> false;
-        _ -> true
+is_code(StatusCode) when is_integer(StatusCode) ->
+    try persistent_term:get({?MODULE, StatusCode}) of
+        {StatusCode, _, _} -> true
+    catch  error:badarg -> false
     end;
 is_code(_Other) ->
     false.
 
-%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-lookup(good, _Default) -> {0, good, <<"Good">>};
-lookup(0, _Default) -> {0, good, <<"Good">>};
-lookup(StatusName, Default) when is_atom(StatusName) ->
-    case ets:lookup(?DB_STATUS_NAME_TO_CODE, StatusName) of
-        [{_, StatusCode}] -> lookup(StatusCode, Default);
-        [] -> Default
-    end;
-lookup(StatusCode, Default) when is_integer(StatusCode), StatusCode >= 0 ->
-    case ets:lookup(?DB_STATUS_CODES, StatusCode) of
-        [{_, Name, Desc}] -> {StatusCode, Name, Desc};
-        [] -> Default
-    end.
+%%% PROTECTED FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+setup() ->
+    ok.
+
+store({Code, Name, Desc} = Spec)
+  when is_integer(Code), is_atom(Name), is_binary(Desc) ->
+    persistent_term:put({?MODULE, Code}, Spec),
+    persistent_term:put({?MODULE, Name}, Spec),
+    ok.
