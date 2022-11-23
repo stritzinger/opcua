@@ -114,7 +114,7 @@ code_change(_OldVsn, State, _Extra) ->
 get_node(NodeId) ->
     case resolver_get_node(NodeId) of
         undefined ->
-            case opcua_address_space:get_node(default, NodeId) of
+            case opcua_server_database:get_node(NodeId) of
                 undefined -> undefined;
                 #opcua_node{node_class =
                         #opcua_variable{data_type = T, value = V} = C} = N ->
@@ -133,7 +133,7 @@ get_node(NodeId) ->
     end.
 
 get_references(static, NodeId, Opts) ->
-    opcua_address_space:get_references(default, NodeId, Opts);
+    opcua_server_database:get_references(NodeId, Opts);
 get_references(dynamic, NodeId, Opts) ->
     resolver_get_references(NodeId, Opts).
 
@@ -177,7 +177,7 @@ static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} 
                        [opcua_node:format(Node), Attr, Reason]),
             #opcua_data_value{status = Reason};
         _:Reason ->
-            Status = case opcua_nodeset_status:is_name(Reason) of
+            Status = case opcua_nodeset:is_status(Reason) of
                 true -> Reason;
                 false -> bad_internal_error
             end,
@@ -251,6 +251,6 @@ resolver_get_value(NodeId, DataType, CurrVal) ->
 
 setup_static_data(Vals, Nodes, Refs) ->
     lists:foreach(fun({K, V}) -> opcua_server:set_value(K, V) end, Vals),
-    opcua_address_space:add_nodes(default, Nodes),
-    opcua_address_space:add_references(default, Refs),
+    opcua_server_database:add_nodes(Nodes),
+    opcua_server_database:add_references(Refs),
     ok.

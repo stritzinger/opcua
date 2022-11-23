@@ -4,15 +4,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([lookup/1]).
 -export([generate_schemas/1]).
-
-%% Example ???
--export([example/1]).
-
-%% Functions to be used only by opcua_nodeset
--export([setup/0]).
--export([store/1]).
 
 
 
@@ -26,48 +18,10 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-lookup(NodeId) ->
-    proplists:get_value(NodeId, ets:lookup(?MODULE, NodeId)).
-
 generate_schemas(DataTypeNodesProplist) ->
     Digraph = generate_data_types_digraph(DataTypeNodesProplist),
     SortedNodes = digraph_utils:topsort(Digraph),
     generate_schemas(Digraph, SortedNodes, #{}).
-
-
-
-%%% EXAMPLE ??? %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-example(#opcua_node_id{value = Id}) when ?IS_BUILTIN_TYPE_ID(Id) ->
-    opcua_codec:builtin_type_name(Id);
-example(NodeId = #opcua_node_id{}) ->
-    example(lookup(NodeId));
-example(#opcua_structure{fields = Fields}) ->
-    lists:foldl(fun(#opcua_field{name=Name, node_id=NodeId, value_rank=N}, Map) when N==-1 ->
-                        maps:put(Name, example(NodeId), Map);
-                   (#opcua_field{name=Name, node_id=NodeId, value_rank=N}, Map) when N>0 ->
-                        maps:put(Name, [example(NodeId)], Map)
-                end, #{}, Fields);
-example(#opcua_enum{fields = [#opcua_field{name=Name}|_]}) ->
-    Name; %% just take the first element as example
-example(#opcua_union{fields = [#opcua_field{name=Name, node_id = NodeId}|_]}) ->
-    #{Name => example(NodeId)}; %% just take the first element as example
-example(#opcua_builtin{builtin_node_id = #opcua_node_id{value = Id}}) ->
-    opcua_codec:builtin_type_name(Id);
-example(Id) ->
-    example(opcua_node:id(Id)).
-
-
-%%% PROTECTED FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-setup() ->
-    ets:new(?MODULE, [named_table]),
-    ok.
-
-store({Keys, DataType}) ->
-    KeyValuePairs = [{Key, DataType} || Key <- Keys],
-    ets:insert(?MODULE, KeyValuePairs),
-    ok.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -29,6 +29,7 @@
 -export([parse_endpoint/1, parse_endpoint/2]).
 -export([policy_uri/1]).
 -export([policy_type/1]).
+-export([for_human/1]).
 
 %% Debug functions
 -export([decode_client_message/1]).
@@ -155,6 +156,17 @@ policy_uri(basic256sha256) -> ?POLICY_BASIC256SHA256.
 policy_type(?POLICY_NONE) -> none;
 policy_type(?POLICY_BASIC256SHA256) -> basic256sha256;
 policy_type(_) -> unsupported.
+
+% @doc Converts nodes, nodes id and references to something more human readable.
+for_human(#opcua_node_id{} = NodeId) -> opcua_node:spec(NodeId);
+for_human(#opcua_reference{type_id = Type, source_id = S, target_id = T}) ->
+    {ref, opcua_node:spec(Type), opcua_node:spec(S), opcua_node:spec(T)};
+for_human(L) when is_list(L) ->
+    [for_human(V) || V <- L];
+for_human(M) when is_map(M) ->
+    maps:from_list([{for_human(K), for_human(V)} || {K, V} <- maps:to_list(M)]);
+for_human(O) ->
+    O.
 
 
 %%% DEBUG FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

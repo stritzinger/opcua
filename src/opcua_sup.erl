@@ -20,11 +20,12 @@ start_link() ->
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
+    PrivDir = code:priv_dir(opcua),
+    NodeSetDir = filename:join([PrivDir, "nodeset", "data"]),
     KeychainOpts = application:get_env(opcua, keychain, #{}),
     Childs = [
         worker(opcua_keychain_default, [KeychainOpts]),
-        supervisor(opcua_address_space_sup, []),
-        worker(opcua_database, [#{}]),
+        worker(opcua_nodeset, [NodeSetDir]),
         supervisor(opcua_client_sup, [])
     ],
     Childs2 = case application:get_env(start_server) of

@@ -17,10 +17,10 @@ t_test_() ->
       fun builtin/0]}.
 
 setup() ->
-    meck:new(opcua_database, [non_strict]).
+    meck:new(opcua_nodeset, [non_strict]).
 
 cleanup(_) ->
-    meck:unload(opcua_database).
+    meck:unload(opcua_nodeset).
 
 %% some little helper
 assert_codec(NodeId, ToBeEncoded) ->
@@ -54,7 +54,7 @@ structure() ->
                                value_rank = -1,
                                is_optional = false,
                                value = undefined}]},
-    meck:expect(opcua_database, lookup_schema,
+    meck:expect(opcua_nodeset, schema,
         fun(#opcua_node_id{value = 101}) -> Structure;
            (#opcua_node_id{value = 100}) -> InnerField end),
     NodeId = #opcua_node_id{type = numeric, value = 101},
@@ -77,7 +77,7 @@ structure_with_options() ->
                                value_rank = -1,
                                is_optional = true,
                                value = 1}]},
-    meck:expect(opcua_database, lookup_schema,
+    meck:expect(opcua_nodeset, schema,
         fun(#opcua_node_id{value = 101}) -> Structure end),
     NodeId = #opcua_node_id{type = numeric, value = 101},
 
@@ -98,7 +98,7 @@ enum() ->
                          #opcua_field{
                            name = field_2,
                            value = 2}]},
-    meck:expect(opcua_database, lookup_schema,
+    meck:expect(opcua_nodeset, schema,
         fun(#opcua_node_id{value = 101}) -> Enum end),
     NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = field_2,
@@ -119,7 +119,7 @@ union() ->
                             value_rank = -1,
                             is_optional = true,
                             value = 2}]},
-    meck:expect(opcua_database, lookup_schema,
+    meck:expect(opcua_nodeset, schema,
         fun(#opcua_node_id{value = 101}) -> Union end),
     NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = #{some_string => <<"Hello!">>},
@@ -132,7 +132,7 @@ option_set() ->
                     fields = [#opcua_field{name = option_0, value = 0},
                               #opcua_field{name = option_1, value = 1},
                               #opcua_field{name = option_2, value = 2}]},
-    meck:expect(opcua_database, lookup_schema,
+    meck:expect(opcua_nodeset, schema,
         fun(#opcua_node_id{value = 101}) -> OptionSet end),
     NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = [option_0, option_2],
@@ -142,7 +142,7 @@ builtin() ->
     Builtin = #opcua_builtin{
                 node_id = #opcua_node_id{type = numeric, value = 101},
                 builtin_node_id = #opcua_node_id{type = numeric, value = 6}},
-    meck:expect(opcua_database, lookup_schema,
+    meck:expect(opcua_nodeset, schema,
         fun(#opcua_node_id{value = 101}) -> Builtin end),
     NodeId = #opcua_node_id{type = numeric, value = 101},
     ToBeEncoded = 123,

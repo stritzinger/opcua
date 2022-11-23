@@ -85,7 +85,7 @@ decode_type(Ctx, #opcua_node_id{type = numeric, value = Num}, Data)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     decode_builtin(Ctx, opcua_codec:builtin_type_name(Num), Data);
 decode_type(Ctx, #opcua_node_id{} = NodeId, Data) ->
-    case opcua_database:lookup_schema(NodeId) of
+    case opcua_nodeset:schema(NodeId) of
         undefined -> opcua_codec_context:issue_schema_not_found(Ctx, NodeId);
         Schema -> decode_schema(Ctx, Schema, Data)
     end;
@@ -203,7 +203,7 @@ decode_extension_object(Ctx, Data) ->
         {?UNDEF_EXT_OBJ, _Data2, _Ctx3} = Result -> Result;
         {#opcua_extension_object{type_id = NodeSpec, encoding = byte_string, body = Body} = ExtObj, Data2, Ctx3} ->
             %TODO: Figure out if we shouldn't fail when we can't resolve the encoding ?
-            case opcua_database:resolve_encoding(NodeSpec) of
+            case opcua_nodeset:resolve_encoding(NodeSpec) of
                 {NodeId, Enc} when Enc =:= binary; Enc =:= undefined ->
                     try decode_type(?PUSHF(Ctx3, object), NodeId, Body) of
                         {DecodedBody, _Rest, Ctx4} ->
@@ -328,7 +328,7 @@ encode_type(Ctx, #opcua_node_id{type = numeric, value = Num}, Data)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     encode_builtin(Ctx, opcua_codec:builtin_type_name(Num), Data);
 encode_type(Ctx, #opcua_node_id{} = NodeId, Data) ->
-    case opcua_database:lookup_schema(NodeId) of
+    case opcua_nodeset:schema(NodeId) of
         undefined -> opcua_codec_context:issue_schema_not_found(Ctx, NodeId);
         Schema -> encode_schema(Ctx, Schema, Data)
     end;
@@ -409,7 +409,7 @@ encode_masked_fields(Ctx, [Field = #opcua_field{is_optional = false, name = Name
                            | Fields], Data, Mask, Acc) ->
     case maps:take(Name, Data) of
         error ->
-            opcua_condec_context:issue(?PUSHF(Ctx, Name), missing_required_field);
+            opcua_codec_context:issue(?PUSHF(Ctx, Name), missing_required_field);
         {Value, Data2} ->
             {EncodedField, _, Ctx2} = encode_field(Ctx, Field, Value),
             encode_masked_fields(Ctx2, Fields, Data2, Mask,
@@ -435,7 +435,7 @@ encode_fields(Ctx, [], _Data, Acc) ->
 encode_fields(Ctx, [#opcua_field{name = Name} = Field | Fields], Data, Acc) ->
     case maps:take(Name, Data) of
         error ->
-            opcua_condec_context:issue(?PUSHF(Ctx, Name), missing_required_field);
+            opcua_codec_context:issue(?PUSHF(Ctx, Name), missing_required_field);
         {Value, Data2} ->
             {FieldValue, _, Ctx2} = encode_field(Ctx, Field, Value),
             encode_fields(Ctx2, Fields, Data2, [FieldValue|Acc])
@@ -478,7 +478,7 @@ encode_extension_object(Ctx, #opcua_extension_object{type_id = NodeSpec,
                                                      encoding = byte_string,
                                                      body = Body}) ->
     %TODO: Figure out what to do when lookup fail ?
-    case opcua_database:lookup_encoding(NodeSpec, binary) of
+    case opcua_nodeset:lookup_encoding(NodeSpec, binary) of
         {EncNodeId, binary} ->
             {EncodedBody, _, Ctx2} = encode_type(Ctx, NodeSpec, Body),
             {NodeIdData, _, Ctx3} = encode_builtin(Ctx2, node_id, EncNodeId),

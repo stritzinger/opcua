@@ -27,7 +27,7 @@ pack_variant(#opcua_node_id{ns = 0, type = string, value = Name}, Value)
   when ?IS_BUILTIN_TYPE_NAME(Name) ->
     #opcua_variant{type = Name, value = Value};
 pack_variant(#opcua_node_id{} = NodeId, Value) ->
-    case opcua_database:lookup_schema(NodeId) of
+    case opcua_nodeset:schema(NodeId) of
         undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
         #opcua_enum{fields = Fields} ->
             [Idx] = [I || #opcua_field{name = N, value = I} <- Fields, Value =:= N],

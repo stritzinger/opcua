@@ -10,6 +10,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -export([id/1]).
+-export([spec/1]).
 -export([format/1, format/2]).
 -export([parse/1]).
 -export([class/1]).
@@ -40,9 +41,21 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec id(opcua:node_spec()) -> opcua:node_id().
+id(undefined) -> ?UNDEF_NODE_ID;
+% Common base nodes
 id(root) -> ?NNID(?OBJ_ROOT_FOLDER);
 id(objects) -> ?NNID(?OBJ_OBJECTS_FOLDER);
 id(server) -> ?NNID(?OBJ_SERVER);
+% Common reference types
+id(has_component) -> ?NNID(47);
+id(has_property) -> ?NNID(46);
+id(organizes) -> ?NNID(35);
+id(has_notifier) -> ?NNID(48);
+id(has_subtype) -> ?NNID(45);
+id(has_type_definition) -> ?NNID(40);
+id(has_encoding) -> ?NNID(38);
+id(has_description) -> ?NNID(39);
+%
 id(#opcua_node_id{} = NodeId) -> NodeId;
 id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
 id(Name) when is_atom(Name), ?IS_BUILTIN_TYPE_NAME(Name) ->
@@ -55,6 +68,41 @@ id({NS, Name}) when is_integer(NS), is_atom(Name), NS >= 0 ->
     #opcua_node_id{type = string, ns = NS, value = Name};
 id({NS, Name}) when is_integer(NS), is_binary(Name), NS >= 0 ->
     #opcua_node_id{type = string, ns = NS, value = Name}.
+
+-spec spec(opcua:node_id()) -> opcua:node_spec().
+spec(?UNDEF_NODE_ID) -> undefined;
+% Common base nodes
+spec(?NNID(?OBJ_ROOT_FOLDER)) -> root;
+spec(?NNID(?OBJ_OBJECTS_FOLDER)) -> objects;
+spec(?NNID(?OBJ_SERVER)) -> server;
+% Common reference types
+spec(?NNID(47)) -> has_component;
+spec(?NNID(46)) -> has_property;
+spec(?NNID(35)) -> organizes;
+spec(?NNID(48)) -> has_notifier;
+spec(?NNID(45)) -> has_subtype;
+spec(?NNID(40)) -> has_type_definition;
+spec(?NNID(38)) -> has_encoding;
+spec(?NNID(39)) -> has_description;
+% Builtin types
+spec(#opcua_node_id{ns = 0, type = numeric, value = Id})
+  when ?IS_BUILTIN_TYPE_ID(Id) ->
+    opcua_codec:builtin_type_name(Id);
+% Numerical with default namespace
+spec(#opcua_node_id{ns = 0, type = numeric, value = Id})
+  when is_integer(Id) -> Id;
+% Numerical with explicit namespace
+spec(#opcua_node_id{ns = NS, type = numeric, value = Id})
+  when is_integer(NS), is_integer(Id) -> {NS, Id};
+% String with default namespace
+spec(#opcua_node_id{ns = 0, type = string, value = Id})
+  when is_binary(Id) -> Id;
+% String with explicit namespace
+spec(#opcua_node_id{ns = NS, type = numeric, value = Id})
+  when is_integer(NS), is_binary(Id) -> {NS, Id};
+% OTherwise, the node id itself...
+spec(#opcua_node_id{} = NodeId) ->
+  NodeId.
 
 %TODO: Add support for URI namespaces (nsu=)
 format(List)

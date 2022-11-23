@@ -21,6 +21,7 @@ start_link() ->
 
 init([]) ->
     {ok, {#{strategy => one_for_all}, [
+        worker(opcua_server_database, []),
         worker(opcua_server_registry, [#{}]),
         supervisor(opcua_server_session_sup, [])
     ]}}.

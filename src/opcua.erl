@@ -169,6 +169,7 @@
                         nonatomic_read |
                         nonatomic_write |
                         write_full_array_only.
+-type node_rec() :: #opcua_node{}.
 -type node_ref() :: #opcua_reference{}.
 -type node_refs() :: [node_ref()].
 
@@ -181,6 +182,7 @@
     role_permission/0,
     role_permissions/0,
     access_level/0,
+    node_rec/0,
     node_ref/0,
     node_refs/0
 ]).

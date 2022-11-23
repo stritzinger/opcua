@@ -146,7 +146,7 @@ decode_acknowledge(Data) ->
 
 -spec encode_error(opcua:error_payload()) -> iodata().
 encode_error(#{error := C, reason := D} = Data) ->
-    {C2, D2} = opcua_nodeset_status:encode(C, D),
+    {C2, D2} = encode_status(C, D),
     Data2 = Data#{error := C2, reason := D2},
     case opcua_codec_binary:encode(?ERR_SPEC, Data2) of
         {Result, Extra} when Extra =:= #{} -> Result;
@@ -159,7 +159,7 @@ encode_error(#{error := C, reason := D} = Data) ->
 decode_error(Data) ->
     case opcua_codec_binary:decode(?ERR_SPEC, iolist_to_binary(Data)) of
         {#{error := C, reason := D} = Result, <<>>} ->
-            {C2, D2} = opcua_nodeset_status:decode(C, D),
+            {C2, D2} = decode_status(C, D),
             Result#{error := C2, reason := D2};
         {_Result, Extra} ->
             ?LOG_ERROR("ERROR message decoding error; extra data: ~p", [Extra]),
@@ -168,7 +168,7 @@ decode_error(Data) ->
 
 -spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
 encode_object(NodeId, Data) ->
-    case opcua_database:lookup_encoding(NodeId, binary) of
+    case opcua_nodeset:lookup_encoding(NodeId, binary) of
         {EncNodeId, binary} ->
             {Header, _} = opcua_codec_binary:encode(node_id, EncNodeId),
             {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
@@ -183,7 +183,7 @@ encode_object(NodeId, Data) ->
                        [] | [opcua:node_id()]}.
 decode_object(Data) ->
     {NodeId, RemData} = opcua_codec_binary:decode(node_id, iolist_to_binary(Data)),
-    case opcua_database:resolve_encoding(NodeId) of
+    case opcua_nodeset:resolve_encoding(NodeId) of
         {ObjNodeId, binary} ->
             {Obj, _, Issues} = opcua_codec_binary:safe_decode(ObjNodeId, RemData),
             filter_decode_issues(ObjNodeId, Obj, Issues);
@@ -424,3 +424,17 @@ encoded_string_size(Str) when is_binary(Str) -> 4 + byte_size(Str);
 encoded_string_size([]) -> 0;
 encoded_string_size([Str | Rest]) ->
     encoded_string_size(Str) + encoded_string_size(Rest).
+
+encode_status(StatusName, undefined) ->
+    {C, _, D} = opcua_nodeset:status(StatusName),
+    {C, D};
+encode_status(StatusName, StatusDesc) ->
+    {C, _, _} = opcua_nodeset:status(StatusName),
+    {C, StatusDesc}.
+
+decode_status(StatusCode, undefined) ->
+    {_, N, D} = opcua_nodeset:status(StatusCode),
+    {N, D};
+decode_status(StatusCode, StatusDesc) ->
+    {_, N, _} = opcua_nodeset:status(StatusCode),
+    {N, StatusDesc}.
