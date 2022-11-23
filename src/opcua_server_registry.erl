@@ -114,7 +114,7 @@ code_change(_OldVsn, State, _Extra) ->
 get_node(NodeId) ->
     case resolver_get_node(NodeId) of
         undefined ->
-            case opcua_server_database:get_node(NodeId) of
+            case opcua_server_space:node(NodeId) of
                 undefined -> undefined;
                 #opcua_node{node_class =
                         #opcua_variable{data_type = T, value = V} = C} = N ->
@@ -133,7 +133,7 @@ get_node(NodeId) ->
     end.
 
 get_references(static, NodeId, Opts) ->
-    opcua_server_database:get_references(NodeId, Opts);
+    opcua_server_space:references(NodeId, Opts);
 get_references(dynamic, NodeId, Opts) ->
     resolver_get_references(NodeId, Opts).
 
@@ -251,6 +251,6 @@ resolver_get_value(NodeId, DataType, CurrVal) ->
 
 setup_static_data(Vals, Nodes, Refs) ->
     lists:foreach(fun({K, V}) -> opcua_server:set_value(K, V) end, Vals),
-    opcua_server_database:add_nodes(Nodes),
-    opcua_server_database:add_references(Refs),
+    opcua_server_space:add_nodes(Nodes),
+    opcua_server_space:add_references(Refs),
     ok.

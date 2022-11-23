@@ -1,70 +1,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%% @doc OPCUA address space interface module.
+%%% @doc OPCUA database backend.
 %%% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
--module(opcua_space).
-
-
-%%% BEHAVIOUR opcua_database DEFINITION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--callback init() -> State
-    when State :: term().
-
--callback add_nodes(State, [Node]) -> ok
-    when State :: term(), Node :: opcua:node_rec().
-
--callback del_nodes(State, [NodeSpec]) -> ok
-    when State :: term(), NodeSpec :: opcua:node_spec().
-
--callback add_references(State, [Reference]) -> ok
-    when State :: term(), Reference :: opcua:node_ref().
-
--callback del_references(State, [Reference]) -> ok
-    when State :: term(), Reference :: opcua:node_ref().
-
--callback node(State, NodeSpec) -> Result
-    when State :: term(), NodeSpec :: opcua:node_spec(),
-         Result :: undefined | opcua:node_rec().
-
--callback references(State, OriginNodeSpec, Options) -> Result
-    when State :: term(), OriginNodeSpec :: opcua:node_spec(),
-         Options :: opcua:references_options(),
-         Result :: [opcua:node_ref()].
-
--callback data_type(State, TypeDescriptorSpec) -> Result
-    when State :: term(), TypeDescriptorSpec :: opcua:node_spec(),
-         Result :: undefined | {TypeId, Encoding},
-         TypeId :: opcua:node_id(), Encoding :: opcua:stream_encoding().
-
--callback type_descriptor(State, TypeSpec, Encoding) -> Result
-    when State :: term(), TypeSpec :: opcua:node_spec(),
-         Encoding :: opcua:stream_encoding(),
-         Result :: undefined | TypeDescriptorId,
-         TypeDescriptorId :: opcua:node_id().
-
--callback schema(State, TypeSpec) -> Result
-    when State :: term(), TypeSpec :: opcua:node_spec(),
-         Result :: undefined | opcua:codec_schema().
-
--callback namespace_uri(State, NamespaceId) -> undefined | NamespaceUri
-    when State :: term(), NamespaceId :: non_neg_integer(),
-         NamespaceUri :: binary().
-
--callback namespace_id(State, NamespaceUri) -> undefined | NamespaceId
-    when State :: term(), NamespaceId :: non_neg_integer(),
-         NamespaceUri :: binary().
-
--callback namespaces(State) -> #{NamespaceId => NamespaceUri}
-    when State :: term(), NamespaceId :: non_neg_integer(),
-         NamespaceUri :: binary().
-
-
-%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--include_lib("kernel/include/logger.hrl").
-
--include("opcua.hrl").
--include("opcua_internal.hrl").
+-module(opcua_local_database).
 
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -82,6 +20,14 @@
 -export([namespace_uri/2]).
 -export([namespace_id/2]).
 -export([namespaces/1]).
+
+
+%%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-include_lib("kernel/include/logger.hrl").
+
+-include("opcua.hrl").
+-include("opcua_internal.hrl").
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

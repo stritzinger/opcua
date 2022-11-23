@@ -203,7 +203,7 @@ decode_extension_object(Ctx, Data) ->
         {?UNDEF_EXT_OBJ, _Data2, _Ctx3} = Result -> Result;
         {#opcua_extension_object{type_id = NodeSpec, encoding = byte_string, body = Body} = ExtObj, Data2, Ctx3} ->
             %TODO: Figure out if we shouldn't fail when we can't resolve the encoding ?
-            case opcua_nodeset:resolve_encoding(NodeSpec) of
+            case resolve_encoding(Ctx3, NodeSpec) of
                 {NodeId, Enc} when Enc =:= binary; Enc =:= undefined ->
                     try decode_type(?PUSHF(Ctx3, object), NodeId, Body) of
                         {DecodedBody, _Rest, Ctx4} ->
@@ -219,6 +219,12 @@ decode_extension_object(Ctx, Data) ->
             end;
         {#opcua_extension_object{encoding = EncInfo}, _Data2, Ctx3} ->
             opcua_codec_context:issue_encoding_not_supported(Ctx3, EncInfo)
+    end.
+
+resolve_encoding(_Ctx, TypeDescSpec) ->
+     case opcua_nodeset:data_type(TypeDescSpec) of
+        undefined -> {opcua_node:id(TypeDescSpec), undefined};
+        Result -> Result
     end.
 
 decode_extension_object(Ctx, 16#00, TypeId, T) ->
@@ -478,10 +484,10 @@ encode_extension_object(Ctx, #opcua_extension_object{type_id = NodeSpec,
                                                      encoding = byte_string,
                                                      body = Body}) ->
     %TODO: Figure out what to do when lookup fail ?
-    case opcua_nodeset:lookup_encoding(NodeSpec, binary) of
-        {EncNodeId, binary} ->
+    case opcua_nodeset:type_descriptor(NodeSpec, binary) of
+        #opcua_node_id{} = TypeDescId ->
             {EncodedBody, _, Ctx2} = encode_type(Ctx, NodeSpec, Body),
-            {NodeIdData, _, Ctx3} = encode_builtin(Ctx2, node_id, EncNodeId),
+            {NodeIdData, _, Ctx3} = encode_builtin(Ctx2, node_id, TypeDescId),
             %% NOTE: encoding byte strings also encodes the 'Length' of those as prefix
             {BodyData, _, Ctx4} = encode_builtin(Ctx3, byte_string, EncodedBody),
             FlagData = <<16#01>>,

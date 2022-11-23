@@ -29,13 +29,13 @@ add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
     NodeId = opcua_server_registry:next_node_id(),
     TypeId = opcua_node:id(TypeSpec),
     ParentId = opcua_node:id(ParentSpec),
-    opcua_server_database:add_nodes([#opcua_node{
+    opcua_server_space:add_nodes([#opcua_node{
         node_id = NodeId,
         origin = local,
         browse_name = Name,
         node_class = #opcua_object{}
     }]),
-    opcua_server_database:add_references([
+    opcua_server_space:add_references([
         #opcua_reference{
             type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
             source_id = NodeId,
@@ -51,7 +51,7 @@ add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
 
 del_object(ObjSpec) ->
     NodeId = opcua_node:id(ObjSpec),
-    opcua_server_database:del_nodes([NodeId]),
+    opcua_server_space:del_nodes([NodeId]),
     NodeId.
 
 add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
@@ -59,7 +59,7 @@ add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
     ParentId = opcua_node:id(ObjSpec),
     VarTypeId = opcua_node:id(VarTypeSpec),
     ValueTypeId = opcua_node:id(ValueTypeSpec),
-    opcua_server_database:add_nodes([#opcua_node{
+    opcua_server_space:add_nodes([#opcua_node{
         node_id = NodeId,
         origin = local,
         browse_name = Name,
@@ -68,7 +68,7 @@ add_variable(ObjSpec, Name, VarTypeSpec, ValueTypeSpec, Value) ->
             value = Value
         }
     }]),
-    opcua_server_database:add_references([
+    opcua_server_space:add_references([
         #opcua_reference{
             type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
             source_id = NodeId,
@@ -87,10 +87,10 @@ add_property(ObjSpec, Name, ValueTypeSpec, Value) ->
 
 set_value(VarSpec, Value) ->
     VarId = opcua_node:id(VarSpec),
-    Node = opcua_server_database:get_node(VarId),
+    Node = opcua_server_space:node(VarId),
     #opcua_node{node_class = Variable} = Node,
     %TODO: Maybe some type checking here ?
-    opcua_server_database:add_nodes([Node#opcua_node{
+    opcua_server_space:add_nodes([Node#opcua_node{
         node_class = Variable#opcua_variable{
             value = Value
         }

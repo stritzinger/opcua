@@ -168,12 +168,12 @@ decode_error(Data) ->
 
 -spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
 encode_object(NodeId, Data) ->
-    case opcua_nodeset:lookup_encoding(NodeId, binary) of
-        {EncNodeId, binary} ->
-            {Header, _} = opcua_codec_binary:encode(node_id, EncNodeId),
+    case opcua_nodeset:type_descriptor(NodeId, binary) of
+        undefined -> throw({bad_data_encoding_unsupported, NodeId});
+        TypeDescNodeId ->
+            {Header, _} = opcua_codec_binary:encode(node_id, TypeDescNodeId),
             {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
-            [Header, Msg];
-        {_, _} -> throw({bad_data_encoding_unsupported, NodeId})
+            [Header, Msg]
     end.
 
 -spec decode_object(iodata()) ->
@@ -182,12 +182,12 @@ encode_object(NodeId, Data) ->
                         undefined | opcua:node_object(),
                        [] | [opcua:node_id()]}.
 decode_object(Data) ->
-    {NodeId, RemData} = opcua_codec_binary:decode(node_id, iolist_to_binary(Data)),
-    case opcua_nodeset:resolve_encoding(NodeId) of
+    {TypeDescId, RemData} = opcua_codec_binary:decode(node_id, iolist_to_binary(Data)),
+    case opcua_nodeset:data_type(TypeDescId) of
         {ObjNodeId, binary} ->
             {Obj, _, Issues} = opcua_codec_binary:safe_decode(ObjNodeId, RemData),
             filter_decode_issues(ObjNodeId, Obj, Issues);
-        {_, _} -> throw({bad_data_encoding_unsupported, NodeId})
+        _ -> throw({bad_data_encoding_unsupported, TypeDescId})
     end.
 
 -spec encode_sequence_header(SeqNum, ReqId) -> iodata()

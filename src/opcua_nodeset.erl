@@ -23,8 +23,8 @@
 -export([status_code/1]).
 -export([status_name/1, status_name/2]).
 -export([is_status/1]).
--export([resolve_encoding/1]).
--export([lookup_encoding/2]).
+-export([data_type/1]).
+-export([type_descriptor/2]).
 -export([schema/1]).
 -export([namespace_uri/1]).
 -export([namespace_id/1]).
@@ -93,78 +93,53 @@ is_status(Status) ->
     catch  error:badarg -> false
     end.
 
-resolve_encoding(NodeSpec) ->
-    NodeId = opcua_node:id(NodeSpec),
-    case ets:lookup(?ENCODING_TABLE, NodeId) of
-        []            -> {NodeId, undefined};
-        [{_, Result}] -> Result
-    end.
+data_type(TypeDescriptorNodeSpec) ->
+    opcua_space_backend:data_type(?MODULE, TypeDescriptorNodeSpec).
 
-lookup_encoding(NodeSpec, Encoding) ->
-    NodeId = opcua_node:id(NodeSpec),
-    Key = {NodeId, Encoding},
-    case ets:lookup(?ENCODING_TABLE, Key) of
-        []            -> {NodeId, undefined};
-        [{_, Result}] -> {Result, Encoding}
-    end.
+type_descriptor(DataTypeNodeSpec, Encoding) ->
+    opcua_space_backend:type_descriptor(?MODULE, DataTypeNodeSpec, Encoding).
 
 schema(NodeSpec) ->
-    NodeId = opcua_node:id(NodeSpec),
-    proplists:get_value(NodeId, ets:lookup(?DATATYPE_TABLE, NodeId)).
+    opcua_space_backend:schema(?MODULE, NodeSpec).
 
-namespace_uri(Id) when is_integer(Id), Id > 0 ->
-    case ets:lookup(?NAMESPACE_URI_TABLE, Id) of
-        [{_, Uri}] -> Uri;
-        [] -> undefined
-    end.
+namespace_uri(Id) ->
+    opcua_space_backend:namespace_uri(?MODULE, Id).
 
-namespace_id(Uri) when is_binary(Uri) ->
-    case ets:lookup(?NAMESPACE_ID_TABLE, Uri) of
-        [{Id, _}] -> Id;
-        [] -> undefined
-    end.
+namespace_id(Uri) ->
+    opcua_space_backend:namespace_id(?MODULE, Uri).
 
 namespaces() ->
-    maps:from_list(ets:tab2list(?NAMESPACE_URI_TABLE)).
+    opcua_space_backend:namespaces(?MODULE).
 
 node(NodeSpec) ->
-    opcua_space:get_node(nodeset, NodeSpec).
+    opcua_space_backend:node(?MODULE, NodeSpec).
 
 references(OriginNodeSpec) ->
-    opcua_space:get_references(nodeset, OriginNodeSpec, #{}).
+    opcua_space_backend:references(?MODULE, OriginNodeSpec, #{}).
 
 references(OriginNodeSpec, Opts) ->
-    opcua_space:get_references(nodeset, OriginNodeSpec, Opts).
+    opcua_space_backend:references(?MODULE, OriginNodeSpec, Opts).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init(undefined) ->
     ?LOG_DEBUG("OPCUA nodeset process starting empty", []),
-    setup_encodings(),
-    setup_datatypes(),
-    setup_namespaces(),
-    setup_space(),
+    opcua_space_backend:init(?MODULE),
     {ok, #state{}};
 init(BaseDir) ->
     ?LOG_DEBUG("OPCUA nodeset process starting, loading nodeset from ~s", [BaseDir]),
-    setup_encodings(),
-    setup_datatypes(),
-    setup_namespaces(),
-    setup_space(),
+    opcua_space_backend:init(?MODULE),
     ?LOG_INFO("Loading OPCUA attributes mapping..."),
     load_attributes(BaseDir),
     ?LOG_INFO("Loading OPCUA status code mapping..."),
     load_status(BaseDir),
-    ?LOG_INFO("Loading OPCUA namespaces..."),
+    ?LOG_INFO("Loading OPCUA address space..."),
+    %FIXME: use real space persistence instead of this temporary backward compatible hack
     load_namespaces(BaseDir),
-    ?LOG_INFO("Loading OPCUA nodes..."),
     load_nodes(BaseDir),
-    ?LOG_INFO("Loading OPCUA references..."),
     load_references(BaseDir),
-    ?LOG_INFO("Loading OPCUA data type schemas..."),
     load_datatypes(BaseDir),
-    ?LOG_INFO("Loading OPCUA encoding specifications..."),
     load_encodings(BaseDir),
     {ok, #state{}}.
 
@@ -189,23 +164,6 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-setup_encodings() ->
-    ets:new(?ENCODING_TABLE, [named_table, {read_concurrency, true}]),
-    ok.
-
-setup_datatypes() ->
-    ets:new(?DATATYPE_TABLE, [named_table, {read_concurrency, true}]),
-    ok.
-
-setup_namespaces() ->
-    ets:new(?NAMESPACE_ID_TABLE, [named_table, {read_concurrency, true}, {keypos, 2}]),
-    ets:new(?NAMESPACE_URI_TABLE, [named_table, {read_concurrency, true}, {keypos, 1}]),
-    ok.
-
-setup_space() ->
-    opcua_space:init(nodeset),
-    ok.
 
 load_attributes(BaseDir) ->
     load_all_terms(BaseDir, "attributes", fun store_attribute/1).
@@ -257,26 +215,30 @@ store_status({Code, Name, Desc} = Spec)
     ok.
 
 store_datatype({Keys, DataType}) ->
-    KeyValuePairs = [{Key, DataType} || Key <- Keys],
-    ets:insert(?DATATYPE_TABLE, KeyValuePairs),
+    %FIXME: Temporary backward compatible hack
+    KeyValuePairs = [{datatype, {Key, DataType}} || Key <- Keys],
+    lists:foreach(fun(Item) ->
+        opcua_space_backend:store(?MODULE, Item)
+    end, KeyValuePairs),
     ok.
 
 store_namespace({_Id, _Uri} = Spec) ->
-    ets:insert(?NAMESPACE_ID_TABLE, Spec),
-    ets:insert(?NAMESPACE_URI_TABLE, Spec),
+    %FIXME: Temporary backward compatible hack
+    opcua_space_backend:store(?MODULE, {namespace, Spec}),
     ok.
 
 store_encoding({NodeId, {TargetNodeId, Encoding}}) ->
-    ets:insert(?ENCODING_TABLE, [
-        {NodeId, {TargetNodeId, Encoding}},
-        {{TargetNodeId, Encoding}, NodeId}
-    ]),
+    %FIXME: Temporary backward compatible hack
+    opcua_space_backend:store(?MODULE, {encoding, {NodeId, {TargetNodeId, Encoding}}}),
+    opcua_space_backend:store(?MODULE, {encoding, {{TargetNodeId, Encoding}, NodeId}}),
     ok.
 
 store_node(#opcua_node{} = Node) ->
-    opcua_space:add_nodes(nodeset, [Node]),
+    %FIXME: Temporary backward compatible hack
+    opcua_space_backend:add_nodes(?MODULE, [Node]),
     ok.
 
 store_reference(#opcua_reference{} = Reference) ->
-    opcua_space:add_references(nodeset, [Reference]),
+    %FIXME: Temporary backward compatible hack
+    opcua_space_backend:add_references(?MODULE, [Reference]),
     ok.

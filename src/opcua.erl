@@ -172,6 +172,11 @@
 -type node_rec() :: #opcua_node{}.
 -type node_ref() :: #opcua_reference{}.
 -type node_refs() :: [node_ref()].
+-type references_options() :: #{
+    include_subtypes => boolean(),
+    type => undefined | opcua:node_spec(),
+    direction => opcua:direction()
+}.
 
 -export_type([
     reference_type/0,
@@ -184,7 +189,8 @@
     access_level/0,
     node_rec/0,
     node_ref/0,
-    node_refs/0
+    node_refs/0,
+    references_options/0
 ]).
 
 

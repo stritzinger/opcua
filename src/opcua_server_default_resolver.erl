@@ -154,7 +154,7 @@ static_map(State, Fields) ->
 static_value(_State, ?SERVER_SERVER_ARRAY) ->
     <<"urn:StritzingerGmbH:OPCUAServerLib">>;
 static_value(_State, ?SERVER_NAMESPACE_ARRAY) ->
-    [U || {_, U} <- lists:sort(maps:to_list(opcua_nodeset:namespaces()))];
+    [U || {_, U} <- lists:sort(maps:to_list(opcua_server_space:namespaces()))];
 static_value(_State, ?SERVER_SERVICE_LEVEL) ->
     255;
 static_value(_State, ?SERVER_AUDITING) ->
