@@ -2,7 +2,8 @@
 
 -record(ctx, {
     mode :: opcua_codec_context:mode(),
-    allow_partial = false :: boolean(),
+    space :: opcua_space:state(),
+    allow_partial :: boolean(),
     stack = [] :: [binary() | atom() | integer() | string()
                    | {binary()} | {atom()} | {integer()} | {string()}],
     issues = [] :: [term()] % Internal format is opaque

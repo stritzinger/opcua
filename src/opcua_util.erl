@@ -175,6 +175,7 @@ decode_client_message(Data) ->
     TokenId = 1234,
     Conn = #uacp_connection{
         pid = self(),
+        space = opcua_nodeset,
         keychain = default,
         endpoint = #opcua_endpoint{
             url = <<"opc+tcp://localhost:4840">>,
@@ -188,11 +189,11 @@ decode_client_message(Data) ->
         {error, _Reason} = Error -> Error;
         {ok, Sec} ->
             Sec2 = opcua_security:token_id(TokenId, Sec),
-            {[Chunk], <<>>} = opcua_uacp_codec:decode_chunks(Data),
+            {[Chunk], <<>>} = opcua_uacp_codec:decode_chunks(Conn, Data),
             Chunk2 = Chunk#uacp_chunk{security = TokenId},
             {ok, Chunk3, _Conn2, _Sec3} = opcua_security:unlock(Chunk2, Conn, Sec2),
             #uacp_chunk{message_type = MsgType, body = Body} = Chunk3,
-            opcua_uacp_codec:decode_payload(MsgType, Body)
+            opcua_uacp_codec:decode_payload(Conn, MsgType, Body)
     end.
 
 

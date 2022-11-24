@@ -84,10 +84,19 @@
 -export([namespaces/1]).
 
 
+%%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-type state() :: module() | {module(), term()} | opcua:connection().
+
+-export_type([state/0]).
+
+
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % @doc Adds given nodes to the given database.
 % Depending on the backend, may only be allowed from the owning process.
+add_nodes(#uacp_connection{space = Space}, Nodes) ->
+    add_nodes(Space, Nodes);
 add_nodes({Mod, Sub}, Nodes) ->
     Mod:add_nodes(Sub, Nodes);
 add_nodes(Mod, Nodes) ->
@@ -95,6 +104,8 @@ add_nodes(Mod, Nodes) ->
 
 % @doc Removes the nodes with given node identifier from the given database.
 % Depending on the backend, may only be allowed from the owning process.
+del_nodes(#uacp_connection{space = Space}, NodeIds) ->
+    del_nodes(Space, NodeIds);
 del_nodes({Mod, Sub}, NodeIds) ->
     Mod:del_nodes(Sub, NodeIds);
 del_nodes(Mod, NodeIds) ->
@@ -102,6 +113,8 @@ del_nodes(Mod, NodeIds) ->
 
 % @doc Adds given references to the given database.
 % Depending on the backend, may only be allowed from the owning process.
+add_references(#uacp_connection{space = Space}, References) ->
+    add_references(Space, References);
 add_references({Mod, Sub}, References) ->
     Mod:add_references(Sub, References);
 add_references(Mod, References) ->
@@ -109,6 +122,8 @@ add_references(Mod, References) ->
 
 % @doc Removes given references from given database.
 % Depending on the backend, may only be allowed from the owning process.
+del_references(#uacp_connection{space = Space}, References) ->
+    del_references(Space, References);
 del_references({Mod, Sub}, References) ->
     Mod:del_references(Sub, References);
 del_references(Mod, References) ->
@@ -118,54 +133,72 @@ del_references(Mod, References) ->
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % @doc Retrieves a node record from given database.
+node(#uacp_connection{space = Space}, NodeSpec) ->
+    node(Space, NodeSpec);
 node({Mod, Sub}, NodeSpec) ->
     Mod:node(Sub, NodeSpec);
 node(Mod, NodeSpec) ->
     Mod:node(NodeSpec).
 
 % @doc Retrieves a node forward references from given database.
+references(#uacp_connection{space = Space}, OriginNode) ->
+    references(Space, OriginNode);
 references({Mod, Sub}, OriginNode) ->
     Mod:references(Sub, OriginNode);
 references(Mod, OriginNode) ->
     Mod:references(OriginNode).
 
 % @doc Retrieves a node references from given database with given options.
+references(#uacp_connection{space = Space}, OriginNode, Opts) ->
+    references(Space, OriginNode, Opts);
 references({Mod, Sub}, OriginNode, Opts) ->
     Mod:references(Sub, OriginNode, Opts);
 references(Mod, OriginNode, Opts) ->
     Mod:references(OriginNode, Opts).
 
 % @doc Retrives a data type and encoding type from a type descriptor identifier.
+data_type(#uacp_connection{space = Space}, TypeDescriptorSpec) ->
+    data_type(Space, TypeDescriptorSpec);
 data_type({Mod, Sub}, TypeDescriptorSpec) ->
     Mod:data_type(Sub, TypeDescriptorSpec);
 data_type(Mod, TypeDescriptorSpec) ->
     Mod:data_type(TypeDescriptorSpec).
 
 % @doc Retrieves a type descriptor identifier from a data type and an encoding type.
+type_descriptor(#uacp_connection{space = Space}, NodeSpec, Encoding) ->
+    type_descriptor(Space, NodeSpec, Encoding);
 type_descriptor({Mod, Sub}, NodeSpec, Encoding) ->
     Mod:type_descriptor(Sub, NodeSpec, Encoding);
 type_descriptor(Mod, NodeSpec, Encoding) ->
     Mod:type_descriptor(NodeSpec, Encoding).
 
 % @doc Retrieves a data schema from a data type.
+schema(#uacp_connection{space = Space}, NodeSpec) ->
+    schema(Space, NodeSpec);
 schema({Mod, Sub}, NodeSpec) ->
     Mod:schema(Sub, NodeSpec);
 schema(Mod, NodeSpec) ->
     Mod:schema(NodeSpec).
 
 % @doc Retrieves a namespace URI from its identifier.
+namespace_uri(#uacp_connection{space = Space}, Id) ->
+    namespace_uri(Space, Id);
 namespace_uri({Mod, Sub}, Id) ->
     Mod:namespace_uri(Sub, Id);
 namespace_uri(Mod, Id) ->
     Mod:namespace_uri(Id).
 
 % @doc Retrieve a namespace identifier from its URI.
+namespace_id(#uacp_connection{space = Space}, Uri) ->
+    namespace_id(Space, Uri);
 namespace_id({Mod, Sub}, Uri) ->
     Mod:namespace_id(Sub, Uri);
 namespace_id(Mod, Uri) ->
     Mod:namespace_id(Uri).
 
 % @doc Retrieves all the defined namespaces as a map.
+namespaces(#uacp_connection{space = Space}) ->
+    namespaces(Space);
 namespaces({Mod, Sub}) ->
     Mod:namespaces(Sub);
 namespaces(Mod) ->

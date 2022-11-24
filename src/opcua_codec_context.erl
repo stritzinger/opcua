@@ -3,8 +3,8 @@
 %%% of the position in the decoded/encoded data, and all the options.
 %%%
 %%% The functions issue_XXX must be used for all codec related errors,
-%%% and the top function MUST catch all the exception and call either
-%%% catch_and_throw/3 or catch_first_issue/3 to resolve the issue format.
+%%% and the top function MUST either call finalize/3 or catch all the
+%%% exceptions and call resolve/3.
 %%%
 %%% If a codec error could be ignored resulting in a partial result,
 %%% the catch_and_continue/6 should be used to optionally support
@@ -28,13 +28,10 @@
 
 %% API Functions
 -export([new/2]).
--export([export_issues/1]).
--export([throw_first_issue/1]).
--export([first_issue_reason/1]).
--export([catch_and_throw/3]).
--export([catch_first_issue/3]).
--export([catch_issues/3]).
+-export([finalize/3]).
+-export([resolve/3]).
 -export([catch_and_continue/6]).
+-export([export_issues/1]).
 -export([push/3]).
 -export([pop/3]).
 -export([format_path/1]).
@@ -51,49 +48,37 @@
                | {encoding_not_supported, atom(), Stack :: binary()}.
 -type issues() :: [] | [issue()].
 -type ctx() :: #ctx{}.
+-type options() :: #{
+    % Address space to use, opcua_nodeset will be use if not specied.
+    space => opcua_space:state(),
+    % Allows partial decoding. Will returns the encoding/decoding issues as a
+    % third element of the returned tupple.
+    allow_partial => boolean()
+}.
 
--export_type([mode/0, issue/0, issues/0, ctx/0]).
+-export_type([mode/0, issue/0, issues/0, ctx/0, options/0]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-new(Mode, Safe)
-  when is_boolean(Safe), Mode =:= encoding;
-       is_boolean(Safe), Mode =:= decoding ->
-    #ctx{mode = Mode, allow_partial = Safe}.
+new(Mode, Opts)
+  when Mode =:= encoding; Mode =:= decoding ->
+    #ctx{
+        mode = Mode,
+        space = maps:get(space, Opts, opcua_nodeset),
+        allow_partial = maps:get(allow_partial, Opts, false)
+    }.
 
-export_issues(#ctx{issues = Issues}) ->
-    [{N, R, format_stack(S)} || {N, R, S} <- lists:reverse(Issues)].
-
-% Throws the externally formated version of the first issue from the given context.
-throw_first_issue(Ctx) ->
-    throw(issue_as_reason(Ctx, first_issue(Ctx))).
-
-% Returns the externally formated version of the first issue from the given context.
-first_issue_reason(Ctx) ->
-    issue_as_reason(Ctx, first_issue(Ctx)).
-
-% Handles an exception and externally format the context first issue if
-% the exception was thrown by the context itself.
-% All other exceptions are re-thrown as-is.
-catch_and_throw(throw, {?MODULE, #ctx{} = Ctx}, _Stack) ->
+finalize(#ctx{allow_partial = false, issues = []}, Result, Remaining) ->
+    {Result, Remaining};
+finalize(#ctx{allow_partial = false} = Ctx, _Result, _Remaining) ->
     throw_first_issue(Ctx);
-catch_and_throw(Method, Reason, Stack) ->
-    erlang:raise(Method, Reason, Stack).
+finalize(#ctx{allow_partial = true} = Ctx, Result, Remaining) ->
+    {Result, Remaining, opcua_codec_context:export_issues(Ctx)}.
 
-% Handles an exception and returns the externally formated version of the first
-% issue if the exception was thrown by the context itself.
-% All other exceptions are re-thrown as-is.
-catch_first_issue(throw, {?MODULE, #ctx{} = Ctx}, _Stack) ->
-    first_issue(Ctx);
-catch_first_issue(Method, Reason, Stack) ->
-    erlang:raise(Method, Reason, Stack).
-
-% Handles an exception and returns all the externally formated issues.
-% All other exceptions are re-thrown as-is.
-catch_issues(throw, {?MODULE, #ctx{} = Ctx}, _Stack) ->
-    export_issues(Ctx);
-catch_issues(Method, Reason, Stack) ->
+resolve(throw, {?MODULE, #ctx{} = Ctx}, _ExStack) ->
+    throw_first_issue(Ctx);
+resolve(Method, Reason, Stack) ->
     erlang:raise(Method, Reason, Stack).
 
 % Handles and exception and optionally recover and continue with the given
@@ -105,6 +90,13 @@ catch_and_continue(throw, {?MODULE, #ctx{allow_partial = true} = ErrorCtx},
     {Result, Data, ErrorCtx#ctx{stack = OrigStack}};
 catch_and_continue(Method, Reason, Stack, _OrigCtx, _Result, _Data) ->
     erlang:raise(Method, Reason, Stack).
+
+export_issues(#ctx{issues = Issues}) ->
+    [{N, R, format_stack(S)} || {N, R, S} <- lists:reverse(Issues)].
+
+% Throws the externally formated version of the first issue from the given context.
+throw_first_issue(Ctx) ->
+    throw(issue_as_reason(Ctx, first_issue(Ctx))).
 
 push(#ctx{stack = Stack} = Ctx, key, Tag) ->
     Ctx#ctx{stack = [{Tag} | Stack]};

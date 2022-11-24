@@ -162,7 +162,7 @@ static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} 
     Result = try {opcua_node:attribute_type(Attr, Node),
                   opcua_node:attribute(Attr, Node)} of
         {AttrType, AttrValue} ->
-            try opcua_codec:pack_variant(AttrType, AttrValue) of
+            try opcua_codec:pack_variant(opcua_server_space, AttrType, AttrValue) of
                 Value -> #opcua_data_value{value = Value}
             catch
                 _:Reason ->

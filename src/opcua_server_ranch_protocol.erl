@@ -106,8 +106,8 @@ init(Parent, Ref, Socket, Transport, Opts) ->
                     ref = Ref,
                     transport = Transport,
                     socket = Socket,
-                    conn = opcua_connection:new(Keychain, ResolvedIdent, Endpoint,
-                                                PeerName, SockName),
+                    conn = opcua_connection:new(opcua_server_space, Keychain,
+                        ResolvedIdent, Endpoint, PeerName, SockName),
                     proto = Proto,
                     linger_timeout = LingerTimeout
                 },

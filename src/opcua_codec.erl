@@ -11,23 +11,23 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([pack_variant/2]).
--export([unpack_variant/2]).
+-export([pack_variant/3]).
+-export([unpack_variant/3]).
 -export([builtin_type_name/1]).
 -export([builtin_type_id/1]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec pack_variant(opcua:node_spec(), term()) -> opcua:variant().
-pack_variant(#opcua_node_id{ns = 0, type = numeric, value = Num}, Value)
+-spec pack_variant(opcua_space:state(), opcua:node_spec(), term()) -> opcua:variant().
+pack_variant(_Space, #opcua_node_id{ns = 0, type = numeric, value = Num}, Value)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     #opcua_variant{type = builtin_type_name(Num), value = Value};
-pack_variant(#opcua_node_id{ns = 0, type = string, value = Name}, Value)
+pack_variant(_Space, #opcua_node_id{ns = 0, type = string, value = Name}, Value)
   when ?IS_BUILTIN_TYPE_NAME(Name) ->
     #opcua_variant{type = Name, value = Value};
-pack_variant(#opcua_node_id{} = NodeId, Value) ->
-    case opcua_nodeset:schema(NodeId) of
+pack_variant(Space, #opcua_node_id{} = NodeId, Value) ->
+    case opcua_space:schema(Space, NodeId) of
         undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
         #opcua_enum{fields = Fields} ->
             [Idx] = [I || #opcua_field{name = N, value = I} <- Fields, Value =:= N],
@@ -36,11 +36,11 @@ pack_variant(#opcua_node_id{} = NodeId, Value) ->
             ExtObj = #opcua_extension_object{type_id = NodeId, encoding = byte_string, body = Value},
             #opcua_variant{type = extension_object, value = ExtObj}
     end;
-pack_variant(NodeSpec, Value) ->
-    pack_variant(opcua_node:id(NodeSpec), Value).
+pack_variant(Space, NodeSpec, Value) ->
+    pack_variant(Space, opcua_node:id(NodeSpec), Value).
 
--spec unpack_variant(opcua:node_spec(), opcua:variant()) -> term().
-unpack_variant(_Type, _Value) ->
+-spec unpack_variant(opcua_space:state(), opcua:node_spec(), opcua:variant()) -> term().
+unpack_variant(_Space, _Type, _Value) ->
     throw(bad_not_implemented).
 
 builtin_type_name( 1) -> boolean;

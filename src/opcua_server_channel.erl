@@ -101,12 +101,12 @@ lock(#uacp_chunk{state = unlocked, channel_id = undefined} = Chunk, Conn,
         % No error case yet, commented to make dialyzer happy
         % {error, _Reason} = Error -> Error;
         {ok, Chunk3, Conn2, State2} ->
-            Chunk4 = opcua_uacp_codec:prepare_chunks(Chunk3),
+            Chunk4 = opcua_uacp_codec:prepare_chunks(Conn, Chunk3),
             case security_prepare(State2, Conn2, Chunk4) of
                 % No error case yet, commented to make dialyzer happy
                 % {error, _Reason} = Error -> Error;
                 {ok, Chunk5, Conn3, State3} ->
-                    Chunk6 = opcua_uacp_codec:freeze_chunks(Chunk5),
+                    Chunk6 = opcua_uacp_codec:freeze_chunks(Conn, Chunk5),
                     security_lock(State3, Conn3, Chunk6)
             end
     end.

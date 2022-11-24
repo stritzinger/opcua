@@ -30,6 +30,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions to be called only from owning process
+-export([new/0, new/1]).
 -export([init/0, init/1]).
 -export([terminate/1]).
 -export([add_nodes/2]).
@@ -81,6 +82,14 @@
 
 
 %%% API FUNCTIONS FOR OWNING PROCESS ONLY %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec new() -> opcua_space:state().
+new() ->
+    new([]).
+
+-spec new(spaces()) -> opcua_space:state().
+new(Parent) when is_list(Parent) ->
+    {?MODULE, [init() | Parent]}.
 
 -spec init() -> space().
 init() ->

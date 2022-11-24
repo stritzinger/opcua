@@ -16,26 +16,26 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Chunk encoding and decoding functions
--export([decode_chunks/1]).
--export([prepare_chunks/1]).
--export([freeze_chunks/1]).
--export([encode_chunks/1]).
+-export([decode_chunks/2]).
+-export([prepare_chunks/2]).
+-export([freeze_chunks/2]).
+-export([encode_chunks/2]).
 
 %% Message payload encoding and decoding functions
--export([encode_payload/3]).
--export([decode_payload/2]).
--export([encode_hello/1]).
--export([decode_hello/1]).
--export([encode_acknowledge/1]).
--export([decode_acknowledge/1]).
--export([encode_error/1]).
--export([decode_error/1]).
--export([encode_object/2]).
--export([decode_object/1]).
+-export([encode_payload/4]).
+-export([decode_payload/3]).
+-export([encode_hello/2]).
+-export([decode_hello/2]).
+-export([encode_acknowledge/2]).
+-export([decode_acknowledge/2]).
+-export([encode_error/2]).
+-export([decode_error/2]).
+-export([encode_object/3]).
+-export([decode_object/2]).
 
 %% Utility encoding/decoding functions
--export([decode_sequence_header/1]).
--export([encode_sequence_header/2]).
+-export([decode_sequence_header/2]).
+-export([encode_sequence_header/3]).
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -65,99 +65,100 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec decode_chunks(iodata()) -> {[opcua:chunk()], iodata()}.
-decode_chunks(Data) -> decode_chunks(iolist_to_binary(Data), []).
+-spec decode_chunks(opcua_space:state(), iodata()) -> {[opcua:chunk()], iodata()}.
+decode_chunks(Space, Data) ->
+    decode_chunks(Space, iolist_to_binary(Data), []).
 
--spec prepare_chunks(opcua:chunk() | [opcua:chunk()])
+-spec prepare_chunks(opcua_space:state(), opcua:chunk() | [opcua:chunk()])
     -> opcua:chunk() | [opcua:chunk()].
-prepare_chunks(#uacp_chunk{} = Chunk) -> prepare_chunk(Chunk);
-prepare_chunks(Chunks) -> [prepare_chunk(C) || C <- Chunks].
+prepare_chunks(Space, #uacp_chunk{} = Chunk) -> prepare_chunk(Space, Chunk);
+prepare_chunks(Space, Chunks) -> [prepare_chunk(Space, C) || C <- Chunks].
 
--spec freeze_chunks(opcua:chunk() | [opcua:chunk()])
+-spec freeze_chunks(opcua_space:state(), opcua:chunk() | [opcua:chunk()])
     -> opcua:chunk() | [opcua:chunk()].
-freeze_chunks(#uacp_chunk{} = Chunk) -> freeze_chunk(Chunk);
-freeze_chunks(Chunks) -> [freeze_chunk(C) || C <- Chunks].
+freeze_chunks(Space, #uacp_chunk{} = Chunk) -> freeze_chunk(Space, Chunk);
+freeze_chunks(Space, Chunks) -> [freeze_chunk(Space, C) || C <- Chunks].
 
--spec encode_chunks(opcua:chunk() | [opcua:chunk()])
+-spec encode_chunks(opcua_space:state(), opcua:chunk() | [opcua:chunk()])
     -> opcua:chunk() | [opcua:chunk()].
-encode_chunks(#uacp_chunk{} = Chunk) -> encode_chunk(Chunk);
-encode_chunks(Chunks) -> [encode_chunk(C) || C <- Chunks].
+encode_chunks(Space, #uacp_chunk{} = Chunk) -> encode_chunk(Space, Chunk);
+encode_chunks(Space, Chunks) -> [encode_chunk(Space, C) || C <- Chunks].
 
-encode_payload(hello, undefined, Payload) ->
-    opcua_uacp_codec:encode_hello(Payload);
-encode_payload(acknowledge, undefined, Payload) ->
-    opcua_uacp_codec:encode_acknowledge(Payload);
-encode_payload(error, undefined, Payload) ->
-    opcua_uacp_codec:encode_error(Payload);
-encode_payload(_MsgType, NodeId, Payload) ->
-    opcua_uacp_codec:encode_object(NodeId, Payload).
+encode_payload(Space, hello, undefined, Payload) ->
+    encode_hello(Space, Payload);
+encode_payload(Space, acknowledge, undefined, Payload) ->
+    encode_acknowledge(Space, Payload);
+encode_payload(Space, error, undefined, Payload) ->
+    encode_error(Space, Payload);
+encode_payload(Space, _MsgType, NodeId, Payload) ->
+    encode_object(Space, NodeId, Payload).
 
--spec decode_payload(PayloadType, Data) ->
+-spec decode_payload(opcua_space:state(), PayloadType, Data) ->
     {ok, undefined | NodeId, Payload}
   | {schema_not_found, undefined | NodeId, undefined | Payload, [NodeId]}
   when PayloadType :: hello | acknowledge | error | NodeId,
        Data :: iodata(), NodeId :: opcua:node_id(),
        Payload :: opcua:hello_payload() | opcua:acknowledge_payload()
                 | opcua:error_payload() | opcua:node_object().
-decode_payload(hello, Data) ->
-    {ok, undefined, decode_hello(Data)};
-decode_payload(acknowledge, Data) ->
-    {ok, undefined, decode_acknowledge(Data)};
-decode_payload(error, Data) ->
-    {ok, undefined, decode_error(Data)};
-decode_payload(_MsgType, Data) ->
-    decode_object(Data).
+decode_payload(Space, hello, Data) ->
+    {ok, undefined, decode_hello(Space, Data)};
+decode_payload(Space, acknowledge, Data) ->
+    {ok, undefined, decode_acknowledge(Space, Data)};
+decode_payload(Space, error, Data) ->
+    {ok, undefined, decode_error(Space, Data)};
+decode_payload(Space, _MsgType, Data) ->
+    decode_object(Space, Data).
 
--spec encode_hello(opcua:hello_payload()) -> iodata().
-encode_hello(Data) ->
-    case opcua_codec_binary:encode(?HEL_SPEC, Data) of
+-spec encode_hello(opcua_space:state(), opcua:hello_payload()) -> iodata().
+encode_hello(Space, Data) ->
+    case encode(Space, ?HEL_SPEC, Data) of
         {Result, Extra} when Extra =:= #{} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("HELLO message encoding error; extra data: ~p", [Extra]),
             throw(bad_encoding_error)
     end.
 
--spec decode_hello(iodata()) -> opcua:hello_payload().
-decode_hello(Data) ->
-    case opcua_codec_binary:decode(?HEL_SPEC, iolist_to_binary(Data)) of
+-spec decode_hello(opcua_space:state(), iodata()) -> opcua:hello_payload().
+decode_hello(Space, Data) ->
+    case decode(Space, ?HEL_SPEC, iolist_to_binary(Data)) of
         {Result, <<>>} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("HELLO message decoding error; extra data: ~p", [Extra]),
             throw(bad_decoding_error)
     end.
 
--spec encode_acknowledge(opcua:acknowledge_payload()) -> iodata().
-encode_acknowledge(Map) ->
-    case opcua_codec_binary:encode(?ACK_SPEC, Map) of
+-spec encode_acknowledge(opcua_space:state(), opcua:acknowledge_payload()) -> iodata().
+encode_acknowledge(Space, Map) ->
+    case encode(Space, ?ACK_SPEC, Map) of
         {Result, Extra} when Extra =:= #{} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("ACKNOWLEDGE message encoding error; extra data: ~p", [Extra]),
             throw(bad_encoding_error)
     end.
 
--spec decode_acknowledge(iodata()) -> opcua:acknowledge_payload().
-decode_acknowledge(Data) ->
-    case opcua_codec_binary:decode(?ACK_SPEC, iolist_to_binary(Data)) of
+-spec decode_acknowledge(opcua_space:state(), iodata()) -> opcua:acknowledge_payload().
+decode_acknowledge(Space, Data) ->
+    case decode(Space, ?ACK_SPEC, iolist_to_binary(Data)) of
         {Result, <<>>} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("ACKNOWLEDGE message decoding error; extra data: ~p", [Extra]),
             throw(bad_decoding_error)
     end.
 
--spec encode_error(opcua:error_payload()) -> iodata().
-encode_error(#{error := C, reason := D} = Data) ->
+-spec encode_error(opcua_space:state(), opcua:error_payload()) -> iodata().
+encode_error(Space, #{error := C, reason := D} = Data) ->
     {C2, D2} = encode_status(C, D),
     Data2 = Data#{error := C2, reason := D2},
-    case opcua_codec_binary:encode(?ERR_SPEC, Data2) of
+    case encode(Space, ?ERR_SPEC, Data2) of
         {Result, Extra} when Extra =:= #{} -> Result;
         {_Result, Extra} ->
             ?LOG_ERROR("ERROR message encoding error; extra data: ~p", [Extra]),
             throw(bad_encoding_error)
     end.
 
--spec decode_error(iodata()) -> opcua:error_payload().
-decode_error(Data) ->
-    case opcua_codec_binary:decode(?ERR_SPEC, iolist_to_binary(Data)) of
+-spec decode_error(opcua_space:state(), iodata()) -> opcua:error_payload().
+decode_error(Space, Data) ->
+    case decode(Space, ?ERR_SPEC, iolist_to_binary(Data)) of
         {#{error := C, reason := D} = Result, <<>>} ->
             {C2, D2} = decode_status(C, D),
             Result#{error := C2, reason := D2};
@@ -166,47 +167,56 @@ decode_error(Data) ->
             throw(bad_decoding_error)
     end.
 
--spec encode_object(opcua:node_id(), opcua:node_object()) -> iodata().
-encode_object(NodeId, Data) ->
-    case opcua_nodeset:type_descriptor(NodeId, binary) of
+-spec encode_object(opcua_space:state(), opcua:node_id(), opcua:node_object()) -> iodata().
+encode_object(Space, NodeId, Data) ->
+    case opcua_space:type_descriptor(Space, NodeId, binary) of
         undefined -> throw({bad_data_encoding_unsupported, NodeId});
         TypeDescNodeId ->
-            {Header, _} = opcua_codec_binary:encode(node_id, TypeDescNodeId),
-            {Msg, _} = opcua_codec_binary:encode(NodeId, Data),
+            {Header, _} = encode(Space, node_id, TypeDescNodeId),
+            {Msg, _} = encode(Space, NodeId, Data),
             [Header, Msg]
     end.
 
--spec decode_object(iodata()) ->
+-spec decode_object(opcua_space:state(), iodata()) ->
      {ok, opcua:node_id(), opcua:node_object()}
    | {schema_not_found, undefined | opcua:node_id(),
                         undefined | opcua:node_object(),
                        [] | [opcua:node_id()]}.
-decode_object(Data) ->
-    {TypeDescId, RemData} = opcua_codec_binary:decode(node_id, iolist_to_binary(Data)),
-    case opcua_nodeset:data_type(TypeDescId) of
+decode_object(Space, Data) ->
+    {TypeDescId, RemData} = decode(Space, node_id, iolist_to_binary(Data)),
+    case opcua_space:data_type(Space, TypeDescId) of
         {ObjNodeId, binary} ->
-            {Obj, _, Issues} = opcua_codec_binary:safe_decode(ObjNodeId, RemData),
+            {Obj, _, Issues} = safe_decode(Space, ObjNodeId, RemData),
             filter_decode_issues(ObjNodeId, Obj, Issues);
         _ -> throw({bad_data_encoding_unsupported, TypeDescId})
     end.
 
--spec encode_sequence_header(SeqNum, ReqId) -> iodata()
+-spec encode_sequence_header(opcua_space:state(), SeqNum, ReqId) -> iodata()
   when SeqNum :: opcua_protocol:sequence_num(),
        ReqId :: opcua_protocol:request_id().
-encode_sequence_header(SeqNum, ReqId) ->
-    {Result, []} = opcua_codec_binary:encode([uint32, uint32], [SeqNum, ReqId]),
+encode_sequence_header(Space, SeqNum, ReqId) ->
+    {Result, []} = encode(Space, [uint32, uint32], [SeqNum, ReqId]),
     Result.
 
--spec decode_sequence_header(iodata()) -> {{SeqNum, ReqId}, iodata()}
+-spec decode_sequence_header(opcua_space:state(), iodata()) -> {{SeqNum, ReqId}, iodata()}
   when SeqNum :: opcua_protocol:sequence_num(),
        ReqId :: opcua_protocol:request_id().
-decode_sequence_header(Data) ->
+decode_sequence_header(Space, Data) ->
     {[SeqNum, ReqId], RemData} =
-        opcua_codec_binary:decode([uint32, uint32], iolist_to_binary(Data)),
+        decode(Space, [uint32, uint32], iolist_to_binary(Data)),
     {{SeqNum, ReqId}, RemData}.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+encode(Space, Spec, Data) ->
+    opcua_codec_binary:encode(Spec, Data, #{space => Space}).
+
+decode(Space, Spec, Data) ->
+    opcua_codec_binary:decode(Spec, Data, #{space => Space}).
+
+safe_decode(Space, Spec, Data) ->
+    opcua_codec_binary:decode(Spec, Data, #{space => Space, allow_partial => true}).
 
 filter_decode_issues(Id, Obj, Issues) ->
     filter_decode_issues(Id, Obj, Issues, []).
@@ -224,7 +234,7 @@ filter_decode_issues(Id, Obj, [{schema_not_found, Schema, Details} | Rest], Acc)
                [opcua_node:format(Schema), Details]),
     filter_decode_issues(Id, Obj, Rest, [Schema | Acc]).
 
-decode_chunks(<<MessageHeader:8/binary, Rest/binary>> = Data, Acc) ->
+decode_chunks(Space, <<MessageHeader:8/binary, Rest/binary>> = Data, Acc) ->
     <<EncMsgType:3/binary,
       EncChunkType:1/binary,
       PacketLen:32/unsigned-little-integer>> = MessageHeader,
@@ -238,23 +248,24 @@ decode_chunks(<<MessageHeader:8/binary, Rest/binary>> = Data, Acc) ->
                 chunk_type = ChunkType,
                 header = MessageHeader
             },
-            Chunk2 = decode_chunk(MsgType, ChunkType, Packet, Chunk),
-            decode_chunks(Data2, [Chunk2 | Acc]);
+            Chunk2 = decode_chunk(Space, MsgType, ChunkType, Packet, Chunk),
+            decode_chunks(Space, Data2, [Chunk2 | Acc]);
         _ ->
             {lists:reverse(Acc), Data}
     end;
-decode_chunks(Data, Acc) ->
+decode_chunks(_Space, Data, Acc) ->
     {lists:reverse(Acc), Data}.
 
-decode_chunk(MsgType, ChunkType, Data, Chunk)
+decode_chunk(_Space, MsgType, ChunkType, Data, Chunk)
   when MsgType =:= hello, ChunkType =:= final;
        MsgType =:= acknowledge, ChunkType =:= final;
        MsgType =:= error, ChunkType =:= final ->
     Chunk#uacp_chunk{body = Data};
-decode_chunk(channel_open, final, Data, Chunk) ->
+decode_chunk(Space, channel_open, final, Data, Chunk) ->
+    %TODO: Pass space to the codec
     #uacp_chunk{header = MessageHeader} = Chunk,
     Spec = [uint32, string, byte_string, byte_string],
-    {DecFields, LockedData} = opcua_codec_binary:decode(Spec, Data),
+    {DecFields, LockedData} = decode(Space, Spec, Data),
     FullDataSize = byte_size(Data),
     LockedDataSize = byte_size(LockedData),
     MessageHeaderSize = iolist_size(MessageHeader),
@@ -275,12 +286,13 @@ decode_chunk(channel_open, final, Data, Chunk) ->
         header = [MessageHeader, ExtraHeader],
         body = LockedData
     };
-decode_chunk(MsgType, ChunkType, Data, Chunk)
+decode_chunk(Space, MsgType, ChunkType, Data, Chunk)
   when MsgType =:= channel_close, ChunkType =:= final;
        MsgType =:= channel_message ->
+    %TODO: Pass space to the codec
     #uacp_chunk{header = MessageHeader} = Chunk,
     Spec = [uint32, uint32],
-    {[ChannelId, TokenId], LockedData} = opcua_codec_binary:decode(Spec, Data),
+    {[ChannelId, TokenId], LockedData} = decode(Space, Spec, Data),
     FullDataSize = byte_size(Data),
     LockedDataSize = byte_size(LockedData),
     MessageHeaderSize = iolist_size(MessageHeader),
@@ -295,12 +307,13 @@ decode_chunk(MsgType, ChunkType, Data, Chunk)
         header = [MessageHeader, ExtraHeader],
         body = LockedData
     };
-decode_chunk(MsgType, ChunkType, Data, _Chunk) ->
+decode_chunk(_Space, MsgType, ChunkType, Data, _Chunk) ->
     ?LOG_ERROR("Failed to decode unexpected ~s ~s chunk: ~p",
                [ChunkType, MsgType, Data]),
     throw(bad_unexpected_error).
 
-prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType} = Chunk)
+prepare_chunk(_Space, #uacp_chunk{state = State, message_type = MsgType,
+                                  chunk_type = ChunkType} = Chunk)
   when State =:= unlocked, MsgType =:= channel_open, ChunkType =:= final ->
     #uacp_chunk{
         security = #uacp_chunk_security{
@@ -310,23 +323,30 @@ prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Ch
         },
         body = UnlockedBody
     } = Chunk,
-    HeaderSize = 8 + 4 + encoded_string_size([PolicyUri, SenderCert, ReceiverThumbprint]),
+    HeaderSize = 8 + 4 + encoded_string_size([PolicyUri, SenderCert,
+                                              ReceiverThumbprint]),
     UnlockedSize = iolist_size(UnlockedBody),
     Chunk#uacp_chunk{header_size = HeaderSize, unlocked_size = UnlockedSize};
-prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType} = Chunk)
+prepare_chunk(_Space, #uacp_chunk{state = State, message_type = MsgType,
+                                  chunk_type = ChunkType} = Chunk)
   when State =:= unlocked, MsgType =:= channel_close, ChunkType =:= final;
        State =:= unlocked, MsgType =:= channel_message ->
     #uacp_chunk{body = UnlockedBody} = Chunk,
     UnlockedSize = iolist_size(UnlockedBody),
     Chunk#uacp_chunk{header_size = 8 + 4 + 4, unlocked_size = UnlockedSize};
-prepare_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType} = Chunk) ->
+prepare_chunk(_Space, #uacp_chunk{state = State, message_type = MsgType,
+                                  chunk_type = ChunkType} = Chunk) ->
     ?LOG_ERROR("Failed to prepare unexpected ~s ~s ~s chunk: ~p",
                [State, ChunkType, MsgType, Chunk]),
     throw(bad_unexpected_error).
 
-freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType,
-                         header_size = HeaderSize, locked_size = LockedSize} = Chunk)
-  when State =:= unlocked, MsgType =:= channel_open, ChunkType =:= final, HeaderSize =/= undefined, LockedSize =/= undefined ->
+freeze_chunk(Space, #uacp_chunk{state = State, message_type = MsgType,
+                                 chunk_type = ChunkType,
+                                 header_size = HeaderSize,
+                                 locked_size = LockedSize} = Chunk)
+  when State =:= unlocked, MsgType =:= channel_open, ChunkType =:= final,
+       HeaderSize =/= undefined, LockedSize =/= undefined ->
+    %TODO: Pass space to the codec
     #uacp_chunk{
         channel_id = ChannelId,
         security = #uacp_chunk_security{
@@ -338,16 +358,22 @@ freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Chu
     EncMsgType = encode_message_type(MsgType),
     EncChunkType = encode_chunk_type(ChunkType),
     Len = LockedSize + HeaderSize,
-    Header1 = <<EncMsgType:3/binary, EncChunkType:1/binary, Len:32/little-unsigned-integer>>,
+    Header1 = <<EncMsgType:3/binary, EncChunkType:1/binary,
+                Len:32/little-unsigned-integer>>,
     Header2Spec = [uint32, string, byte_string, byte_string],
     Header2Data = [ChannelId, PolicyUri, SenderCert, ReceiverThumbprint],
-    {Header2, []} = opcua_codec_binary:encode(Header2Spec, Header2Data),
+    {Header2, []} = encode(Space, Header2Spec, Header2Data),
     ?assertEqual(Chunk#uacp_chunk.header_size, iolist_size([Header1, Header2])),
     Chunk#uacp_chunk{header = [Header1, Header2]};
-freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = ChunkType,
-                         header_size = HeaderSize, locked_size = LockedSize} = Chunk)
-  when State =:= unlocked, MsgType =:= channel_close, ChunkType =:= final, HeaderSize =/= undefined, LockedSize =/= undefined;
-       State =:= unlocked, MsgType =:= channel_message, HeaderSize =/= undefined, LockedSize =/= undefined ->
+freeze_chunk(Space, #uacp_chunk{state = State, message_type = MsgType,
+                                 chunk_type = ChunkType,
+                                 header_size = HeaderSize,
+                                 locked_size = LockedSize} = Chunk)
+  when State =:= unlocked, MsgType =:= channel_close, ChunkType =:= final,
+       HeaderSize =/= undefined, LockedSize =/= undefined;
+       State =:= unlocked, MsgType =:= channel_message,
+       HeaderSize =/= undefined, LockedSize =/= undefined ->
+    %TODO: Pass space to the codec
     #uacp_chunk{
         channel_id = ChannelId,
         security = TokenId,
@@ -357,18 +383,21 @@ freeze_chunk(#uacp_chunk{state = State, message_type = MsgType, chunk_type = Chu
     EncMsgType = encode_message_type(MsgType),
     EncChunkType = encode_chunk_type(ChunkType),
     Len = LockedSize + HeaderSize,
-    Header1 = <<EncMsgType:3/binary, EncChunkType:1/binary, Len:32/little-unsigned-integer>>,
+    Header1 = <<EncMsgType:3/binary, EncChunkType:1/binary,
+                Len:32/little-unsigned-integer>>,
     Header2Spec = [uint32, uint32],
     Header2Data = [ChannelId, TokenId],
-    {Header2, []} = opcua_codec_binary:encode(Header2Spec, Header2Data),
+    {Header2, []} = encode(Space, Header2Spec, Header2Data),
     ?assertEqual(Chunk#uacp_chunk.header_size, iolist_size([Header1, Header2])),
     Chunk#uacp_chunk{header = [Header1, Header2]};
-freeze_chunk(#uacp_chunk{message_type = MsgType, chunk_type = ChunkType, state = State} = Chunk) ->
+freeze_chunk(_Space, #uacp_chunk{message_type = MsgType, chunk_type = ChunkType,
+                                 state = State} = Chunk) ->
     ?LOG_ERROR("Failed to freeze unexpected ~s ~s ~s chunk: ~p",
                [State, ChunkType, MsgType, Chunk]),
     throw(bad_unexpected_error).
 
-encode_chunk(#uacp_chunk{state = undefined, message_type = MsgType, chunk_type = ChunkType} = Chunk)
+encode_chunk(_Space, #uacp_chunk{state = undefined, message_type = MsgType,
+                                 chunk_type = ChunkType} = Chunk)
   when MsgType =:= hello, ChunkType =:= final;
        MsgType =:= acknowledge, ChunkType =:= final;
        MsgType =:= error, ChunkType =:= final ->
@@ -379,12 +408,14 @@ encode_chunk(#uacp_chunk{state = undefined, message_type = MsgType, chunk_type =
     Header = <<EncMsgType:3/binary, EncChunkType:1/binary,
                BodySize:32/little-unsigned-integer>>,
     [Header, Body];
-encode_chunk(#uacp_chunk{state = locked, header = Header, body = Body} = Chunk)
+encode_chunk(_Space, #uacp_chunk{state = locked, header = Header,
+                                 body = Body} = Chunk)
   when Header =/= undefined, Body =/= undefined ->
     ?assertEqual(Chunk#uacp_chunk.header_size + Chunk#uacp_chunk.locked_size,
                  iolist_size([Header, Body])),
     [Header, Body];
-encode_chunk(#uacp_chunk{message_type = MsgType, chunk_type = ChunkType, state = State} = Chunk) ->
+encode_chunk(_Space, #uacp_chunk{message_type = MsgType, chunk_type = ChunkType,
+                                 state = State} = Chunk) ->
     ?LOG_ERROR("Failed to encode unexpected ~s ~s ~s chunk: ~p",
                [State, ChunkType, MsgType, Chunk]),
     throw(bad_unexpected_error).

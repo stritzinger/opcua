@@ -118,7 +118,7 @@ produce(Conn, Channel, #state{} = State) ->
                                        MsgType, ChunkType, ReqId, DataChunk) of
                         {error, _Reason, _Channel5, _State5} = Error -> Error;
                         {ok, Chunk, Conn5, Channel5, State5} ->
-                            Output = opcua_uacp_codec:encode_chunks(Chunk),
+                            Output = opcua_uacp_codec:encode_chunks(Conn, Chunk),
                             {ok, Output, Conn5, Channel5, State5}
                     end
             end
@@ -127,7 +127,7 @@ produce(Conn, Channel, #state{} = State) ->
 consume(#uacp_message{sender = Side, request_id = ReqId} = Msg,
         Conn, Channel, #state{side = Side} = State) ->
     #uacp_message{type = MsgType, node_id = NodeId, payload = Payload} = Msg,
-    Data = opcua_uacp_codec:encode_payload(MsgType, NodeId, Payload),
+    Data = opcua_uacp_codec:encode_payload(Conn, MsgType, NodeId, Payload),
     inflight_output_add(State, Channel, Conn, MsgType, ReqId, Data).
 
 handle_data(Data, Conn, Channel, #state{buff = Buff} = State) ->
@@ -141,13 +141,13 @@ handle_data(Data, Conn, Channel, #state{buff = Buff} = State) ->
             {error, bad_encoding_limits_exceeded, Channel, State};
         false ->
             AllData = <<Buff/binary, Data/binary>>,
-            {Chunks, Buff2} = opcua_uacp_codec:decode_chunks(AllData),
+            {Chunks, Buff2} = opcua_uacp_codec:decode_chunks(Conn, AllData),
             State2 = State#state{buff = Buff2},
             handle_chunks(State2, Channel, Conn, Chunks)
     end.
 
 continue({decode_payload, RetryCount, Msg, Data}, Conn, Channel, State) ->
-    case decode_payload(State, RetryCount, Msg, Data) of
+    case decode_payload(State, Conn, RetryCount, Msg, Data) of
         {error, Reason} -> {error, Reason, Channel, State};
         {ok, Message, State2} -> {ok, [Message], [], Conn, Channel, State2};
         {issue, Issue, State2} -> {ok, [], [Issue], Conn, Channel, State2}
@@ -237,7 +237,7 @@ handle_chunk(State, Channel, Conn, #uacp_chunk{state = locked} = Chunk) ->
     end.
 
 handle_unlocked_chunk(State, Channel, Conn, Chunk) ->
-    case inflight_input_update(State, Chunk) of
+    case inflight_input_update(State, Conn, Chunk) of
         {error, Reason} ->
             {error, Reason, Conn, Channel, State};
         {ok, State2} ->
@@ -262,24 +262,24 @@ inflight_output_add(State, Channel, Conn, MsgType, ReqId, Data) ->
     {ok, Conn, Channel, State2}.
 
 %TODO: Enforce that channel_open messages cannot be chunked.
-inflight_input_update(State, #uacp_chunk{chunk_type = aborted} = Chunk) ->
+inflight_input_update(State, Conn, #uacp_chunk{chunk_type = aborted} = Chunk) ->
     #state{inflight_inputs = ReqMap} = State,
     #uacp_chunk{request_id = ReqId, body = Body} = Chunk,
     case maps:take(ReqId, ReqMap) of
         error ->
             #{error := Error, reason := Reason} =
-                opcua_uacp_codec:decode_error(Body),
+                opcua_uacp_codec:decode_error(Conn, Body),
             ?LOG_WARNING("Unknown request ~w aborted: ~s (~w)",
                          [ReqId, Reason, Error]),
             {ok, State};
         {_Inflight, ReqMap2} ->
             #{error := Error, reason := Reason} =
-                opcua_uacp_codec:decode_error(Body),
+                opcua_uacp_codec:decode_error(Conn, Body),
             ?LOG_WARNING("Request ~w aborted: ~s (~w)",
                          [ReqId, Reason, Error]),
             {ok, State#state{inflight_inputs = ReqMap2}}
     end;
-inflight_input_update(State, #uacp_chunk{chunk_type = intermediate} = Chunk) ->
+inflight_input_update(State, _Conn, #uacp_chunk{chunk_type = intermediate} = Chunk) ->
     #state{inflight_inputs = ReqMap} = State,
     #uacp_chunk{message_type = MsgType, request_id = ReqId, body = Body} = Chunk,
     case maps:find(ReqId, ReqMap) of
@@ -309,7 +309,7 @@ inflight_input_update(State, #uacp_chunk{chunk_type = intermediate} = Chunk) ->
             ReqMap2 = maps:put(ReqId, Inflight2, ReqMap),
             {ok, State#state{inflight_inputs = ReqMap2}}
     end;
-inflight_input_update(State, #uacp_chunk{chunk_type = final} = Chunk) ->
+inflight_input_update(State, Conn, #uacp_chunk{chunk_type = final} = Chunk) ->
     #state{inflight_inputs = ReqMap} = State,
     #uacp_chunk{message_type = MsgType, request_id = ReqId, body = Body} = Chunk,
     {Inflight2, State2} = case maps:take(ReqId, ReqMap) of
@@ -340,14 +340,14 @@ inflight_input_update(State, #uacp_chunk{chunk_type = final} = Chunk) ->
         sender = peer_side(State),
         request_id = ReqId
     },
-    decode_payload(State2, 0, Msg, FinalData).
+    decode_payload(State2, Conn, 0, Msg, FinalData).
 
-decode_payload(_State, MaxRetryCount, _Msg, _Data)
+decode_payload(_State, _Conn, MaxRetryCount, _Msg, _Data)
   when MaxRetryCount > ?MAX_DECODING_RETRIES ->
     {error, decoding_retries_exhausted};
-decode_payload(State, RetryCount,
+decode_payload(State, Conn, RetryCount,
                #uacp_message{type = MsgType} = Msg, Data) ->
-    case opcua_uacp_codec:decode_payload(MsgType, Data) of
+    case opcua_uacp_codec:decode_payload(Conn, MsgType, Data) of
         {ok, NodeId, Payload} ->
             {ok, Msg#uacp_message{node_id = NodeId, payload = Payload}, State};
         {schema_not_found, NodeId, Payload, Schemas} ->

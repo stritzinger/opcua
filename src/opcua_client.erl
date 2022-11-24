@@ -580,8 +580,9 @@ conn_init(#data{opts = CliOpts, socket = undefined} = Data, EndpointRec)
                 {_, {error, _Reason} = Error} -> Error;
                 {{ok, PeerName}, {ok, SockName}} ->
                     {ok, Keychain} = opcua_keychain_ets:new(ParentKeychain),
-                    Conn = opcua_connection:new(Keychain, Identity, EndpointRec,
-                                                PeerName, SockName),
+                    ClientSpace = opcua_space_backend:new([opcua_nodeset]),
+                    Conn = opcua_connection:new(ClientSpace, Keychain,
+                        Identity, EndpointRec, PeerName, SockName),
                     Data2 = Data#data{socket = Socket, conn = Conn},
                     case conn_lock_peer(Data2, Cert) of
                         {error, _Reason} = Error -> Error;

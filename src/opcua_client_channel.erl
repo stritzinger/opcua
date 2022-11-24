@@ -157,12 +157,12 @@ lock_chunk(State, Conn, Chunk) ->
         % No error use-case yet, disabled to make dialyzer happy
         % {error, _Reason} = Error -> Error;
         {ok, Chunk2, Conn2, State2} ->
-            Chunk3 = opcua_uacp_codec:prepare_chunks(Chunk2),
+            Chunk3 = opcua_uacp_codec:prepare_chunks(Conn, Chunk2),
             case security_prepare(State2, Conn2, Chunk3) of
                 % No error use-case yet, disabled to make dialyzer happy
                 % {error, _Reason} = Error -> Error;
                 {ok, Chunk4, Conn3, State3} ->
-                    Chunk5 = opcua_uacp_codec:freeze_chunks(Chunk4),
+                    Chunk5 = opcua_uacp_codec:freeze_chunks(Conn, Chunk4),
                     security_lock(State3, Conn3, Chunk5)
             end
     end.

@@ -26,7 +26,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API functions
--export([new/5]).
+-export([new/6]).
 -export([share/1]).
 -export([merge/2]).
 -export([endpoint_url/1]).
@@ -49,9 +49,10 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-new(Keychain, Identity, Endpoint, PeerAddr, SockAddr) ->
+new(Space, Keychain, Identity, Endpoint, PeerAddr, SockAddr) ->
     #uacp_connection{
         pid         = self(),
+        space       = Space,
         keychain    = Keychain,
         self_ident  = Identity,
         endpoint    = Endpoint,

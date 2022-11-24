@@ -218,6 +218,7 @@
 
 -record(uacp_connection, {
     pid                         :: pid(),
+    space                       :: opcua_space:state(),
     keychain                    :: opcua_keychain:state(),
     self_ident                  :: undefined | opcua_keychain:ident(),
     peer_ident                  :: undefined | opcua_keychain:ident(),

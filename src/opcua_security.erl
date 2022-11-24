@@ -60,12 +60,12 @@ unlock(#uacp_chunk{message_type = channel_open,
     case validate_security(Conn, Sec) of
         {error, _Reason} = Error -> Error;
         {ok, Conn2} ->
-            Chunk2 = decode_sequence_header(Chunk),
+            Chunk2 = decode_sequence_header(Conn, Chunk),
             validate_peer_sequence(State, Conn2, Chunk2)
     end;
 unlock(#uacp_chunk{security = TokenId} = Chunk,
        Conn, #state{token_id = TokenId} = State) ->
-    Chunk2 = decode_sequence_header(Chunk),
+    Chunk2 = decode_sequence_header(Conn, Chunk),
     validate_peer_sequence(State, Conn, Chunk2);
 unlock(_Chunk, _Conn, _State) ->
     {error, bad_security_checks_failed}.
@@ -109,7 +109,7 @@ lock(#uacp_chunk{state = unlocked, security = Security, sequence_num = SeqNum,
        is_record(Security, uacp_chunk_security),
        Security#uacp_chunk_security.policy_uri =:= PolicyUri,
        SeqNum =/= undefined, ReqId =/= undefined, Body =/= undefined ->
-    SeqHeader = opcua_uacp_codec:encode_sequence_header(SeqNum, ReqId),
+    SeqHeader = opcua_uacp_codec:encode_sequence_header(Conn, SeqNum, ReqId),
     {ok, Chunk#uacp_chunk{
         state = locked,
         body = [SeqHeader, Body]
@@ -136,9 +136,9 @@ validate_security(Conn, #uacp_chunk_security{} = Sec) ->
             end
     end.
 
-decode_sequence_header(#uacp_chunk{body = Body} = Chunk) ->
+decode_sequence_header(Space, #uacp_chunk{body = Body} = Chunk) ->
     {{SeqNum, ReqId}, RemBody} =
-        opcua_uacp_codec:decode_sequence_header(Body),
+        opcua_uacp_codec:decode_sequence_header(Space, Body),
     Chunk#uacp_chunk{
         sequence_num = SeqNum,
         request_id = ReqId,
