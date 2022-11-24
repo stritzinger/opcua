@@ -47,14 +47,6 @@
 }).
 
 
-%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--define(ENCODING_TABLE, opcua_nodeset_encodings).
--define(DATATYPE_TABLE, opcua_nodeset_datatypes).
--define(NAMESPACE_URI_TABLE, opcua_nodeset_namespaces_uri).
--define(NAMESPACE_ID_TABLE, opcua_nodeset_namespaces_id).
-
-
 %%% STARTUP FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_link(BaseDir) ->
