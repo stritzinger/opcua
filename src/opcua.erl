@@ -58,7 +58,7 @@
 -type variant() :: #opcua_variant{}.
 -type data_value() :: #opcua_data_value{}.
 -type diagnostic_info() :: #opcua_diagnostic_info{}.
--type node_spec() :: non_neg_integer() | atom() | binary() | node_id().
+-type node_spec() :: non_neg_integer() | atom() | binary() | node_id() | node_rec().
 -type codec_spec() :: node_spec() | [node_spec()] | [{atom(), node_spec()}].
 -type stream_encoding() :: binary.
 -type extobj_encoding() :: xml | byte_string.
@@ -172,6 +172,8 @@
 -type node_rec() :: #opcua_node{}.
 -type node_ref() :: #opcua_reference{}.
 -type node_refs() :: [node_ref()].
+-type status() :: atom() | pos_integer().
+-type error() :: #opcua_error{}.
 -type references_options() :: #{
     include_subtypes => boolean(),
     type => undefined | opcua:node_spec(),
@@ -190,6 +192,8 @@
     node_rec/0,
     node_ref/0,
     node_refs/0,
+    status/0,
+    error/0,
     references_options/0
 ]).
 

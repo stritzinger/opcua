@@ -40,8 +40,9 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec id(opcua:node_spec()) -> opcua:node_id().
+-spec id(opcua:node_spec() | opcua:node_rec()) -> opcua:node_id().
 id(undefined) -> ?UNDEF_NODE_ID;
+id(#opcua_node{node_id = NodeId}) -> NodeId;
 % Common base nodes
 id(root) -> ?NNID(?OBJ_ROOT_FOLDER);
 id(objects) -> ?NNID(?OBJ_OBJECTS_FOLDER);
@@ -69,8 +70,9 @@ id({NS, Name}) when is_integer(NS), is_atom(Name), NS >= 0 ->
 id({NS, Name}) when is_integer(NS), is_binary(Name), NS >= 0 ->
     #opcua_node_id{type = string, ns = NS, value = Name}.
 
--spec spec(opcua:node_id()) -> opcua:node_spec().
+-spec spec(opcua:node_id() | opcua:node_ref()) -> opcua:node_spec().
 spec(?UNDEF_NODE_ID) -> undefined;
+spec(#opcua_node{node_id = NodeId}) -> spec(NodeId);
 % Common base nodes
 spec(?NNID(?OBJ_ROOT_FOLDER)) -> root;
 spec(?NNID(?OBJ_OBJECTS_FOLDER)) -> objects;

@@ -12,6 +12,9 @@
 %%% This is because the full stack of layers are needed to properly maintains
 %%% the reference sub-type cache when adding and deleting references.
 %%%
+%%% TODO: Maybe delayed table creation could be implemented to not use ets tables
+%%% for every client connections when there is no need for it.
+%%%
 %%% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -module(opcua_space_backend).

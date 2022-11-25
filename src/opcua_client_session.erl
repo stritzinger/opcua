@@ -324,8 +324,8 @@ unpack_read_results([], Acc) ->
     {ok, lists:reverse(Acc)};
 unpack_read_results([#opcua_data_value{status = good, value = Value} | Rest], Acc) ->
     unpack_read_results(Rest, [Value | Acc]);
-unpack_read_results([#opcua_data_value{status = Status} | _], _Acc) ->
-    {error, Status}.
+unpack_read_results([#opcua_data_value{status = Status} | Rest], Acc) ->
+    unpack_read_results(Rest, [#opcua_error{status = Status} | Acc]).
 
 pack_write_value(#opcua_variant{} = Var) ->
     %TODO: Figure out a way to use cached type definition to do type inference

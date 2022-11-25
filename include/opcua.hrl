@@ -69,7 +69,7 @@
 
 -record(opcua_data_value, {
     value                       :: term(),
-    status = good               :: atom() | pos_integer(),
+    status = good               :: opcua:status(),
     source_timestamp = 0        :: non_neg_integer(),
     server_timestamp = 0        :: non_neg_integer(),
     source_pico_seconds = 0     :: non_neg_integer(),
@@ -81,6 +81,10 @@
     value                       :: term()
 }).
 
+-record(opcua_error, {
+    status                      :: opcua:status()
+}).
+
 
 %-- Node Model Records ---------------------------------------------------------
 
@@ -90,7 +94,7 @@
 }).
 
 -record(opcua_node, {
-    node_id                     :: opcua:node_id(),
+    node_id                     :: undefind | opcua:node_id(),
     node_class                  :: opcua:node_class_rec(),
     origin                      :: opcua:node_origin(),
     browse_name                 :: opcua:optional(binary()),

@@ -17,6 +17,7 @@
 -export([start_link/1]).
 
 %% API Functions
+-export([attributes/0]).
 -export([attribute_name/1]).
 -export([attribute_id/1]).
 -export([status/1]).
@@ -55,28 +56,31 @@ start_link(BaseDir) ->
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+attributes() ->
+    maps:values(persistent_term:get({?MODULE, attributes})).
+
 attribute_name(Attr) ->
-    {_, Name} = persistent_term:get({?MODULE, Attr}),
+    {_, Name} = persistent_term:get({?MODULE, attribute, Attr}),
     Name.
 
 attribute_id(Attr) ->
-    {Id, _} = persistent_term:get({?MODULE, Attr}),
+    {Id, _} = persistent_term:get({?MODULE, attribute, Attr}),
     Id.
 
 status(Status) ->
-    persistent_term:get({?MODULE, Status}).
+    persistent_term:get({?MODULE, status, Status}).
 
 status_name(Status) ->
-    {_, Name, _} = persistent_term:get({?MODULE, Status}),
+    {_, Name, _} = persistent_term:get({?MODULE, status, Status}),
     Name.
 
 status_name(Status, Default) ->
-    {_, Name, _} = persistent_term:get({?MODULE, Status},
+    {_, Name, _} = persistent_term:get({?MODULE, status, Status},
                                        {undefined, Default, undefined}),
     Name.
 
 status_code(Status) ->
-    {Code, _, _} = persistent_term:get({?MODULE, Status}),
+    {Code, _, _} = persistent_term:get({?MODULE, status, Status}),
     Code.
 
 is_status(Status) ->
@@ -196,14 +200,17 @@ load_all_terms(BaseDir, Tag, Fun) ->
     ok.
 
 store_attribute({Id, Name} = Spec) when is_integer(Id), is_atom(Name) ->
-    persistent_term:put({?MODULE, Id}, Spec),
-    persistent_term:put({?MODULE, Name}, Spec),
+    Attributes = persistent_term:get({?MODULE, attributes}, #{}),
+    Attributes2 = Attributes#{Id => Name},
+    persistent_term:put({?MODULE, attributes}, Attributes2),
+    persistent_term:put({?MODULE, attribute, Id}, Spec),
+    persistent_term:put({?MODULE, attribute, Name}, Spec),
     ok.
 
 store_status({Code, Name, Desc} = Spec)
   when is_integer(Code), is_atom(Name), is_binary(Desc) ->
-    persistent_term:put({?MODULE, Code}, Spec),
-    persistent_term:put({?MODULE, Name}, Spec),
+    persistent_term:put({?MODULE, status, Code}, Spec),
+    persistent_term:put({?MODULE, status, Name}, Spec),
     ok.
 
 store_datatype({Keys, DataType}) ->

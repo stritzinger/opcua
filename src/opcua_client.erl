@@ -12,13 +12,18 @@
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% API
+%% API functions
 -export([connect/1, connect/2]).
+-export([close/1]).
 -export([browse/2, browse/3]).
 -export([read/3, read/4]).
 -export([batch_read/3]).
 -export([write/3, write/4]).
--export([close/1]).
+-export([get/2, get/3]).
+-export([add_nodes/3]).
+-export([add_references/3]).
+-export([del_nodes/3]).
+-export([del_references/3]).
 
 %% Startup functions
 -export([start_link/1]).
@@ -91,16 +96,43 @@
     auth => client_auth_spec()
 }.
 
--type browse_options() :: #{
-    direction => opcua:direction(),
-    include_subtypes => boolean(),
-    type => opcua:node_spec()
-}.
+-type browse_options() :: opcua:references_options().
 
 -type read_options() :: #{
 }.
 
 -type write_options() :: #{
+}.
+
+-type get_options() :: #{
+}.
+
+-type add_node_options() :: #{
+    % The default parent node for the added node. If not specified, the standard
+    % node 'objects' will be used as default parent node.
+    parent => opcua:node_spec(),
+    % The default reference type for the reference beween the parent node and
+    % the added node. If not specified, the reference type will be `organizes`.
+    ref_type => opcua:node_spec()
+}.
+
+-type add_ref_options() :: #{
+    % Add the reverse reference automatically, possibly changing the reference
+    % type if the reference is not symetric (contains/contained_in).
+    % If not specified, no inverse reference will be added.
+    bidirectional => boolean()
+}.
+
+-type del_node_options() :: #{
+    % If the reference having the deleted node as target should be deleted.
+    % If not specified, they will not be deleted.
+    delete_target_references => boolean()
+}.
+
+-type del_ref_options() :: #{
+    % If the opposite direction reference should be deleted too.
+    % If not specified, they will not be deleted.
+    delete_bidirectional => boolean()
 }.
 
 -record(data, {
@@ -119,6 +151,9 @@
 
 connect(EndpointUrl) ->
     connect(EndpointUrl, #{}).
+
+close(Pid) ->
+    gen_statem:call(Pid, close).
 
 -spec connect(EndpointUrl :: binary(), Opts :: connect_options()) ->
     {ok, ClientPid :: pid()} | {error, Reason :: term()}.
@@ -144,8 +179,11 @@ browse(Pid, NodeSpec, Opts) ->
         {ok, TypeSpec} -> Opts#{type := opcua_node:id(TypeSpec)}
     end,
     Command = {browse, opcua_node:id(NodeSpec), FixedOpts},
-    {ok, Result} = gen_statem:call(Pid, Command),
-    Result.
+    case gen_statem:call(Pid, Command) of
+        {ok, Result} ->  Result;
+        {error, Reason} ->
+            erlang:error(Reason)
+    end.
 
 read(Pid, NodeSpec, AttribSpecs) ->
     read(Pid, NodeSpec, AttribSpecs, #{}).
@@ -153,8 +191,10 @@ read(Pid, NodeSpec, AttribSpecs) ->
 read(Pid, NodeSpec, AttribSpecs, Opts) when is_list(AttribSpecs) ->
     batch_read(Pid, [{NodeSpec, AttribSpecs}], Opts);
 read(Pid, NodeSpec, AttribSpec, Opts) ->
-    [Result] = batch_read(Pid, [{NodeSpec, [AttribSpec]}], Opts),
-    Result.
+    case batch_read(Pid, [{NodeSpec, [AttribSpec]}], Opts) of
+        [#opcua_error{status = Status}] -> erlang:error(Status);
+        [Result] -> Result
+    end.
 
 batch_read(Pid, ReadSpecs, Opts) when is_list(ReadSpecs) ->
     MkList = fun(L) when is_list(L) -> L; (A) when is_atom(A) -> [A] end,
@@ -171,14 +211,64 @@ write(Pid, NodeSpec, AttribValuePairs) ->
 
 write(Pid, NodeSpec, AttribValuePairs, Opts) when is_list(AttribValuePairs) ->
     Command = {write, opcua_node:id(NodeSpec), AttribValuePairs, Opts},
-    {ok, Result} = gen_statem:call(Pid, Command),
-    Result;
+    case gen_statem:call(Pid, Command) of
+        {ok, Result}  -> Result;
+        {error, Reason} -> erlang:error(Reason)
+    end;
 write(Pid, NodeSpec, AttribValuePair, Opts) ->
     [Result] = write(Pid, NodeSpec, [AttribValuePair], Opts),
     Result.
 
-close(Pid) ->
-    gen_statem:call(Pid, close).
+-spec get(pid(), NodeSpec | [NodeSpec]) -> Node | [Node | Error]
+  when NodeSpec :: opcua:node_spec(),
+       Node :: opcua:node_rec(), Error :: opcua:error().
+get(Pid, NodeSpec) ->
+    get(Pid, NodeSpec, #{}).
+
+-spec get(pid(), NodeSpec | [NodeSpec], Opts) -> Node | [Node | Error]
+  when NodeSpec :: opcua:node_spec(), Opts :: get_options(),
+       Node :: opcua:node_rec(), Error :: opcua:error().
+get(Pid, NodeSpecs, Opts) when is_list(NodeSpecs) ->
+    NodeIds = [opcua_node:id(Spec) || Spec <- NodeSpecs],
+    case gen_statem:call(Pid, {get, NodeIds, Opts}) of
+        {ok, Nodes} -> Nodes;
+        {error, Reason} -> erlang:error(Reason)
+    end;
+get(Pid, NodeSpec, Opts) ->
+    case get(Pid, [NodeSpec], Opts) of
+        [#opcua_error{status = Status}] -> erlang:error(Status);
+        [Node] -> Node
+    end.
+
+-spec add_nodes(pid(), [NodeDef], Opts) -> [Node | Error]
+  when NodeDef :: Node | {ParentSpec, Node} | {ParentSpec, RefTypeSpec, Node},
+       ParentSpec :: opcua:node_spec(), RefTypeSpec :: opcua:node_spec(),
+       Node :: opcua:node_rec(), Error :: opcua:error(),
+       Opts :: add_node_options().
+add_nodes(_Pid, _NodeDefs, _Opts) ->
+    erlang:error(not_implemented).
+
+-spec add_references(pid(), [RefDef], Opts) -> [Status]
+  when RefDef :: {SourceSpec, RefTypeSpec, TargetSpec} | opcua:node_ref(),
+       SourceSpec :: opcua:node_spec(), RefTypeSpec :: opcua:node_spec(),
+       TargetSpec :: opcua:node_spec(), Opts :: add_ref_options(),
+       Status :: opcua:status().
+add_references(_Pid, _RefDefs, _Opts) ->
+    erlang:error(not_implemented).
+
+-spec del_nodes(pid(), [NodeSpec], Opts) -> [Status]
+  when NodeSpec :: opcua:node_spec(), Opts :: del_node_options(),
+       Status :: opcua:status().
+del_nodes(_Pid, _NodeSpecs, _Opts) ->
+    erlang:error(not_implemented).
+
+-spec del_references(pid(), [RefDef], Opts) -> [Status]
+  when RefDef :: {SourceSpec, RefTypeSpec, TargetSpec} | opcua:node_ref(),
+       SourceSpec :: opcua:node_spec(), RefTypeSpec :: opcua:node_spec(),
+       TargetSpec :: opcua:node_spec(), Opts :: del_ref_options(),
+       Status :: opcua:status().
+del_references(_Pid, _RefDefs, _Opts) ->
+    erlang:error(not_implemented).
 
 
 %%% STARTUP FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -251,6 +341,9 @@ handle_event(state_timeout, abort, handshaking, Data) ->
 handle_event(enter, _OldState, connected = State, Data) ->
     ?LOG_DEBUG("Client ~p entered connected", [self()]),
     keep_state_and_reply(Data, on_ready, ok, enter_timeouts(State, Data));
+handle_event({call, From}, close, connected = State, Data) ->
+    next_state_and_reply_later(closing, Data, on_closed, From,
+                               event_timeouts(State, Data));
 handle_event({call, From}, {browse, NodeId, Opts}, connected = State, Data) ->
     pack_command_result(From, State, proto_browse(Data, NodeId, Opts));
 handle_event({call, From}, {read, ReadSpecs, Opts},
@@ -260,9 +353,6 @@ handle_event({call, From}, {read, ReadSpecs, Opts},
 handle_event({call, From}, {write, NodeId, AVPairs, Opts},
              connected = State, Data) ->
     pack_command_result(From, State, proto_write(Data, NodeId, AVPairs, Opts));
-handle_event({call, From}, close, connected = State, Data) ->
-    next_state_and_reply_later(closing, Data, on_closed, From,
-                               event_timeouts(State, Data));
 %% STATE: {reconnecting, Endpoint}
 handle_event(enter, _OldState, {reconnecting, _Endpoint} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered reconnecting", [self()]),
