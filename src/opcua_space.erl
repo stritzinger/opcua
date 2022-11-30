@@ -22,6 +22,14 @@
 -callback del_references(State, [Reference]) -> ok
     when State :: term(), Reference :: opcua:node_ref().
 
+-callback add_descriptor(State, TypeDescriptorSpec, TypeSpec, Encoding) -> ok
+    when State :: term(), TypeSpec :: opcua:node_spec(),
+         Encoding :: opcua:stream_encoding(),
+         TypeDescriptorSpec :: opcua:stream_encoding().
+
+-callback del_descriptor(State, TypeDescriptorSpec) -> ok
+    when State :: term(), TypeDescriptorSpec :: opcua:stream_encoding().
+
 -callback node(State, NodeSpec) -> Result
     when State :: term(), NodeSpec :: opcua:node_spec(),
          Result :: undefined | opcua:node_rec().
@@ -95,38 +103,50 @@
 
 % @doc Adds given nodes to the given database.
 % Depending on the backend, may only be allowed from the owning process.
-add_nodes(#uacp_connection{space = Space}, Nodes) ->
-    add_nodes(Space, Nodes);
-add_nodes({Mod, Sub}, Nodes) ->
-    Mod:add_nodes(Sub, Nodes);
-add_nodes(Mod, Nodes) ->
-    Mod:add_nodes(Nodes).
+add_nodes(#uacp_connection{space = Space} = State, Nodes) ->
+    add_nodes(Space, Nodes),
+    nodes_added(State, Nodes);
+add_nodes({Mod, Sub} = State, Nodes) ->
+    Mod:add_nodes(Sub, Nodes),
+    nodes_added(State, Nodes);
+add_nodes(Mod = State, Nodes) ->
+    Mod:add_nodes(Nodes),
+    nodes_added(State, Nodes).
 
 % @doc Removes the nodes with given node identifier from the given database.
 % Depending on the backend, may only be allowed from the owning process.
-del_nodes(#uacp_connection{space = Space}, NodeIds) ->
+del_nodes(#uacp_connection{space = Space} = State, NodeIds) ->
+    nodes_deleted(State, NodeIds),
     del_nodes(Space, NodeIds);
-del_nodes({Mod, Sub}, NodeIds) ->
+del_nodes({Mod, Sub} = State, NodeIds) ->
+    nodes_deleted(State, NodeIds),
     Mod:del_nodes(Sub, NodeIds);
-del_nodes(Mod, NodeIds) ->
+del_nodes(Mod = State, NodeIds) ->
+    nodes_deleted(State, NodeIds),
     Mod:del_nodes(NodeIds).
 
 % @doc Adds given references to the given database.
 % Depending on the backend, may only be allowed from the owning process.
-add_references(#uacp_connection{space = Space}, References) ->
-    add_references(Space, References);
-add_references({Mod, Sub}, References) ->
-    Mod:add_references(Sub, References);
-add_references(Mod, References) ->
-    Mod:add_references(References).
+add_references(#uacp_connection{space = Space} = State, References) ->
+    add_references(Space, References),
+    references_added(State, References);
+add_references({Mod, Sub} = State, References) ->
+    Mod:add_references(Sub, References),
+    references_added(State, References);
+add_references(Mod = State, References) ->
+    Mod:add_references(References),
+    references_added(State, References).
 
 % @doc Removes given references from given database.
 % Depending on the backend, may only be allowed from the owning process.
-del_references(#uacp_connection{space = Space}, References) ->
+del_references(#uacp_connection{space = Space} = State, References) ->
+    references_deleted(State, References),
     del_references(Space, References);
-del_references({Mod, Sub}, References) ->
+del_references({Mod, Sub} = State, References) ->
+    references_deleted(State, References),
     Mod:del_references(Sub, References);
-del_references(Mod, References) ->
+del_references(Mod = State, References) ->
+    references_deleted(State, References),
     Mod:del_references(References).
 
 
@@ -203,3 +223,100 @@ namespaces({Mod, Sub}) ->
     Mod:namespaces(Sub);
 namespaces(Mod) ->
     Mod:namespaces().
+
+
+%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+nodes_added(_Space, []) -> ok;
+nodes_added(Space, [Node | Rest]) ->
+    node_added(Space, Node),
+    nodes_added(Space, Rest).
+
+node_added(Space, #opcua_node{node_id = DescId, browse_name = Name})
+  when Name =:= <<"Default Binary">>; Name =:= <<"Default XML">>;
+       Name =:= <<"Default JSON">> ->
+    maybe_add_descriptor(Space, DescId);
+node_added(_Space, #opcua_node{}) ->
+    ok.
+
+nodes_deleted(_Space, []) -> ok;
+nodes_deleted(Space, [NodeId | Rest]) ->
+    node_deleted(Space, NodeId, node(Space, NodeId)),
+    nodes_deleted(Space, Rest).
+
+node_deleted(Space, DescId, #opcua_node{node_id = DescId, browse_name = Name})
+  when Name =:= <<"Default Binary">>; Name =:= <<"Default XML">>;
+       Name =:= <<"Default JSON">> ->
+    del_descriptor(Space, DescId);
+node_deleted(_Space, _NodeId, _Node) ->
+    ok.
+
+references_added(_Space, []) -> ok;
+references_added(Space, [Ref | Rest]) ->
+    reference_added(Space, Ref),
+    references_added(Space, Rest).
+
+reference_added(Space, #opcua_reference{
+        type_id = ?NID_HAS_ENCODING,
+        target_id = DescId}) ->
+    maybe_add_descriptor(Space, DescId);
+reference_added(Space, #opcua_reference{
+        type_id = ?NID_HAS_TYPE_DEFINITION,
+        source_id = DescId,
+        target_id = ?NID_DATA_TYPE_ENCODING_TYPE}) ->
+    maybe_add_descriptor(Space, DescId);
+reference_added(_Space, #opcua_reference{}) ->
+    ok.
+
+references_deleted(_Space, []) -> ok;
+references_deleted(Space, [Ref | Rest]) ->
+    reference_deleted(Space, Ref),
+    references_deleted(Space, Rest).
+
+reference_deleted(Space, #opcua_reference{
+        type_id = ?NID_HAS_ENCODING,
+        target_id = DescId}) ->
+    del_descriptor(Space, DescId);
+reference_deleted(Space, #opcua_reference{
+        type_id = ?NID_HAS_TYPE_DEFINITION,
+        source_id = DescId,
+        target_id = ?NID_DATA_TYPE_ENCODING_TYPE}) ->
+    del_descriptor(Space, DescId);
+reference_deleted(_Space, #opcua_reference{}) ->
+    ok.
+
+maybe_add_descriptor(Space, DescId) ->
+    DescNode = node(Space, DescId),
+    TypeDefRefs = references(Space, DescId, #{type => has_type_definition}),
+    HasEncRefs = references(Space, DescId, #{type => has_encoding, direction => inverse}),
+    maybe_add_descriptor(Space, DescId, DescNode, TypeDefRefs, HasEncRefs).
+
+maybe_add_descriptor(Space, DescId,
+                  #opcua_node{node_id = DescId, browse_name = Name},
+                  [#opcua_reference{type_id = ?NID_HAS_TYPE_DEFINITION,
+                                    source_id = DescId,
+                                    target_id = ?NID_DATA_TYPE_ENCODING_TYPE}],
+                  [#opcua_reference{type_id = ?NID_HAS_ENCODING,
+                                    source_id = TypeId,
+                                    target_id = DescId}]) ->
+    add_descriptor(Space, DescId, TypeId, descriptor_encoding(Name));
+maybe_add_descriptor(_Space, _DescId, _Node, _TypeDefRefs, _HasEncRefs) ->
+    ok.
+
+descriptor_encoding(<<"Default Binary">>) -> binary;
+descriptor_encoding(<<"Default XML">>) -> xml;
+descriptor_encoding(<<"Default JSON">>) -> json;
+descriptor_encoding(_) -> unknown.
+
+
+%-- BACKEND INTERFACE FUNCTIONS ------------------------------------------------
+
+add_descriptor(#uacp_connection{space = Space}, DescSpec, TypeSpec, Encoding) ->
+    add_descriptor(Space, DescSpec, TypeSpec, Encoding);
+add_descriptor({Mod, Sub}, DescSpec, TypeSpec, Encoding) ->
+    Mod:add_descriptor(Sub, DescSpec, TypeSpec, Encoding).
+
+del_descriptor(#uacp_connection{space = Space}, DescSpec) ->
+    del_descriptor(Space, DescSpec);
+del_descriptor({Mod, Sub}, DescSpec) ->
+    Mod:del_descriptor(Sub, DescSpec).

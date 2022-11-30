@@ -48,14 +48,14 @@ id(root) -> ?NNID(?OBJ_ROOT_FOLDER);
 id(objects) -> ?NNID(?OBJ_OBJECTS_FOLDER);
 id(server) -> ?NNID(?OBJ_SERVER);
 % Common reference types
-id(has_component) -> ?NNID(47);
-id(has_property) -> ?NNID(46);
-id(organizes) -> ?NNID(35);
-id(has_notifier) -> ?NNID(48);
-id(has_subtype) -> ?NNID(45);
-id(has_type_definition) -> ?NNID(40);
-id(has_encoding) -> ?NNID(38);
-id(has_description) -> ?NNID(39);
+id(has_component) -> ?NID_HAS_COMPONENT;
+id(has_property) -> ?NID_HAS_PROPERTY;
+id(organizes) -> ?NID_ORGANIZES;
+id(has_notifier) -> ?NID_HAS_NOTIFIER;
+id(has_subtype) -> ?NID_HAS_SUBTYPE;
+id(has_type_definition) -> ?NID_HAS_TYPE_DEFINITION;
+id(has_encoding) -> ?NID_HAS_ENCODING;
+id(has_description) -> ?NID_HAS_DESCRIPTION;
 %
 id(#opcua_node_id{} = NodeId) -> NodeId;
 id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
@@ -78,14 +78,14 @@ spec(?NNID(?OBJ_ROOT_FOLDER)) -> root;
 spec(?NNID(?OBJ_OBJECTS_FOLDER)) -> objects;
 spec(?NNID(?OBJ_SERVER)) -> server;
 % Common reference types
-spec(?NNID(47)) -> has_component;
-spec(?NNID(46)) -> has_property;
-spec(?NNID(35)) -> organizes;
-spec(?NNID(48)) -> has_notifier;
-spec(?NNID(45)) -> has_subtype;
-spec(?NNID(40)) -> has_type_definition;
-spec(?NNID(38)) -> has_encoding;
-spec(?NNID(39)) -> has_description;
+spec(?NID_HAS_COMPONENT) -> has_component;
+spec(?NID_HAS_PROPERTY) -> has_property;
+spec(?NID_ORGANIZES) -> organizes;
+spec(?NID_HAS_NOTIFIER) -> has_notifier;
+spec(?NID_HAS_SUBTYPE) -> has_subtype;
+spec(?NID_HAS_TYPE_DEFINITION) -> has_type_definition;
+spec(?NID_HAS_ENCODING) -> has_encoding;
+spec(?NID_HAS_DESCRIPTION) -> has_description;
 % Builtin types
 spec(#opcua_node_id{ns = 0, type = numeric, value = Id})
   when ?IS_BUILTIN_TYPE_ID(Id) ->

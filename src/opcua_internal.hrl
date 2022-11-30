@@ -49,6 +49,15 @@
 -define(POLICY_BASIC256SHA256, <<"http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256">>).
 -define(TRANSPORT_PROFILE_BINARY, <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>).
 
+-define(NID_HAS_COMPONENT,              ?NNID(47)).
+-define(NID_HAS_PROPERTY,               ?NNID(46)).
+-define(NID_ORGANIZES,                  ?NNID(35)).
+-define(NID_HAS_NOTIFIER,               ?NNID(48)).
+-define(NID_HAS_SUBTYPE,                ?NNID(45)).
+-define(NID_HAS_TYPE_DEFINITION,        ?NNID(40)).
+-define(NID_HAS_ENCODING,               ?NNID(38)).
+-define(NID_HAS_DESCRIPTION,            ?NNID(39)).
+-define(NID_DATA_TYPE_ENCODING_TYPE,    ?NNID(76)).
 -define(NID_SERVICE_FAULT,              ?NNID(395)).
 -define(NID_GET_ENDPOINTS_REQ,          ?NNID(426)).
 -define(NID_GET_ENDPOINTS_RES,          ?NNID(429)).

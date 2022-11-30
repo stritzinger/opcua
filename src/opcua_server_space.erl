@@ -88,22 +88,22 @@ namespaces() ->
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
-    {ok, [opcua_space_backend:init(?MODULE), opcua_nodeset]}.
+    {ok, opcua_space_backend:new(?MODULE, [opcua_nodeset])}.
 
-handle_call({add_nodes, Nodes}, _From, Spaces) ->
-    opcua_space_backend:add_nodes(Spaces, Nodes),
-    {reply, ok, Spaces};
-handle_call({del_nodes, NodeIds}, _From, Spaces) ->
-    opcua_space_backend:del_nodes(Spaces, NodeIds),
-    {reply, ok, Spaces};
-handle_call({add_references, References}, _From, Spaces) ->
-    opcua_space_backend:add_references(Spaces, References),
-    {reply, ok, Spaces};
-handle_call({del_references, References}, _From, Spaces) ->
-    opcua_space_backend:del_references(Spaces, References),
-    {reply, ok, Spaces};
-handle_call(stop, _From, Spaces) ->
-    {stop, normal, ok, Spaces}.
+handle_call({add_nodes, Nodes}, _From, Space) ->
+    opcua_space:add_nodes(Space, Nodes),
+    {reply, ok, Space};
+handle_call({del_nodes, NodeIds}, _From, Space) ->
+    opcua_space:del_nodes(Space, NodeIds),
+    {reply, ok, Space};
+handle_call({add_references, References}, _From, Space) ->
+    opcua_space:add_references(Space, References),
+    {reply, ok, Space};
+handle_call({del_references, References}, _From, Space) ->
+    opcua_space:del_references(Space, References),
+    {reply, ok, Space};
+handle_call(stop, _From, Space) ->
+    {stop, normal, ok, Space}.
 
 handle_cast(Request, _Spaces) ->
     error({unknown_cast, Request}).
@@ -111,6 +111,6 @@ handle_cast(Request, _Spaces) ->
 handle_info(Info, _Spaces) ->
     error({unknown_info, Info}).
 
-terminate(_Reason, [Space | _]) ->
+terminate(_Reason, Space) ->
     opcua_space_backend:terminate(Space),
     ok.

@@ -60,7 +60,7 @@
 -type diagnostic_info() :: #opcua_diagnostic_info{}.
 -type node_spec() :: non_neg_integer() | atom() | binary() | node_id() | node_rec().
 -type codec_spec() :: node_spec() | [node_spec()] | [{atom(), node_spec()}].
--type stream_encoding() :: binary.
+-type stream_encoding() :: binary | xml | json.
 -type extobj_encoding() :: xml | byte_string.
 -type codec_schema() :: term().
 -type field() :: #opcua_field{}.

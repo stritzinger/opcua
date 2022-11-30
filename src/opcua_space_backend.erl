@@ -33,13 +33,15 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions to be called only from owning process
--export([new/0, new/1]).
+-export([new/0, new/1, new/2]).
 -export([init/0, init/1]).
 -export([terminate/1]).
 -export([add_nodes/2]).
 -export([del_nodes/2]).
 -export([add_references/2]).
 -export([del_references/2]).
+-export([add_descriptor/4]).
+-export([del_descriptor/2]).
 
 %% API functions for shared reference
 -export([node/2]).
@@ -94,6 +96,10 @@ new() ->
 new(Parent) when is_list(Parent) ->
     {?MODULE, [init() | Parent]}.
 
+-spec new(space(), spaces()) -> opcua_space:state().
+new(Space, Parent) when is_list(Parent) ->
+    {?MODULE, [init(Space) | Parent]}.
+
 -spec init() -> space().
 init() ->
     init(make_ref()).
@@ -106,8 +112,10 @@ init(Space) ->
         [{read_concurrency, true}, {keypos, #space_refs.index}, ordered_set]),
     RefSubTable = ets:new(opcua_space_ref_subtypes,
         [{read_concurrency, true}]),
-    EncodingTable = ets:new(opcua_space_encodings,
-        [{read_concurrency, true}]),
+    TypeToDescTable = ets:new(opcua_space_encoding_descriptors,
+        [{read_concurrency, true}, {keypos, 2}]),
+    DescToTypeTable = ets:new(opcua_space_encoding_types,
+        [{read_concurrency, true}, {keypos, 1}]),
     DataTypesTable = ets:new(opcua_space_datatypes,
         [{read_concurrency, true}]),
     NamespaceIdsTable = ets:new(opcua_space_namespace_ids,
@@ -118,40 +126,46 @@ init(Space) ->
     NodesKey = key(Space, nodes),
     ReferencesKey = key(Space, references),
     RefSubKey = key(Space, ref_subtypes),
-    EncodingKey = key(Space, encodings),
+    TypeToDescKey = key(Space, type2desc),
+    DescToTypeKey = key(Space, desc2type),
     DataTypesKey = key(Space, datatypes),
     NamespaceIdsKey = key(Space, namespace_ids),
     NamespaceUrisKey = key(Space, namespace_uris),
-    Keys = [NodesKey, ReferencesKey, RefSubKey, EncodingKey,
-            DataTypesKey, NamespaceIdsKey, NamespaceUrisKey],
+    Keys = [NodesKey, ReferencesKey, RefSubKey, TypeToDescKey,
+            DescToTypeKey, DataTypesKey, NamespaceIdsKey, NamespaceUrisKey],
 
     spawn_cleanup_proc(self(), Keys),
 
     persistent_term:put(NodesKey, NodesTable),
     persistent_term:put(ReferencesKey, RefsTable),
     persistent_term:put(RefSubKey, RefSubTable),
-    persistent_term:put(EncodingKey, EncodingTable),
+    persistent_term:put(TypeToDescKey, TypeToDescTable),
+    persistent_term:put(DescToTypeKey, DescToTypeTable),
     persistent_term:put(DataTypesKey, DataTypesTable),
     persistent_term:put(NamespaceIdsKey, NamespaceIdsTable),
     persistent_term:put(NamespaceUrisKey, NamespaceUrisTable),
 
     Space.
 
--spec terminate(space()) -> ok.
+-spec terminate(space() | opcua_space:state()) -> ok.
+terminate({?MODULE, [Space | _]}) ->
+    terminate(Space);
 terminate(Space) ->
     NodesKey = key(Space, nodes),
     ReferencesKey = key(Space, references),
     RefSubKey = key(Space, ref_subtypes),
-    EncodingKey = key(Space, encodings),
+    TypeToDescKey = key(Space, type2desc),
+    DescToTypeKey = key(Space, desc2type),
     DataTypesKey = key(Space, datatypes),
     NamespaceIdsKey = key(Space, namespace_ids),
     NamespaceUrisKey = key(Space, namespace_uris),
-    Keys = [NodesKey, ReferencesKey, RefSubKey, EncodingKey,
+    Keys = [NodesKey, ReferencesKey, RefSubKey, TypeToDescKey, DescToTypeKey,
             DataTypesKey, NamespaceIdsKey, NamespaceUrisKey],
     ets:delete(persistent_term:get(NodesKey)),
     ets:delete(persistent_term:get(ReferencesKey)),
     ets:delete(persistent_term:get(RefSubKey)),
-    ets:delete(persistent_term:get(EncodingKey)),
+    ets:delete(persistent_term:get(TypeToDescKey)),
+    ets:delete(persistent_term:get(DescToTypeKey)),
     ets:delete(persistent_term:get(DataTypesKey)),
     ets:delete(persistent_term:get(NamespaceIdsKey)),
     ets:delete(persistent_term:get(NamespaceUrisKey)),
@@ -214,6 +228,32 @@ del_references([Space | _] = Spaces, [Ref | Rest]) ->
     del_references(Spaces, Rest);
 del_references(Space, Refs) ->
     del_references([Space], Refs).
+
+% @doc Adds a type encoding descriptor.
+-spec add_descriptor(space() | spaces(), opcua:node_spec(), opcua:node_spec(),
+                     opcua:stream_encoding()) -> ok.
+add_descriptor([Space | _], DescriptorSpec, TypeSpec, Encoding) ->
+    Term = {opcua_node:id(DescriptorSpec), {opcua_node:id(TypeSpec), Encoding}},
+    {DescId, {TypeId, _}} = Term,
+    io:format("DDDDDDDDDD DESCRIPTOR ADDED: ~p -(~s)-> ~p~n",
+              [opcua_node:spec(TypeId), Encoding, opcua_node:spec(DescId)]),
+    ets:insert(table(Space, type2desc), Term),
+    ets:insert(table(Space, desc2type), Term),
+    ok.
+
+% @doc Removes a type encoding descriptor.
+-spec del_descriptor(space() | spaces(), opcua:node_spec()) -> ok.
+del_descriptor([Space | _] = Spaces, DescriptorSpec) ->
+    DescId = opcua_node:id(DescriptorSpec),
+    case data_type(Spaces, DescId) of
+        undefined -> ok;
+        {_TypeId, _Encoding} = Key ->
+            io:format("DDDDDDDDDD DESCRIPTOR DELETED: ~p -(~s)-> ~p~n",
+                      [opcua_node:spec(_TypeId), _Encoding, opcua_node:spec(DescId)]),
+            ets:insert(table(Space, type2desc), {deleted, Key}),
+            ets:insert(table(Space, desc2type), {DescId, deleted}),
+            ok
+    end.
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -294,7 +334,7 @@ fold(Space, Fun, Acc) ->
         {nodes, node},
         {references, ref},
         {ref_subtypes, ref_subtypes},
-        {encodings, encoding},
+        {desc2type, encoding},
         {datatypes, datatype},
         {namespace_ids, namespace}],
     fold(Space, TableSpecs, Fun, Acc).
@@ -311,7 +351,8 @@ store(Space, {ref_subtypes, Term}) ->
     ets:insert(table(Space, ref_subtypes), Term),
     ok;
 store(Space, {encoding, Term}) ->
-    ets:insert(table(Space, encodings), Term),
+    ets:insert(table(Space, type2desc), Term),
+    ets:insert(table(Space, desc2type), Term),
     ok;
 store(Space, {datatype, Term}) ->
     ets:insert(table(Space, datatypes), Term),
@@ -466,8 +507,8 @@ spec_dir(Dir)  -> Dir.
 get_data_type([], _NodeId) ->
     undefined;
 get_data_type([Space | Rest], NodeId) ->
-    EncTable = table(Space, encodings),
-    case ets:lookup(EncTable, NodeId) of
+    case ets:lookup(table(Space, desc2type), NodeId) of
+        [{_, deleted}] -> undefined;
         [{_, Result}] -> Result;
         [] -> get_data_type(Rest, NodeId)
     end.
@@ -475,10 +516,9 @@ get_data_type([Space | Rest], NodeId) ->
 get_type_descriptor([], _NodeId, _Encoding) ->
     undefined;
 get_type_descriptor([Space | Rest], NodeId, Encoding) ->
-    Key = {NodeId, Encoding},
-    EncTable = table(Space, encodings),
-    case ets:lookup(EncTable, Key) of
-        [{_, Result}] -> Result;
+    case ets:lookup(table(Space, type2desc), {NodeId, Encoding}) of
+        [{deleted, _}] -> undefined;
+        [{Result, _}] -> Result;
         [] -> get_type_descriptor(Rest, NodeId, Encoding)
     end.
 

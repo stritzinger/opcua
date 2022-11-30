@@ -226,10 +226,9 @@ store_namespace({_Id, _Uri} = Spec) ->
     opcua_space_backend:store(?MODULE, {namespace, Spec}),
     ok.
 
-store_encoding({NodeId, {TargetNodeId, Encoding}}) ->
+store_encoding({DescId, {TypeId, Encoding}}) ->
     %FIXME: Temporary backward compatible hack
-    opcua_space_backend:store(?MODULE, {encoding, {NodeId, {TargetNodeId, Encoding}}}),
-    opcua_space_backend:store(?MODULE, {encoding, {{TargetNodeId, Encoding}, NodeId}}),
+    opcua_space_backend:store(?MODULE, {encoding, {DescId, {TypeId, Encoding}}}),
     ok.
 
 store_node(#opcua_node{} = Node) ->
