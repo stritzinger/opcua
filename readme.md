@@ -76,19 +76,19 @@ e.g.
 
 With explicit namespace:
 
-	`opcua_client:write(Client, {4, <<"OPCUA.int1">>}, {value, {opcua_variant, int16, 42}}).`
+	`opcua_client:write(Client, {4, <<"OPCUA.int1">>}, value, {opcua_variant, int16, 42}).`
 
 Full array write:
 
-	`opcua_client:write(Client, {4, <<"OPCUA.array1">>}, {value, {opcua_variant, boolean, [false,true,false,true,false,true,false,true,false,true]}}).`
+	`opcua_client:write(Client, {4, <<"OPCUA.array1">>}, value, {opcua_variant, boolean, [false,true,false,true,false,true,false,true,false,true]}).`
 
 With array index:
 
-	`opcua_client:write(Client, {4, <<"OPCUA.array1">>}, {{value, 2}, true}).`
+	`opcua_client:write(Client, {4, <<"OPCUA.array1">>}, {value, 2}, true).`
 
 With multidimensional array index:
 
-	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {{value, [1, 0, 3]}, false}).`
+	`opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, [1, 0, 3]}, false).`
 
 With expanded arrays of structs (server dependent):
 

@@ -20,7 +20,7 @@
 -export([create/3]).
 -export([browse/5]).
 -export([read/5]).
--export([write/6]).
+-export([write/5]).
 -export([close/3]).
 -export([handle_response/4]).
 -export([abort_response/5]).
@@ -76,11 +76,7 @@ create(Conn, Channel, #state{status = undefined} = State) ->
     channel_make_request(State#state{status = creating}, Channel, Conn,
                          ?NID_CREATE_SESS_REQ, Payload).
 
-browse(NodeId, Opts, Conn, Channel, #state{status = activated} = State) ->
-    %TODO: Add support for batching and options for class and result filtering
-    BrowseDirection = maps:get(direction, Opts, forward),
-    IncludeSubtypes = maps:get(include_subtypes, Opts, false),
-    ReferenceTypeId = maps:get(type, Opts, ?UNDEF_NODE_ID),
+browse(BrowseSpec, DefaultOpts, Conn, Channel, #state{status = activated} = State) ->
     Payload = #{
         view => #{
             view_id => ?UNDEF_NODE_ID,
@@ -88,45 +84,22 @@ browse(NodeId, Opts, Conn, Channel, #state{status = activated} = State) ->
             view_version => 0
         },
         requested_max_references_per_node => 0,
-        nodes_to_browse => [#{
-            node_id => NodeId,
-            reference_type_id => ReferenceTypeId,
-            browse_direction => BrowseDirection,
-            include_subtypes => IncludeSubtypes,
-            node_class_mask => 0,
-            result_mask => 16#3F
-        }]
+        nodes_to_browse => format_browse_spec(BrowseSpec, DefaultOpts, [])
     },
     make_identified_request(State, Channel, Conn, ?NID_BROWSE_REQ, Payload).
 
-read(ReadSpecs, _Opts, Conn, Channel, #state{status = activated} = State) ->
-    %TODO: Add support for options for age, timestamp and array slicing
+read(ReadSpec, Opts, Conn, Channel, #state{status = activated} = State) ->
+    %TODO: Add support for options for age and timestamp
     Payload = #{
         max_age => 0,
         timestamps_to_return => source,
-        nodes_to_read => [
-            #{
-                node_id => NodeId,
-                attribute_id => opcua_nodeset:attribute_id(spec_attr(Spec)),
-                index_range => spec_range(Spec),
-                data_encoding => ?UNDEF_QUALIFIED_NAME
-            }
-        || {NodeId, Attribs} <- ReadSpecs, Spec <- Attribs]
+        nodes_to_read => format_read_spec(ReadSpec, Opts, [])
     },
     make_identified_request(State, Channel, Conn, ?NID_READ_REQ, Payload).
 
-write(NodeId, AttribValuePairs, _Opts, Conn, Channel,
-      #state{status = activated} = State) ->
-    %TODO: Add support multi-node batching and array slicing
+write(WriteSpec, Opts, Conn, Channel, #state{status = activated} = State) ->
     Payload = #{
-        nodes_to_write => [
-            #{
-                node_id => NodeId,
-                attribute_id => opcua_nodeset:attribute_id(spec_attr(Spec)),
-                index_range => spec_range(Spec),
-                value => pack_write_value(Val)
-            }
-        || {Spec, Val} <- AttribValuePairs]
+        nodes_to_write => format_write_spec(WriteSpec, Opts, [])
     },
     make_identified_request(State, Channel, Conn, ?NID_WRITE_REQ, Payload).
 
@@ -154,18 +127,14 @@ abort_response(Msg, Reason, Conn, Channel, State) ->
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-spec_attr(Attr) when is_atom(Attr) -> Attr;
-spec_attr({Attr, _Range}) when is_atom(Attr) -> Attr.
-
-spec_range(Attr) when is_atom(Attr) ->
-    undefined;
-spec_range({_Attr, Index}) when is_integer(Index), Index >= 0 ->
+format_indexrange(undefined) -> undefined;
+format_indexrange(Index) when is_integer(Index), Index >= 0 ->
     integer_to_binary(Index);
-spec_range({_Attr, {From, To}})
+format_indexrange({From, To})
   when is_integer(From), From >= 0, is_integer(To), To >= 0 ->
     iolist_to_binary([integer_to_binary(From), $:, integer_to_binary(To)]);
-spec_range({Attr, Dims}) when is_list(Dims) ->
-    Ranges = [spec_range({Attr, Spec}) || Spec <- Dims],
+format_indexrange(Dims) when is_list(Dims) ->
+    Ranges = [format_indexrange(Dim) || Dim <- Dims],
     iolist_to_binary(lists:join($,, Ranges)).
 
 % Make a request and returns its handle
@@ -175,6 +144,76 @@ make_identified_request(State, Channel, Conn, NodeId, Payload) ->
                              NodeId, Payload),
     Handle = opcua_connection:handle(Conn2, Request),
     {ok, Handle, [Request], Conn2, Channel2, State2}.
+
+format_browse_spec([], _DefaultOpts, Acc) ->
+    lists:reverse(Acc);
+format_browse_spec([{#opcua_node_id{} = NodeId, undefined} | Rest], DefaultOpts, Acc) ->
+    Acc2 = [browse_command(NodeId, DefaultOpts) | Acc],
+    format_browse_spec(Rest, DefaultOpts, Acc2);
+format_browse_spec([{#opcua_node_id{} = NodeId, Opts} | Rest], DefaultOpts, Acc) ->
+    Acc2 = [browse_command(NodeId, maps:merge(DefaultOpts, Opts)) | Acc],
+    format_browse_spec(Rest, DefaultOpts, Acc2).
+
+browse_command(NodeId, Opts) ->
+    %TODO: Add support class and result filtering
+    #{direction := BrowseDirection,
+      include_subtypes := IncludeSubtypes,
+      type := ReferenceTypeId} = Opts,
+    #{node_id => NodeId,
+     reference_type_id => ReferenceTypeId,
+     browse_direction => BrowseDirection,
+     include_subtypes => IncludeSubtypes,
+     node_class_mask => 0,
+     result_mask => 16#3F}.
+
+format_read_spec([], _Opts, Acc) ->
+    lists:append(lists:reverse(Acc));
+format_read_spec([{#opcua_node_id{} = NodeId, AttribSpec} | Rest], Opts, Acc) ->
+    Acc2 = [format_read_spec(NodeId, AttribSpec, Opts, []) | Acc],
+    format_read_spec(Rest, Opts, Acc2).
+
+format_read_spec(_NodeId, [], _Opts, Acc) ->
+    lists:reverse(Acc);
+format_read_spec(NodeId, [{{Attr, IndexRange}, undefined} | Rest], DefaultOpts, Acc) ->
+    Acc2 = [read_command(NodeId, Attr, IndexRange, DefaultOpts) | Acc],
+    format_read_spec(NodeId, Rest, DefaultOpts, Acc2);
+format_read_spec(NodeId, [{{Attr, IndexRange}, Opts} | Rest], DefaultOpts, Acc) ->
+    ReadOpts = maps:merge(DefaultOpts, Opts),
+    Acc2 = [read_command(NodeId, Attr, IndexRange, ReadOpts) | Acc],
+    format_read_spec(NodeId, Rest, DefaultOpts, Acc2).
+
+
+read_command(NodeId, Attr, IndexRange, _Opts) ->
+    #{
+        node_id => NodeId,
+        attribute_id => opcua_nodeset:attribute_id(Attr),
+        index_range => format_indexrange(IndexRange),
+        data_encoding => ?UNDEF_QUALIFIED_NAME
+    }.
+
+format_write_spec([], _Opts, Acc) ->
+    lists:append(lists:reverse(Acc));
+format_write_spec([{#opcua_node_id{} = NodeId, AttribSpec} | Rest], Opts, Acc) ->
+    Acc2 = [format_write_spec(NodeId, AttribSpec, Opts, []) | Acc],
+    format_write_spec(Rest, Opts, Acc2).
+
+format_write_spec(_NodeId, [], _Opts, Acc) ->
+    lists:reverse(Acc);
+format_write_spec(NodeId, [{{Attr, IndexRange}, Val, undefined} | Rest], DefaultOpts, Acc) ->
+    Acc2 = [write_command(NodeId, Attr, IndexRange, Val, DefaultOpts) | Acc],
+    format_write_spec(NodeId, Rest, DefaultOpts, Acc2);
+format_write_spec(NodeId, [{{Attr, IndexRange}, Val, Opts} | Rest], DefaultOpts, Acc) ->
+    WriteOpts = maps:merge(DefaultOpts, Opts),
+    Acc2 = [write_command(NodeId, Attr, IndexRange, Val, WriteOpts) | Acc],
+    format_write_spec(NodeId, Rest, DefaultOpts, Acc2).
+
+write_command(NodeId, Attr, IndexRange, Value, _Opts) ->
+    #{
+        node_id => NodeId,
+        attribute_id => opcua_nodeset:attribute_id(Attr),
+        index_range => format_indexrange(IndexRange),
+        value => pack_write_value(Value)
+    }.
 
 handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, ResPayload) ->
     #{
@@ -224,18 +263,18 @@ handle_response(_State, _Channel, _Conn, activating, Handle, ?NID_SERVICE_FAULT,
     {error, Reason};
 handle_response(State, Channel, Conn, activated, Handle, ?NID_BROWSE_RES, Payload) ->
     %TODO: Add support for batching and error handling
-    #{results := [#{references := RefDescs}]} = Payload,
-    {ok, [{Handle, {ok, RefDescs}}], [], Conn, Channel, State};
+    #{results := Results} = Payload,
+    {ok, [{Handle, ok, unpack_browse_results(Results)}], [], Conn, Channel, State};
 handle_response(State, Channel, Conn, activated, Handle, ?NID_READ_RES, Payload) ->
     %TODO: Add support for multi-node batching and error handling
     %TODO: Add option to allow per-attribute error instead of all-or-nothing
     #{results := Results} = Payload,
-    {ok, [{Handle, unpack_read_results(Results)}], [], Conn, Channel, State};
+    {ok, [{Handle, ok, unpack_read_results(Results)}], [], Conn, Channel, State};
 handle_response(State, Channel, Conn, activated, Handle, ?NID_WRITE_RES, Payload) ->
     %TODO: Add support for multi-node batching and error handling
     %TODO: Add option to allow per-attribute error instead of all-or-nothing
     #{results := Results} = Payload,
-    {ok, [{Handle, {ok, Results}}], [], Conn, Channel, State};
+    {ok, [{Handle, ok, Results}], [], Conn, Channel, State};
 handle_response(State, Channel, Conn, activated, _Handle, ?NID_CLOSE_SESS_RES, _Payload) ->
     {closed, Conn, Channel, State};
 handle_response(State, Channel, Conn, Status, _Handle, NodeId, Payload) ->
@@ -317,11 +356,21 @@ identity_token(#state{endpoint = #{
 
 %== Channel Module Abstraction Functions =======================================
 
+unpack_browse_results(Results) ->
+    unpack_browse_results(Results, []).
+
+unpack_browse_results([], Acc) ->
+    lists:reverse(Acc);
+unpack_browse_results([#{status_code := good, references := Refs} | Rest], Acc) ->
+    unpack_browse_results(Rest, [Refs | Acc]);
+unpack_browse_results([#{status_code := Status} | Rest], Acc) ->
+    unpack_browse_results(Rest, [#opcua_error{status = Status} | Acc]).
+
 unpack_read_results(Result) ->
     unpack_read_results(Result, []).
 
 unpack_read_results([], Acc) ->
-    {ok, lists:reverse(Acc)};
+    lists:reverse(Acc);
 unpack_read_results([#opcua_data_value{status = good, value = Value} | Rest], Acc) ->
     unpack_read_results(Rest, [Value | Acc]);
 unpack_read_results([#opcua_data_value{status = Status} | Rest], Acc) ->

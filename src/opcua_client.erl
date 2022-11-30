@@ -16,9 +16,8 @@
 -export([connect/1, connect/2]).
 -export([close/1]).
 -export([browse/2, browse/3]).
--export([read/3, read/4]).
--export([batch_read/3]).
--export([write/3, write/4]).
+-export([read/2, read/3, read/4]).
+-export([write/2, write/3, write/4, write/5]).
 -export([get/2, get/3]).
 -export([add_nodes/3]).
 -export([add_references/3]).
@@ -135,13 +134,25 @@
     delete_bidirectional => boolean()
 }.
 
+-type browse_spec() :: opcua:node_spec() | {opcua:node_spec(), browse_options()}.
+-type attrib_spec_range() :: {non_neg_integer(), non_neg_integer()}.
+-type attrib_spec_index_level() :: non_neg_integer() | attrib_spec_range().
+-type attrib_spec_index() :: attrib_spec_index_level() | [attrib_spec_index_level()].
+-type attrib_spec() :: atom() | {atom(), attrib_spec_index()}.
+-type read_spec() :: {opcua:node_spec(), attrib_spec() | [attrib_spec()]}.
+-type write_spec() :: {opcua:node_spec(), {attrib_spec(), term()} | [{attrib_spec(), term()}]}.
+-type ref_desc() :: map().
+
 -record(data, {
     opts                        :: undefined | map(),
     socket                      :: undefined | inet:socket(),
     conn                        :: undefined | opcua:connection(),
     proto                       :: undefined | term(),
-    calls = #{}                 :: #{term() => gen_statem:from()}
+    continuations = #{}         :: #{term() => {term(), cont_fun()}}
 }).
+
+-type cont_fun() :: fun((#data{}, ok | error, ResultOrReason  :: term(),
+                         Params :: term()) -> #data{}).
 
 -export_type([connect_options/0, browse_options/0,
               read_options/0, write_options/0]).
@@ -170,54 +181,91 @@ connect(EndpointUrl, Opts) ->
     catch throw:Reason -> {error, Reason}
     end.
 
+-spec browse(pid(), opcua:node_spec() | [browse_spec()]) ->
+    [ref_desc()] | [[ref_desc()]].
+browse(Pid, BrowseSpec) when is_list(BrowseSpec)  ->
+    browse(Pid, BrowseSpec, #{});
 browse(Pid, NodeSpec) ->
-    browse(Pid, NodeSpec, #{}).
+    [Result] = browse(Pid, [NodeSpec], #{}),
+    Result.
 
-browse(Pid, NodeSpec, Opts) ->
-    FixedOpts = case maps:find(type, Opts) of
-        error -> Opts;
-        {ok, TypeSpec} -> Opts#{type := opcua_node:id(TypeSpec)}
-    end,
-    Command = {browse, opcua_node:id(NodeSpec), FixedOpts},
+-spec browse(pid(), opcua:node_spec() | [browse_spec()], browse_options()) ->
+    [ref_desc()] | [[ref_desc()]].
+browse(Pid, BrowseSpec, DefaultOpts) when is_list(BrowseSpec) ->
+    PreparedDefaultOpts = prepare_browse_opts(maps:merge(#{
+        include_subtypes => false,
+        type => undefined,
+        direction => forward
+    }, DefaultOpts)),
+    PreparedSpec = prepare_browse_spec(BrowseSpec, []),
+    Command = {browse, PreparedSpec, PreparedDefaultOpts},
     case gen_statem:call(Pid, Command) of
         {ok, Result} ->  Result;
         {error, Reason} ->
             erlang:error(Reason)
-    end.
+    end;
+browse(Pid, NodeSpec, DefaultOpts) ->
+    [Result] = browse(Pid, [NodeSpec], DefaultOpts),
+    Result.
 
-read(Pid, NodeSpec, AttribSpecs) ->
-    read(Pid, NodeSpec, AttribSpecs, #{}).
+-spec read(pid(), [read_spec()]) -> [map()].
+read(Pid, ReadSpec) ->
+    read(Pid, ReadSpec, #{}).
 
-read(Pid, NodeSpec, AttribSpecs, Opts) when is_list(AttribSpecs) ->
-    batch_read(Pid, [{NodeSpec, AttribSpecs}], Opts);
-read(Pid, NodeSpec, AttribSpec, Opts) ->
-    case batch_read(Pid, [{NodeSpec, [AttribSpec]}], Opts) of
-        [#opcua_error{status = Status}] -> erlang:error(Status);
-        [Result] -> Result
-    end.
-
-batch_read(Pid, ReadSpecs, Opts) when is_list(ReadSpecs) ->
-    MkList = fun(L) when is_list(L) -> L; (A) when is_atom(A) -> [A] end,
-    PrepedSpecs = [{opcua_node:id(N), MkList(A)} || {N, A} <- ReadSpecs],
-    Command = {read, PrepedSpecs, Opts},
+-spec read(pid(), opcua:node_spec() | [read_spec()],
+           attrib_spec() | [attrib_spec()] | read_options()) ->
+    map() | [map()].
+read(Pid, ReadSpec, Opts) when is_list(ReadSpec) ->
+    PreparedSpec = prepare_read_spec(ReadSpec, []),
+    Command = {read, PreparedSpec, Opts},
     case gen_statem:call(Pid, Command) of
         {ok, Result} -> Result;
         {error, Reason} ->
             erlang:error(Reason)
+    end;
+read(Pid, NodeSpec, AttribSpecs) ->
+    read(Pid, NodeSpec, AttribSpecs, #{}).
+
+read(Pid, NodeSpec, AttribSpecs, Opts) when is_list(AttribSpecs) ->
+    [Result] = read(Pid, [{NodeSpec, AttribSpecs}], Opts),
+    Result;
+read(Pid, NodeSpec, AttribSpec, Opts) ->
+    Key = result_key(AttribSpec),
+    case read(Pid, [{NodeSpec, [AttribSpec]}], Opts) of
+        [#{Key := #opcua_error{status = Status}}] -> erlang:error(Status);
+        [#{Key := Result}] -> Result
     end.
 
+-spec write(pid(), [write_spec()]) -> [map()].
+write(Pid, WriteSpec) ->
+    write(Pid, WriteSpec, #{}).
+
+-spec write(pid(), opcua:node_spec() | [write_spec()],
+            [{attrib_spec(), term()}] | write_options()) ->
+    map() | [map()].
+write(Pid, WriteSpec, Opts) when is_list(WriteSpec) ->
+    PreparedSpec = prepare_write_spec(WriteSpec, []),
+    Command = {write, PreparedSpec, Opts},
+    case gen_statem:call(Pid, Command) of
+        {ok, Result} -> Result;
+        {error, Reason} ->
+            erlang:error(Reason)
+    end;
 write(Pid, NodeSpec, AttribValuePairs) ->
     write(Pid, NodeSpec, AttribValuePairs, #{}).
 
 write(Pid, NodeSpec, AttribValuePairs, Opts) when is_list(AttribValuePairs) ->
-    Command = {write, opcua_node:id(NodeSpec), AttribValuePairs, Opts},
-    case gen_statem:call(Pid, Command) of
-        {ok, Result}  -> Result;
-        {error, Reason} -> erlang:error(Reason)
-    end;
-write(Pid, NodeSpec, AttribValuePair, Opts) ->
-    [Result] = write(Pid, NodeSpec, [AttribValuePair], Opts),
-    Result.
+    [Result] = write(Pid, [{NodeSpec, AttribValuePairs}], Opts),
+    Result;
+write(Pid, NodeSpec, AttribSpec, Value) ->
+    write(Pid, NodeSpec, AttribSpec, Value, #{}).
+
+write(Pid, NodeSpec, AttribSpec, Value, Opts) ->
+    Key = result_key(AttribSpec),
+    case write(Pid, NodeSpec, [{AttribSpec, Value}], Opts) of
+        #{Key := #opcua_error{status = Status}} -> erlang:error(Status);
+        #{Key := Result} -> Result
+    end.
 
 -spec get(pid(), NodeSpec | [NodeSpec]) -> Node | [Node | Error]
   when NodeSpec :: opcua:node_spec(),
@@ -293,11 +341,11 @@ handle_event({call, From}, {connect, EndpointRec, Opts}, disconnected = State,
     case opcua_client_uacp:init(ProtoMode, ProtoOpts) of
         % No error use-case yet, diabling to make dialyzer happy
         % {error, Reason} ->
-        %     stop_and_reply_all(normal, Data2, {error, Reason});
+        %     {stop, normal, do_abort_all(Data2, Reason)};
         {ok, Proto} ->
-            Data3 = Data2#data{proto = Proto},
-            next_state_and_reply_later({connecting, 0, EndpointRec}, Data3,
-                                       on_ready, From, event_timeouts(State, Data2))
+            Data3 = delay_response(Data2#data{proto = Proto}, on_ready, From),
+            {next_state, {connecting, 0, EndpointRec}, Data3,
+                         event_timeouts(State, Data2)}
     end;
 %% STATE: {connecting, N, EndpointRec}
 handle_event(enter, _OldState, {connecting, N, _} = State, Data) ->
@@ -307,7 +355,7 @@ handle_event(enter, _OldState, {connecting, N, _} = State, Data) ->
         true  ->
             {keep_state, Data, enter_timeouts(State, Data)};
         false ->
-            stop_and_reply_all(normal, Data, {error, retry_exhausted})
+            {stop, normal, do_abort_all(Data, retry_exhausted)}
     end;
 handle_event(state_timeout, retry, {connecting, N, EndpointRec} = State, Data) ->
     case conn_init(Data, EndpointRec) of
@@ -323,7 +371,7 @@ handle_event(enter, _OldState, handshaking = State, Data) ->
     case proto_handshake(Data) of
         % No error use-case yet, diabling to make dialyzer happy
         % {error, Reason, Data2} ->
-        %     stop_and_reply_all(normal, Data2, {error, Reason});
+        %     {stop, normal, do_abort_all(Data2, Reason)};
         {ok, Data2} ->
             {keep_state, Data2, enter_timeouts(State, Data2)}
     end;
@@ -334,33 +382,39 @@ handle_event(info, {opcua_connection, {reconnect, Endpoint}},
 handle_event(info, {opcua_connection, ready}, handshaking = State, Data) ->
     {next_state, connected, Data, event_timeouts(State, Data)};
 handle_event(info, {opcua_connection, _}, handshaking, Data) ->
-    stop_and_reply_all(normal, Data, {error, opcua_handshaking_failed});
+    {stop, normal, do_abort_all(Data, opcua_handshaking_failed)};
 handle_event(state_timeout, abort, handshaking, Data) ->
-    stop_and_reply_all(normal, Data, {error, handshake_timeout});
+    {stop, normal, do_abort_all(Data, handshake_timeout)};
 %% STATE: connected
 handle_event(enter, _OldState, connected = State, Data) ->
     ?LOG_DEBUG("Client ~p entered connected", [self()]),
-    keep_state_and_reply(Data, on_ready, ok, enter_timeouts(State, Data));
+    Data2 = do_continue(Data, on_ready, ok),
+    {keep_state, Data2, enter_timeouts(State, Data)};
 handle_event({call, From}, close, connected = State, Data) ->
-    next_state_and_reply_later(closing, Data, on_closed, From,
-                               event_timeouts(State, Data));
-handle_event({call, From}, {browse, NodeId, Opts}, connected = State, Data) ->
-    pack_command_result(From, State, proto_browse(Data, NodeId, Opts));
-handle_event({call, From}, {read, ReadSpecs, Opts},
+    Data2 = delay_response(Data, on_closed, From),
+    {next_state, closing, Data2, event_timeouts(State, Data)};
+handle_event({call, From}, {browse, BrowseSpec, Opts}, connected = State, Data) ->
+    Data2 = do_browse(Data, BrowseSpec, Opts, From, fun contfun_reply/4),
+    {keep_state, Data2, enter_timeouts(State, Data2)};
+handle_event({call, From}, {read, ReadSpec, Opts},
              connected = State, Data) ->
-    Result = proto_read(Data, ReadSpecs, Opts),
-    pack_command_result(From, State, Result);
-handle_event({call, From}, {write, NodeId, AVPairs, Opts},
+    Data2 = do_read(Data, ReadSpec, Opts, From, fun contfun_reply/4),
+    {keep_state, Data2, enter_timeouts(State, Data2)};
+handle_event({call, From}, {write, WriteSpec, Opts},
              connected = State, Data) ->
-    pack_command_result(From, State, proto_write(Data, NodeId, AVPairs, Opts));
+    Data2 = do_write(Data, WriteSpec, Opts, From, fun contfun_reply/4),
+    {keep_state, Data2, enter_timeouts(State, Data2)};
+handle_event({call, _From}, {get, _NodeIds, _Opts}, connected = State, Data) ->
+    %TODO: IMPLEMENTE ME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    {keep_state, Data, enter_timeouts(State, Data)};
 %% STATE: {reconnecting, Endpoint}
 handle_event(enter, _OldState, {reconnecting, _Endpoint} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered reconnecting", [self()]),
     case proto_close(Data) of
         % No error use-case yet, diabling to make dialyzer happy
         % {error, Reason, Data2} ->
-        %     stop_and_reply(Reason, Data2, on_closed,
-        %                    {error, Reason}, {error, closed});
+        %     Data3 = do_continue(Data2, on_closed, error, Reason),
+        %     {stop, Reason, do_abort_all(Data3, closed)};
         {ok, Data2} ->
             {keep_state, Data2, enter_timeouts(State, Data2)}
     end;
@@ -379,18 +433,22 @@ handle_event(enter, _OldState, closing = State, Data) ->
     case proto_close(Data) of
         % No error use-case yet, diabling to make dialyzer happy
         % {error, Reason, Data2} ->
-        %     stop_and_reply(Reason, Data2, on_closed,
-        %                    {error, Reason}, {error, closed});
+        %     Data3 = do_continue(Data2, on_closed, error, Reason),
+        %     {stop, Reason, do_abort_all(Data3, closed)};
         {ok, Data2} ->
             {keep_state, Data2, enter_timeouts(State, Data2)}
     end;
 handle_event(info, {opcua_connection, closed}, closing, Data) ->
-    stop_and_reply(normal, Data, on_closed, ok, {error, closed});
+    Data2 = do_continue(Data, on_closed, ok),
+    Data3 = do_abort_all(Data2, closed),
+    {stop, normal, Data3};
 handle_event(state_timeout, abort, closing, Data) ->
-    stop_and_reply_all(normal, Data, {error, close_timeout});
+    {stop, normal, do_abort_all(Data, close_timeout)};
 handle_event(info, {tcp_closed, Sock}, closing, #data{socket = Sock} = Data) ->
     %% When closing the server may close the socket at any time
-    stop_and_reply(normal, Data, on_closed, ok, {error, closed});
+    Data2 = do_continue(Data, on_closed, ok),
+    Data3 = do_abort_all(Data2, closed),
+    {stop, normal, Data3};
 %% STATE: handshaking, connected, reconnecting and closing
 handle_event(timeout, produce, State, Data) ->
     case proto_produce(Data) of
@@ -399,43 +457,42 @@ handle_event(timeout, produce, State, Data) ->
         {ok, Output, Data2} ->
             case conn_send(Data2, Output) of
                 ok -> {keep_state, Data2, event_timeouts(State, Data2)};
-                {error, Reason} -> stop(Reason, Data2)
+                {error, Reason} -> {stop, Reason, do_abort_all(Data2, Reason)}
             end;
-        {error, Reason, Data2} ->
-            stop(Reason, Data2)
+        {error, Reason, Data2} -> {stop, Reason, do_abort_all(Data2, Reason)}
     end;
 handle_event(info, {tcp, Sock, Input}, State, #data{socket = Sock} = Data) ->
     ?DUMP("Received Data: ~p", [Input]),
     case proto_handle_data(Data, Input) of
         {ok, Responses, Data2} ->
-            keep_state_reply_multi(Data2, Responses,
-                                   event_timeouts(State, Data2));
+            Data3 = do_continue(Data2, Responses),
+            {keep_state, Data3, event_timeouts(State, Data3)};
         {error, Reason, Data2} ->
-            stop(Reason, Data2)
+            {stop, Reason, do_abort_all(Data2, Reason)}
     end;
 handle_event(info, {tcp_passive, Sock}, State, #data{socket = Sock} = Data) ->
     case conn_activate(Data) of
         ok ->
             {keep_state, Data, event_timeouts(State, Data)};
         {error, Reason} ->
-            stop_and_reply_all(Reason, Data, {error, socket_error})
+            {stop, Reason, do_abort_all(Data, socket_error)}
     end;
 handle_event(info, {tcp_closed, Sock}, _State, #data{socket = Sock} = Data) ->
-    stop_and_reply_all(normal, Data, {error, socket_closed});
+    {stop, normal, do_abort_all(Data, socket_closed)};
 handle_event(info, {tcp_error, Sock}, _State, #data{socket = Sock} = Data) ->
-    stop_and_reply_all(tcp_error, Data, {error, socket_error});
+    {stop, tcp_error, do_abort_all(Data, socket_error)};
 %% GENERIC STATE HANDLERS
 handle_event(enter, _OldState, NewState, Data) ->
     ?LOG_DEBUG("Client ~p entered ~p", [self(), NewState]),
     {keep_state, Data, enter_timeouts(NewState, Data)};
-handle_event(call, _, State, Data) ->
-    stop_and_reply_all(unexpected_call, Data, {error, State});
+handle_event(call, _, _, Data) ->
+    {stop, unexpected_call, do_abort_all(Data, unexpected_call)};
 handle_event(cast, _, _, Data) ->
     %TODO: Should be changed to not crash the client later on
-    stop(unexpected_cast, Data);
+    {stop, unexpected_cast, do_abort_all(Data, unexpected_cast)};
 handle_event(info, _, _, Data) ->
     %TODO: Should be changed to not crash the client later on
-    stop(unexpected_message, Data).
+    {stop, unexpected_message, do_abort_all(Data, unexpected_message)}.
 
 terminate(Reason, State, Data) ->
     ?LOG_DEBUG("OPCUA client process terminated in state ~w: ~p", [State, Reason]),
@@ -444,6 +501,83 @@ terminate(Reason, State, Data) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%-- INTERNAL ASYNC API FUNCTIONS -----------------------------------------------
+
+do_browse(Data, BrowseSpec, Opts, Params, ContFun) ->
+    case proto_browse(Data, BrowseSpec, Opts) of
+        {async, Handle, Data2} ->
+            schedule_continuation(Data2, Handle, Params, ContFun)
+    end.
+
+do_read(Data, ReadSpec, Opts, Params, ContFun) ->
+    case proto_read(Data, ReadSpec, Opts) of
+        {async, Handle, Data2} ->
+            UnpackParams = {ReadSpec, Params, ContFun},
+            schedule_continuation(Data2, Handle, UnpackParams,
+                                  fun contfun_unpack_read/4)
+    end.
+
+do_write(Data, WriteSpec, Opts, Params, ContFun) ->
+    case proto_write(Data, WriteSpec, Opts) of
+        {async, Handle, Data2} ->
+            UnpackParams = {WriteSpec, Params, ContFun},
+            schedule_continuation(Data2, Handle, UnpackParams,
+                                  fun contfun_unpack_write/4)
+    end.
+
+% do_get(_Data, _NodeIds, _Opts, _Params, _ContFun) ->
+%     erlang:error(not_implemented).
+
+schedule_continuation(#data{continuations = ContMap} = Data, Key, Params, ContFun) ->
+    ?assertNot(maps:is_key(Key, ContMap)),
+    Data#data{continuations = ContMap#{Key => {Params, ContFun}}}.
+
+do_continue(Data, []) -> Data;
+do_continue(#data{continuations = ContMap} = Data,
+            [{Key, Outcome, ResultOrReason} | Rest]) ->
+    case maps:take(Key, ContMap) of
+        error ->
+            ?LOG_WARNING("Continuation for ~w not found", [Key]),
+            do_continue(Data, Rest);
+        {{Params, ContFun}, ContMap2} ->
+            Data2 = Data#data{continuations = ContMap2},
+            do_continue(ContFun(Data2, Outcome, ResultOrReason, Params), Rest)
+    end.
+
+do_continue(Data, Key, Outcome) ->
+    do_continue(Data, Key, Outcome, '_NO_RESULT_').
+
+do_continue(Data, Key, Outcome, Result) ->
+    do_continue(Data, [{Key, Outcome, Result}]).
+
+do_abort_all(#data{continuations = ContMap} = Data, Reason) ->
+    do_continue(Data, [{K, error, Reason} || K <- maps:keys(ContMap)]).
+
+contfun_unpack_read(Data, ok, Results, {ReadSpec, SubParams, SubContFun}) ->
+    UnpackedResult = unpack_read_result(ReadSpec, Results),
+    SubContFun(Data, ok, UnpackedResult, SubParams).
+
+contfun_unpack_write(Data, ok, Results, {WriteSpec, SubParams, SubContFun}) ->
+    UnpackedResult = unpack_write_result(WriteSpec, Results),
+    SubContFun(Data, ok, UnpackedResult, SubParams).
+
+contfun_reply(Data, Outcome, '_NO_RESULT_', From) ->
+    gen_statem:reply(From, Outcome),
+    Data;
+contfun_reply(Data, Outcome, ResultOrReason, From) ->
+    gen_statem:reply(From, {Outcome, ResultOrReason}),
+    Data.
+
+delay_response(Data, Tag, From) ->
+    schedule_continuation(Data, Tag, From, fun contfun_reply/4).
+
+
+%-- OTHER INTERNAL FUNCTIONS ---------------------------------------------------
+
+result_key(Attrib) when is_atom(Attrib) -> Attrib;
+result_key({Attrib, undefined}) when is_atom(Attrib) -> Attrib;
+result_key({Attrib, IndexRange}) when is_atom(Attrib) -> {Attrib, IndexRange}.
 
 prepare_connect_options(Opts) ->
     EndpointLookupSec = case maps:get(endpoint_lookup_security, Opts, #{}) of
@@ -471,6 +605,59 @@ prepare_connect_options(Opts) ->
             prepare_server_identity(
                 prepare_client_identity(
                     prepare_selector(Merged))))).
+
+prepare_browse_spec([], Acc) ->
+    lists:reverse(Acc);
+prepare_browse_spec([{NodeSpec, Opts} | Rest], Acc) ->
+    FixedOpts = prepare_browse_opts(Opts),
+    Acc2 = [{opcua_node:id(NodeSpec), FixedOpts} | Acc],
+    prepare_browse_spec(Rest, Acc2);
+prepare_browse_spec([NodeSpec | Rest], Acc)->
+    Acc2 = [{opcua_node:id(NodeSpec), undefined} | Acc],
+    prepare_browse_spec(Rest, Acc2).
+
+prepare_browse_opts(#{type := NodeSpec} = Opts) ->
+    Opts#{type => opcua_node:id(NodeSpec)};
+prepare_browse_opts(Opts) ->
+    Opts.
+
+prepare_read_spec([], Acc) ->
+    lists:reverse(Acc);
+prepare_read_spec([{NodeSpec, Attribs} | Rest], Acc)
+  when is_list(Attribs) ->
+    FixedAttribs = prepare_read_spec_attr(Attribs, []),
+    Acc2 = [{opcua_node:id(NodeSpec), FixedAttribs} | Acc],
+    prepare_read_spec(Rest, Acc2);
+prepare_read_spec([{NodeSpec, Attrib} | Rest], Acc)->
+    FixedAttribs = prepare_read_spec_attr([Attrib], []),
+    Acc2 = [{opcua_node:id(NodeSpec), FixedAttribs} | Acc],
+    prepare_read_spec(Rest, Acc2).
+
+prepare_read_spec_attr([], Acc) ->
+    lists:reverse(Acc);
+prepare_read_spec_attr([Attr | Rest], Acc) when is_atom(Attr) ->
+    prepare_read_spec_attr(Rest, [{{Attr, undefined}, undefined} | Acc]);
+prepare_read_spec_attr([{Attr, IndexRange} | Rest], Acc) when is_atom(Attr) ->
+    prepare_read_spec_attr(Rest, [{{Attr, IndexRange}, undefined} | Acc]).
+
+prepare_write_spec([], Acc) ->
+    lists:reverse(Acc);
+prepare_write_spec([{NodeSpec, Attribs} | Rest], Acc)
+  when is_list(Attribs) ->
+    FixedAttribs = prepare_write_spec_attr(Attribs, []),
+    Acc2 = [{opcua_node:id(NodeSpec), FixedAttribs} | Acc],
+    prepare_write_spec(Rest, Acc2);
+prepare_write_spec([{NodeSpec, Attrib, Value} | Rest], Acc)->
+    FixedAttribs = prepare_write_spec_attr([{Attrib, Value}], []),
+    Acc2 = [{opcua_node:id(NodeSpec), FixedAttribs} | Acc],
+    prepare_write_spec(Rest, Acc2).
+
+prepare_write_spec_attr([], Acc) ->
+    lists:reverse(Acc);
+prepare_write_spec_attr([{Attr, Val} | Rest], Acc) when is_atom(Attr) ->
+    prepare_write_spec_attr(Rest, [{{Attr, undefined}, Val, undefined} | Acc]);
+prepare_write_spec_attr([{{Attr, IndexRange}, Val} | Rest], Acc) when is_atom(Attr) ->
+    prepare_write_spec_attr(Rest, [{{Attr, IndexRange}, Val, undefined} | Acc]).
 
 prepare_keychain(#{keychain := Keychain} = Opts) ->
     % Make sure the keychain can be shared with other processes
@@ -520,12 +707,6 @@ proto_initial_mode(#data{opts = #{endpoint_lookup := false} = Opts}) ->
     #{endpoint_selector := Selector, mode := Mode, policy := Policy} = Opts,
     ProtoOpts = #{endpoint_selector => Selector, mode => Mode, policy => Policy},
     {open_session, ProtoOpts}.
-
-% No error use-case yet, diabling to make dialyzer happy
-% pack_command_result(From, State, {error, Reason, Data}) ->
-%     {keep_state, Data, [{reply, From, {error, Reason}} | enter_timeouts(State, Data)]};
-pack_command_result(From, State, {async, Handle, Data}) ->
-    keep_state_and_reply_later(Data, Handle, From, enter_timeouts(State, Data)).
 
 reconnect(#data{opts = Opts} = Data, State, Endpoint) ->
     Data2 = conn_close(Data),
@@ -579,6 +760,32 @@ select_endpoint(Conn, Mode, Policy, AuthSpec, Endpoints) ->
 auth_type(anonymous) -> anonymous;
 auth_type({user_name, _, _}) -> user_name.
 
+unpack_read_result(ReadSpec, ReadResult) ->
+    unpack_read_result(ReadSpec, ReadResult, #{}, []).
+
+unpack_read_result([], [], _, Acc) ->
+    lists:reverse(Acc);
+unpack_read_result([{_NodeId, []} | MoreNodes], ReadResult, Map, Acc) ->
+    unpack_read_result(MoreNodes, ReadResult, #{}, [Map | Acc]);
+unpack_read_result([{NodeId, [{AttribSpec, _} | MoreAttribs]} | MoreNodes],
+                   [Result | MoreResults], Map, Acc) ->
+    ResultKey = result_key(AttribSpec),
+    unpack_read_result([{NodeId, MoreAttribs} | MoreNodes], MoreResults,
+                       Map#{ResultKey => Result}, Acc).
+
+unpack_write_result(WriteSpec, WriteResult) ->
+    unpack_write_result(WriteSpec, WriteResult, #{}, []).
+
+unpack_write_result([], [], _, Acc) ->
+    lists:reverse(Acc);
+unpack_write_result([{_NodeId, []} | MoreNodes], WriteResult, Map, Acc) ->
+    unpack_write_result(MoreNodes, WriteResult, #{}, [Map | Acc]);
+unpack_write_result([{NodeId, [{AttribSpec, _, _} | MoreAttribs]} | MoreNodes],
+                   [Result | MoreResults], Map, Acc) ->
+    ResultKey = result_key(AttribSpec),
+    unpack_write_result([{NodeId, MoreAttribs} | MoreNodes], MoreResults,
+                       Map#{ResultKey => Result}, Acc).
+
 
 %== Protocol Module Abstraction Functions ======================================
 
@@ -627,8 +834,8 @@ proto_read(#data{conn = Conn, proto = Proto} = Data, ReadSpecs, Opts) ->
             {async, Handle, Data#data{conn = Conn2, proto = Proto2}}
     end.
 
-proto_write(#data{conn = Conn, proto = Proto} = Data, NodeId, AVPairs, Opts) ->
-    case opcua_client_uacp:write(NodeId, AVPairs, Opts, Conn, Proto) of
+proto_write(#data{conn = Conn, proto = Proto} = Data, WriteSpec, Opts) ->
+    case opcua_client_uacp:write(WriteSpec, Opts, Conn, Proto) of
         % No error use-case yet, diabling to make dialyzer happy
         % {error, Reason, Proto2} ->
         %     {error, Reason, Data#data{proto = Proto2}};
@@ -713,51 +920,6 @@ conn_close(#data{socket = Socket} = Data) ->
     ?LOG_DEBUG("Closing connection"),
     gen_tcp:close(Socket),
     Data#data{socket = undefined}.
-
-
-%== Reply Managment ============================================================
-
-next_state_and_reply_later(NextState, #data{calls = Calls} = Data, Key, From, Actions) ->
-    ?assertNot(maps:is_key(Key, Calls)),
-    {next_state, NextState, Data#data{calls = maps:put(Key, From, Calls)}, Actions}.
-
-keep_state_and_reply_later(#data{calls = Calls} = Data, Key, From, Actions) ->
-    ?assertNot(maps:is_key(Key, Calls)),
-    {keep_state, Data#data{calls = maps:put(Key, From, Calls)}, Actions}.
-
-keep_state_and_reply(#data{calls = Calls} = Data, Key, Response, Actions) ->
-    case maps:take(Key, Calls) of
-        error -> {keep_state, Data, Actions};
-        {From, Calls2} ->
-            {keep_state, Data#data{calls = Calls2},
-             [{reply, From, Response} | Actions]}
-    end.
-
-keep_state_reply_multi(#data{calls = Calls} = Data, Responses, Actions) ->
-    {Actions2, Calls2} = lists:foldl(fun({Tag, Resp}, {Acc, Map}) ->
-        case maps:take(Tag, Map) of
-            error -> {Acc, Map};
-            {From, Map2} -> {[{reply, From, Resp} | Acc], Map2}
-        end
-    end, {Actions, Calls}, Responses),
-    {keep_state, Data#data{calls = Calls2}, Actions2}.
-
-stop_and_reply(Reason, #data{calls = Calls} = Data, Tag, MainResp, OtherResp) ->
-    %TODO: should probably cancel any pending request if possible
-    Actions = [{reply, F, OtherResp} || {T, F} <- maps:to_list(Calls), T =/= Tag],
-    Actions2 = case maps:find(Tag, Calls) of
-        error -> Actions;
-        {ok, From} -> [{reply, From, MainResp} | Actions]
-    end,
-    {stop_and_reply, Reason, Actions2, Data#data{calls = #{}}}.
-
-stop_and_reply_all(Reason, #data{calls = Calls} = Data, Response) ->
-    %TODO: should probably cancel any pending request if possible
-    Replies = [{reply, F, Response} || F <- maps:values(Calls)],
-    {stop_and_reply, Reason, Replies, Data#data{calls = #{}}}.
-
-stop(Reason, Data) ->
-    stop_and_reply_all(Reason, Data, {error, Reason}).
 
 
 %== Timeouts ===================================================================

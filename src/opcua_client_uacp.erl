@@ -17,7 +17,7 @@
 -export([handshake/2]).
 -export([browse/4]).
 -export([read/4]).
--export([write/5]).
+-export([write/4]).
 -export([close/2]).
 -export([can_produce/2]).
 -export([produce/2]).
@@ -74,14 +74,14 @@ handshake(Conn, #state{proto = Proto} = State) ->
     Request = opcua_connection:request(Conn, hello, undefined, undefined, Payload),
     proto_consume(State, Conn, Request).
 
-browse(NodeId, Opts, Conn, State) ->
-    maybe_consume(async, session_browse(State, Conn, NodeId, Opts)).
+browse(BrowseSpec, Opts, Conn, State) ->
+    maybe_consume(async, session_browse(State, Conn, BrowseSpec, Opts)).
 
 read(ReadSpecs, Opts, Conn, State) ->
     maybe_consume(async, session_read(State, Conn, ReadSpecs, Opts)).
 
-write(NodeId, AttribValuePairs, Opts, Conn, State) ->
-    maybe_consume(async, session_write(State, Conn, NodeId, AttribValuePairs, Opts)).
+write(WriteSpec, Opts, Conn, State) ->
+    maybe_consume(async, session_write(State, Conn, WriteSpec, Opts)).
 
 close(Conn, #state{sess = undefined} = State) ->
     maybe_consume(ok, channel_close(State, Conn));
@@ -284,8 +284,8 @@ session_create(#state{channel = Channel, sess = undefined} = State, Conn, Endpoi
             {ok, Req, Conn2, State2}
     end.
 
-session_browse(#state{channel = Channel, sess = Sess} = State, Conn, NodeId, Opts) ->
-    case opcua_client_session:browse(NodeId, Opts, Conn, Channel, Sess) of
+session_browse(#state{channel = Channel, sess = Sess} = State, Conn, BrowseSpec, Opts) ->
+    case opcua_client_session:browse(BrowseSpec, Opts, Conn, Channel, Sess) of
         % No error use-case yet, disabled to make dialyzer happy
         % {error, Reason} -> {error, Reason, State};
         {ok, Handle, Requests, Conn2, Channel2, Sess2} ->
@@ -302,9 +302,8 @@ session_read(#state{channel = Channel, sess = Sess} = State, Conn, ReadSpecs, Op
             {ok, Handle, Requests, Conn2, State2}
     end.
 
-session_write(#state{channel = Channel, sess = Sess} = State, Conn, NodeId,
-              AttribValuePairs, Opts) ->
-    case opcua_client_session:write(NodeId, AttribValuePairs, Opts, Conn,
+session_write(#state{channel = Channel, sess = Sess} = State, Conn, WriteSpec, Opts) ->
+    case opcua_client_session:write(WriteSpec, Opts, Conn,
                                     Channel, Sess) of
         % No error use-case yet, disabled to make dialyzer happy
         % {error, Reason} -> {error, Reason, State};
