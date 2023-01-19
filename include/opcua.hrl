@@ -40,7 +40,37 @@
 -define(OBJ_SERVER_TYPE,            2004).
 -define(OBJ_SERVER_STATUS_TYPE,     2138).
 
-
+% Attribute Id
+%  ------------
+%  Every node in an OPC UA information model contains attributes depending on
+%  the node type. Possible attributes are as follows:
+-define(UA_ATTRIBUTEID_NODEID, 1).
+-define(UA_ATTRIBUTEID_NODECLASS, 2).
+-define(UA_ATTRIBUTEID_BROWSENAME, 3).
+-define(UA_ATTRIBUTEID_DISPLAYNAME, 4).
+-define(UA_ATTRIBUTEID_DESCRIPTION, 5).
+-define(UA_ATTRIBUTEID_WRITEMASK, 6).
+-define(UA_ATTRIBUTEID_USERWRITEMASK, 7).
+-define(UA_ATTRIBUTEID_ISABSTRACT, 8).
+-define(UA_ATTRIBUTEID_SYMMETRIC, 9).
+-define(UA_ATTRIBUTEID_INVERSENAME, 10).
+-define(UA_ATTRIBUTEID_CONTAINSNOLOOPS, 11).
+-define(UA_ATTRIBUTEID_EVENTNOTIFIER, 12).
+-define(UA_ATTRIBUTEID_VALUE, 13).
+-define(UA_ATTRIBUTEID_DATATYPE, 14).
+-define(UA_ATTRIBUTEID_VALUERANK, 15).
+-define(UA_ATTRIBUTEID_ARRAYDIMENSIONS, 16).
+-define(UA_ATTRIBUTEID_ACCESSLEVEL, 17).
+-define(UA_ATTRIBUTEID_USERACCESSLEVEL, 18).
+-define(UA_ATTRIBUTEID_MINIMUMSAMPLINGINTERVAL,19).
+-define(UA_ATTRIBUTEID_HISTORIZING, 20).
+-define(UA_ATTRIBUTEID_EXECUTABLE, 21).
+-define(UA_ATTRIBUTEID_USEREXECUTABLE, 22).
+-define(UA_ATTRIBUTEID_DATATYPEDEFINITION, 23).
+-define(UA_ATTRIBUTEID_ROLEPERMISSIONS, 24).
+-define(UA_ATTRIBUTEID_USERROLEPERMISSIONS, 25).
+-define(UA_ATTRIBUTEID_ACCESSRESTRICTIONS, 26).
+-define(UA_ATTRIBUTEID_ACCESSLEVELEX, 27).
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %-- OPCUA Types Records --------------------------------------------------------

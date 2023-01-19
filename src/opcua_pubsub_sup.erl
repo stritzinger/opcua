@@ -1,4 +1,4 @@
--module(opcua_sup).
+-module(opcua_pubsub_sup).
 
 -behaviour(supervisor).
 
@@ -20,20 +20,10 @@ start_link() ->
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
-    PrivDir = code:priv_dir(opcua),
-    NodeSetDir = filename:join([PrivDir, "nodeset", "data"]),
-    KeychainOpts = application:get_env(opcua, keychain, #{}),
     Childs = [
-        worker(opcua_keychain_default, [KeychainOpts]),
-        worker(opcua_nodeset, [NodeSetDir]),
-        supervisor(opcua_client_sup, []),
-        supervisor(opcua_pubsub_sup, [])
-    ],
-    Childs2 = case application:get_env(start_server) of
-        {ok, false} -> Childs;
-        _ -> Childs ++ [supervisor(opcua_server_sup, [])]
-    end,
-    {ok, {#{strategy => one_for_one}, Childs2}}.
+        supervisor(opcua_pubsub_middleware_sup, []),
+        worker(opcua_pubsub, [])],
+    {ok, {#{strategy => one_for_all}, Childs}}.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
