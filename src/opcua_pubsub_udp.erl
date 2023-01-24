@@ -1,32 +1,21 @@
 -module(opcua_pubsub_udp).
 
--export([start_link/1]).
 
--export([send/1]).
-
--behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
+-export([init/1, send/2, handle_info/2]).
 
 -include_lib("kernel/include/logger.hrl").
 
 -record(state, {
-    connection_id,
     socket
 }).
 
-start_link(Opts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Opts], []).
 
-send(Data) ->
-    gen_server:cast(?MODULE, {?FUNCTION_NAME, Data}).
-
-init([#{
-        connection_id := ConnectionId,
+init(#{
         uri := #{
             host := BinaryIP,
             port := Port
         }
-        }]) ->
+        }) ->
     MulticastGroup = parse_ip(BinaryIP),
     InterfaceIP = get_ip_of_valid_interface(),
     ?LOG_DEBUG("PubSub UDP using interface ~p",[InterfaceIP]),
@@ -41,27 +30,16 @@ init([#{
         {ok, Socket} ->
             inet:setopts(Socket, [{add_membership,{MulticastGroup,InterfaceIP}}]),
             {ok, #state{
-                connection_id = ConnectionId,
                 socket = Socket
             }};
         {error, Reason} -> {error, Reason}
     end.
 
-handle_call(_, _, State) ->
-    {reply, ok, State}.
+send(Data, #state{socket = Socket}) ->
+    ok = gen_udp:send(Socket, Data).
 
-% handle_cast(disconnect, State) ->
-%     gen_udp:close(State#state.socket),
-%     {noreply, State#state{ socket = undefined}};
-handle_cast({send, Data}, #state{socket = Socket} = State) ->
-    gen_udp:send(Socket, Data),
-    {noreply, State}.
-
-handle_info({udp, Socket, _IP, _Port, Packet},
-        #state{socket = Socket, connection_id = ConnectionId} = S) ->
-    % io:format("~n~nFrom: ~p~nPort: ~p~nData: ~p~n",[_IP,_Port,Packet]),
-    opcua_pubsub:new_network_message(ConnectionId, Packet),
-    {noreply, S}.
+handle_info({udp, Socket, _IP, _Port, Packet}, #state{socket = Socket} = S) ->
+    Packet.
 
 
 % helpers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

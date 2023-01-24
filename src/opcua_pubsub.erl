@@ -10,9 +10,7 @@
 -export([add_published_data_set/1]).
 -export([add_data_set_field/2]).
 
--export([add_connection/2]).
--export([new_network_message/2]).
--export([remove_connection/1]).
+-export([new_connection/2]).
 
 -export([add_reader_group/2]).
 -export([add_writer_group/2]).
@@ -22,8 +20,13 @@
 
 -export([add_data_set_writer/3]).
 
+-export([start_connection/1]).
+-export([stop_connection/1]).
+
+-export([register_connection/1]).
+
 -record(state, {
-    connections = #{},
+    connections = #{},% Maps Ids to Pids
     published_data_sets = #{}
 }).
 
@@ -31,6 +34,13 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+start_connection(Connection) ->
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Connection}).
+
+
+stop_connection(ConnectionID) ->
+    gen_server:call(?MODULE, {?FUNCTION_NAME, ConnectionID}).
 
 % Publised Data Set configuration: PDS are independent
 add_published_data_set(Config) ->
@@ -40,72 +50,49 @@ add_published_data_set(Config) ->
 add_data_set_field(PublishedDataSetID, FieldConfig) ->
     gen_server:call(?MODULE, {?FUNCTION_NAME, PublishedDataSetID, FieldConfig}).
 
-add_connection(Url, Config) ->
-    gen_server:call(?MODULE, {?FUNCTION_NAME, Url, Config}).
-
-new_network_message(ConnectionId, Binary) ->
-    gen_server:cast(?MODULE, {?FUNCTION_NAME, ConnectionId, Binary}).
-
-remove_connection(ID) ->
-    gen_server:cast(?MODULE, {?FUNCTION_NAME, ID}).
+new_connection(Url, Opts) ->
+    opcua_pubsub_connection:create(Url, Opts).
 
 % Just a place to group DataSetReaders
-add_reader_group(ConnectionID, Config) ->
-    gen_server:call(?MODULE, {?FUNCTION_NAME, ConnectionID, Config}).
+add_reader_group(Connection, Config) ->
+    opcua_pubsub_connection:add_reader_group(Config, Connection).
 
-add_writer_group(ConnectionID, Config) ->
-    gen_server:call(?MODULE, {?FUNCTION_NAME, ConnectionID, Config}).
+add_writer_group(_Connection, _Config) ->
+    error(not_implemented).
 
 % define a DataSetReader, this includes its DataSetFieldMetaData
-add_data_set_reader(Conn_id, RG_id, DSR_cfg) ->
-    gen_server:call(?MODULE, {?FUNCTION_NAME, Conn_id, RG_id, DSR_cfg}).
+add_data_set_reader(Connection, RG_id, DSR_cfg) ->
+    opcua_pubsub_connection:add_data_set_reader(RG_id, DSR_cfg, Connection).
 
 % Add target variables to tell a DataSetReader where to write the decoded Fields
-create_target_variables(Conn_id, RG_id, DSR_id, Config) ->
-    gen_server:call(?MODULE, {?FUNCTION_NAME, Conn_id, RG_id, DSR_id, Config}).
+create_target_variables(Connection, RG_id, DSR_id, Cfg) ->
+    opcua_pubsub_connection:create_target_variables(RG_id, DSR_id, Cfg, Connection).
 
-add_data_set_writer(Conn_id, WG_id, DWR_cfg) ->
-    gen_server:call(?MODULE, {?FUNCTION_NAME, Conn_id, WG_id, DWR_cfg}).
+add_data_set_writer(Connection, WG_id, DWR_cfg) ->
+    gen_server:call(?MODULE, {?FUNCTION_NAME, Connection, WG_id, DWR_cfg}).
 
+% INTERNAL API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+register_connection(ID) ->
+    gen_server:cast(?MODULE, {?FUNCTION_NAME, ID, self()}).
 
 % GEN_SERVER callbacks %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init([]) ->
     {ok, #state{}}.
 
+handle_call({start_connection, ConnectionConfig}, _, S) ->
+    ID = uuid:get_v4(),
+    {ok, _} = supervisor:start_child(opcua_pubsub_connection_sup, [ID, ConnectionConfig]),
+    {reply, {ok, ID}, S};
+handle_call({stop_connection, ConnectionID}, _, #state{connections = Conns} = S) ->
+    Pid = maps:get(ConnectionID, Conns),
+    ok = supervisor:terminate_child(opcua_pubsub_connection_sup, Pid),
+    NewMap = maps:remove(ConnectionID, Conns),
+    {reply, ok, S#state{connections = NewMap}}.
 
-handle_call({add_connection, Url, Opts}, _, #state{connections = Conns} = S) ->
-    {ok, ID, Conn} = opcua_pubsub_connection:create(Url, Opts),
-    Conns2 = maps:put(ID, Conn, Conns),
-    {reply, {ok, ID}, S#state{connections = Conns2}};
-handle_call({add_reader_group, Conn_id, Opts}, _, #state{connections = Conns} = S) ->
-    Conn = maps:get(Conn_id, Conns),
-    {ok, ID, NewConn} = opcua_pubsub_connection:add_reader_group(Opts, Conn),
-    Conns2 = maps:put(Conn_id, NewConn, Conns),
-    {reply, {ok, ID}, S#state{connections = Conns2}};
-handle_call({add_data_set_reader, Conn_id, RG_id, Cfg}, _,
-                                            #state{connections = Conns} = S) ->
-    Conn = maps:get(Conn_id, Conns),
-    {ok, ID, NewConn} =
-            opcua_pubsub_connection:add_data_set_reader(RG_id, Cfg, Conn),
-    Conns2 = maps:put(Conn_id, NewConn, Conns),
-    {reply, {ok, ID}, S#state{connections = Conns2}};
-handle_call({create_target_variables, Conn_id, RG_id, DSR_id, Cfg}, _,
-                                            #state{connections = Conns} = S) ->
-    Conn = maps:get(Conn_id, Conns),
-    {ok, ID, NewConn} =
-            opcua_pubsub_connection:create_target_variables(RG_id, DSR_id, Cfg, Conn),
-    Conns2 = maps:put(Conn_id, NewConn, Conns),
-    {reply, {ok, ID}, S#state{connections = Conns2}}.
+handle_cast({register_connection, ID, Pid}, #state{connections = Conns} = State) ->
+    {noreply, State#state{connections =  maps:put(ID, Pid, Conns)}}.
 
-handle_cast({new_network_message, ConnId, Binary},
-                                    #state{connections = Connections} = S) ->
-    Connection = maps:get(ConnId, Connections),
-    {ok, NewConn} =
-            opcua_pubsub_connection:handle_network_message(Binary, Connection),
-    {noreply, S#state{connections = maps:put(ConnId, NewConn, Connections)}};
-handle_cast({remove_connection, ID}, #state{connections = Conns} = S) ->
-    ok = opcua_pubsub_connection:destroy(maps:get(ID, Conns)),
-    {noreply, S#state{connections = maps:remove(ID, Conns)}}.
 handle_info(_, S) ->
     {noreply, S}.
 

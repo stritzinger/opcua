@@ -1,4 +1,4 @@
--module(opcua_pubsub_middleware_sup).
+-module(opcua_pubsub_connection_sup).
 
 -behaviour(supervisor).
 
@@ -20,4 +20,7 @@ start_link() ->
 %%% BEHAVIOUR supervisor CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
-    {ok, {#{strategy => one_for_one}, []}}.
+    ChildSpecs = [#{id => none,
+                    start => {opcua_pubsub_connection, start_link, []},
+                    shutdown => brutal_kill}],
+    {ok, {#{strategy => simple_one_for_one}, ChildSpecs}}.

@@ -8,10 +8,10 @@
 run() ->
     Url = <<"opc.udp://224.0.0.22:4840">>,
     ConnectionConfig = #{},
-    {ok, ConnectionID} = opcua_pubsub:add_connection(Url, ConnectionConfig),
+    {ok, Conn} = opcua_pubsub:new_connection(Url, ConnectionConfig),
 
     ReaderGroupconfig = #{ name => <<"Simple Reader Group">>},
-    {ok, RG_id} = opcua_pubsub:add_reader_group(ConnectionID, ReaderGroupconfig),
+    {ok, RG_id, Conn2} = opcua_pubsub:add_reader_group(Conn, ReaderGroupconfig),
 
     DSR_config = #data_set_reader_config{
         name = <<"Example Reader">>,
@@ -31,8 +31,8 @@ run() ->
                 }]
         }
     },
-    {ok, DSR_id} =
-            opcua_pubsub:add_data_set_reader(ConnectionID, RG_id, DSR_config),
+    {ok, DSR_id, Conn3} =
+            opcua_pubsub:add_data_set_reader(Conn2, RG_id, DSR_config),
 
     % A dedicated object on the server (or any address space available)
     % containing all variables that will be updated by the DSR
@@ -45,5 +45,7 @@ run() ->
         target_node_id = VarNodeId,
         attribute_id = ?UA_ATTRIBUTEID_VALUE
     },
-    opcua_pubsub:create_target_variables(ConnectionID,RG_id,DSR_id,[TGT]),
+    {ok, Conn4} = opcua_pubsub:create_target_variables(Conn3,RG_id,DSR_id,[TGT]),
+
+    {ok, ID} = opcua_pubsub:start_connection(Conn4),
     ok.

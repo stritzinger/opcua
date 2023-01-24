@@ -21,7 +21,7 @@ start_link() ->
 
 init([]) ->
     Childs = [
-        supervisor(opcua_pubsub_middleware_sup, []),
+        supervisor(opcua_pubsub_connection_sup, []),
         worker(opcua_pubsub, [])],
     {ok, {#{strategy => one_for_all}, Childs}}.
 
