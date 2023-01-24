@@ -19,7 +19,7 @@
 -record(data_set_field_metadata,{
     name            :: string(),
     description     :: string(),
-    field_flags,
+    field_flags,    % This flag indicates if the field is promoted to the NetworkMessage header
     builtin_type    :: opcua:builtin_type(),
     data_type       :: opcua:node_id(),
     valueRank       :: integer(),

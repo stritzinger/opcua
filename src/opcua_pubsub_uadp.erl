@@ -3,11 +3,14 @@
 
 -export([decode_network_message_headers/1]).
 -export([decode_payload/2]).
+-export([decode_data_set_message_field/3]).
 
+-include("opcua.hrl").
 -include("opcua_pubsub.hrl").
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% Extracts the clear data from the message Headers and the payload binary
 decode_network_message_headers(<<VersionFlags:8/bitstring, Rest/binary>>) ->
     <<ExtendedFlags1:1,
       PayloadHeader:1,
@@ -44,14 +47,31 @@ decode_network_message_headers(<<VersionFlags:8/bitstring, Rest/binary>>) ->
 decode_network_message_headers(_) ->
     {error, unknown_message}.
 
+%extracts Dataset Messages from the payload blob decoding the headers
 decode_payload(#{payload_header := undefined}, Payload) ->
-    [decode_data_set_message(Payload)];
+    {DSM_header, Binary} = decode_data_set_message_header(Payload),
+    [{DSM_header, Binary}];
 decode_payload(#{payload_header := #{count := 1}}, Payload) ->
-    [decode_data_set_message(Payload)];
+    {DSM_header, Binary} = decode_data_set_message_header(Payload),
+    [{DSM_header, Binary}];
 decode_payload(#{payload_header := #{count := Count}}, Payload) ->
     <<SizesBinary:(Count*2)/binary, Rest/binary>> = Payload,
     Sizes = [Size || <<Size:16/unsigned-little>> <= SizesBinary],
     decode_multi_data_set_message(Rest, Sizes).
+
+decode_data_set_message_field(variant, FieldMetadata, Binary) ->
+    #data_set_field_metadata{
+        builtin_type = BuiltinType,
+        data_type = _NodeId,
+        valueRank = _
+    } = FieldMetadata,
+    {Result, Rest} = opcua_codec_binary:decode(variant, Binary),
+    case Result of
+        #opcua_variant{type = BuiltinType} -> {Result, Rest};
+        _ -> {error, unmatched_metadata}
+    end;
+decode_data_set_message_field(_, _, _) ->
+    error(bad_encoding_not_implemented).
 
 %%% INTERNALS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -176,14 +196,10 @@ decode_multi_data_set_message(Bin, Sizes) ->
 decode_multi_data_set_message(<<>>, [], Result) -> lists:reverse(Result);
 decode_multi_data_set_message(Bin, [S|TL], Result) ->
     <<DSM:S/binary, Rest/binary>> = Bin,
-    Decoded = decode_data_set_message(DSM),
-    decode_multi_data_set_message(Rest, [Decoded | Result], TL).
+    {DSM_header, Binary1} = decode_data_set_message_header(DSM),
+    decode_multi_data_set_message(Rest, [ {DSM_header, Binary1} | Result], TL).
 
 
-decode_data_set_message(Binary) ->
-    {DSM_header, Binary1} = decode_data_set_message_header(Binary),
-    DataSet = decode_data_set_message_data(DSM_header, Binary1),
-    {DSM_header, DataSet}.
 
 decode_data_set_message_header(DataSetMessageBinary) ->
     {DataSetFlags1, Rest} = decode_data_set_flags1(DataSetMessageBinary),
@@ -278,21 +294,3 @@ decode_data_set_cfg_minor_ver(#{config_ver_minor_ver := 0}, Bin) ->
     {undefined, Bin};
 decode_data_set_cfg_minor_ver(#{config_ver_minor_ver := 1}, Bin) ->
     opcua_codec_binary_builtin:decode(uint32, Bin).
-
-
-decode_data_set_message_data(
-        #{data_set_flags1 := #{
-            data_set_msg_valid := 1,
-            field_encoding := variant},
-        data_set_flags2 := #{
-            msg_type := data_key_frame}}, Bin) ->
-    {FieldCount, Bin1} = opcua_codec_binary_builtin:decode(uint16, Bin),
-    decode_variant_fields(Bin1, FieldCount).
-
-decode_variant_fields(Bin, Count) ->
-    decode_variant_fields(Bin, Count, []).
-
-decode_variant_fields(<<>>, 0, Fields) -> lists:reverse(Fields);
-decode_variant_fields(Bin, Count, Fields) ->
-    {Object, RemData} = opcua_codec_binary:decode(variant, Bin),
-    decode_variant_fields(RemData, Count-1, [Object | Fields]).

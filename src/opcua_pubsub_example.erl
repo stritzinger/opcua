@@ -24,7 +24,6 @@ run() ->
             description = "An example from 62541",
             fields = [
                 #data_set_field_metadata{
-                    data_set_field_id = 0,
                     name = "DateTime 1",
                     builtin_type = date_time,
                     data_type = opcua_node:id(date_time),
