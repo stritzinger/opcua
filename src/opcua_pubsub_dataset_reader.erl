@@ -1,4 +1,4 @@
--module(opcua_pubsub_data_set_reader).
+-module(opcua_pubsub_dataset_reader).
 
 -export([new/1]).
 -export([is_interested/2]).
@@ -15,25 +15,24 @@
     publisher_id,
     publisher_id_type,
     writer_group_id,
-    data_set_writer_id,
-    data_set_metadata  :: #data_set_metadata{},
+    dataset_writer_id,
+    dataset_metadata  :: #dataset_metadata{},
 
     subscribed_dataset :: undefined | [#target_variable{}] | #dataset_mirror{}
 }).
 
-
-new(#data_set_reader_config{
+new(#dataset_reader_config{
         name = Name,
         publisher_id = PubId,
         publisher_id_type = PubIdType,
         writer_group_id = WGId,
-        data_set_writer_id = DataSetWriterId,
-        data_set_metadata = DataSetMetadata}) ->
+        dataset_writer_id = DataSetWriterId,
+        dataset_metadata = DataSetMetadata}) ->
     {ok, #state{name = Name, publisher_id = PubId,
         publisher_id_type = PubIdType,
         writer_group_id = WGId,
-        data_set_writer_id = DataSetWriterId,
-        data_set_metadata = set_metadata_fields_ids(DataSetMetadata)}}.
+        dataset_writer_id = DataSetWriterId,
+        dataset_metadata = set_metadata_fields_ids(DataSetMetadata)}}.
 
 create_target_variables(Variables, State) ->
     {ok, State#state{subscribed_dataset = set_tgt_var_ids(Variables)}}.
@@ -47,49 +46,49 @@ is_interested(#{
                 writer_group_id := WG_id
             },
             payload_header := #{
-                data_set_writer_ids := DSW_ids
+                dataset_writer_ids := DSW_ids
             }
         } = _Headers,
         #state{ publisher_id = Pub_id,
                 writer_group_id = WG_id,
-                data_set_writer_id = DataSetWriterId}) ->
+                dataset_writer_id = DataSetWriterId}) ->
     lists:member(DataSetWriterId, DSW_ids);
 is_interested(_, _) ->
     false.
 
 process_messages([], State) -> State;
 process_messages([{DataSetWriterId, {Header, Data}} | Messages],
-        #state{data_set_writer_id = DataSetWriterId} = State) ->
+        #state{dataset_writer_id = DataSetWriterId} = State) ->
     % io:format("~p handling ~p~n",[?MODULE,Header]),
     % TODO: add msg version check, state machine management ecc..
-    {DataSet, NewState} = decode_data_set_message(Header, Data, State),
+    {DataSet, NewState} = decode_dataset_message(Header, Data, State),
     NewState2 = update_subscribed_dataset(DataSet, NewState),
     process_messages(Messages, NewState2);
 process_messages([ _| Messages], State) ->
     process_messages(Messages, State).
 
-decode_data_set_message( % case of invalid message
-                #{data_set_flags1 :=
-                    #{data_set_msg_valid := 0}},
+decode_dataset_message( % case of invalid message
+                #{dataset_flags1 :=
+                    #{dataset_msg_valid := 0}},
                 _, S) ->
     {[], S};
-decode_data_set_message(
+decode_dataset_message(
     #{
-        data_set_flags1 := #{
-            data_set_msg_valid := 1,
+        dataset_flags1 := #{
+            dataset_msg_valid := 1,
             field_encoding := Encoding,
-            data_set_msg_seq_num := _,
+            dataset_msg_seq_num := _,
             status := _,
             config_ver_minor_ver := _,
             config_ver_major_ver := _,
-            data_set_flags2 := _
+            dataset_flags2 := _
         },
-        data_set_flags2 := #{
+        dataset_flags2 := #{
             msg_type := MessageType, % keyframe / deltaframe / event  ecc...
             timestamp := _,
             picoseconds := _
         },
-        data_set_seq_num := _,
+        dataset_seq_num := _,
         timestamp := _,
         picoseconds := _,
         status := _,
@@ -98,7 +97,7 @@ decode_data_set_message(
     },
     Data,
     #state{
-        data_set_metadata = #data_set_metadata{
+        dataset_metadata = #dataset_metadata{
             fields = FieldsMetaData,
             configuration_version = _Ver}
         } = S) ->
@@ -117,7 +116,7 @@ decode_fields(_Encoding, _MessageType, _Fields, _Data) ->
 
 decode_keyframe( _, _, _, <<>>, DataSet) -> lists:reverse(DataSet);
 decode_keyframe(Encoding, [FieldMD|NextMDMD], FieldCount, Binary, DataSet) ->
-    {Decoded, Rest} = opcua_pubsub_uadp:decode_data_set_message_field(Encoding,
+    {Decoded, Rest} = opcua_pubsub_uadp:decode_dataset_message_field(Encoding,
                                                                       FieldMD,
                                                                       Binary),
     Data = {FieldMD, Decoded},
@@ -137,8 +136,8 @@ update_subscribed_dataset(DataSet, #state{subscribed_dataset = TGT_vars} = S)
 
 update_target_variables([], TGT_vars) -> ok;
 update_target_variables([{FieldMD, Variable}|DataSet], TGT_vars) ->
-    FieldId = FieldMD#data_set_field_metadata.data_set_field_id,
-    [TGT|_] = [ Var || #target_variable{data_set_field_id = DataSetFieldId} = Var
+    FieldId = FieldMD#dataset_field_metadata.dataset_field_id,
+    [TGT|_] = [ Var || #target_variable{dataset_field_id = DataSetFieldId} = Var
                     <- TGT_vars, DataSetFieldId == FieldId],
     TargetNodeId = TGT#target_variable.target_node_id,
     AttrId = TGT#target_variable.attribute_id,
@@ -149,12 +148,12 @@ update_tgt_var_attribute(TargetNodeId, ?UA_ATTRIBUTEID_VALUE,
                                             #opcua_variant{value = Value}) ->
     opcua_server:set_value(TargetNodeId, Value).
 
-set_metadata_fields_ids(#data_set_metadata{fields = Fields} = DSMD) ->
+set_metadata_fields_ids(#dataset_metadata{fields = Fields} = DSMD) ->
     Ids = lists:seq(0, length(Fields) - 1),
-    DSMD#data_set_metadata{fields =
-        [F#data_set_field_metadata{data_set_field_id = I}
+    DSMD#dataset_metadata{fields =
+        [F#dataset_field_metadata{dataset_field_id = I}
                 || {I,F} <- lists:zip(Ids, Fields)]}.
 
 set_tgt_var_ids(Varables) ->
     Ids = lists:seq(0, length(Varables) - 1),
-    [V#target_variable{data_set_field_id = I} || {I,V} <- lists:zip(Ids, Varables)].
+    [V#target_variable{dataset_field_id = I} || {I,V} <- lists:zip(Ids, Varables)].

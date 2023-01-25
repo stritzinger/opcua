@@ -3,7 +3,7 @@
 
 -export([decode_network_message_headers/1]).
 -export([decode_payload/2]).
--export([decode_data_set_message_field/3]).
+-export([decode_dataset_message_field/3]).
 
 -include("opcua.hrl").
 -include("opcua_pubsub.hrl").
@@ -49,18 +49,18 @@ decode_network_message_headers(_) ->
 
 %extracts Dataset Messages from the payload blob decoding the headers
 decode_payload(#{payload_header := undefined}, Payload) ->
-    {DSM_header, Binary} = decode_data_set_message_header(Payload),
+    {DSM_header, Binary} = decode_dataset_message_header(Payload),
     [{DSM_header, Binary}];
 decode_payload(#{payload_header := #{count := 1}}, Payload) ->
-    {DSM_header, Binary} = decode_data_set_message_header(Payload),
+    {DSM_header, Binary} = decode_dataset_message_header(Payload),
     [{DSM_header, Binary}];
 decode_payload(#{payload_header := #{count := Count}}, Payload) ->
     <<SizesBinary:(Count*2)/binary, Rest/binary>> = Payload,
     Sizes = [Size || <<Size:16/unsigned-little>> <= SizesBinary],
-    decode_multi_data_set_message(Rest, Sizes).
+    decode_multi_dataset_message(Rest, Sizes).
 
-decode_data_set_message_field(variant, FieldMetadata, Binary) ->
-    #data_set_field_metadata{
+decode_dataset_message_field(variant, FieldMetadata, Binary) ->
+    #dataset_field_metadata{
         builtin_type = BuiltinType,
         data_type = _NodeId,
         valueRank = _
@@ -70,7 +70,7 @@ decode_data_set_message_field(variant, FieldMetadata, Binary) ->
         #opcua_variant{type = BuiltinType} -> {Result, Rest};
         _ -> {error, unmatched_metadata}
     end;
-decode_data_set_message_field(_, _, _) ->
+decode_dataset_message_field(_, _, _) ->
     error(bad_encoding_not_implemented).
 
 %%% INTERNALS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -127,7 +127,7 @@ decode_extended_flags2(1, <<
     }, Bin}.
 
 
-decode_network_msg_type(<< 0:1, 0:1, 0:1>>) -> data_set_message;
+decode_network_msg_type(<< 0:1, 0:1, 0:1>>) -> dataset_message;
 decode_network_msg_type(<< 0:1, 0:1, 1:1>>) -> discovery_request;
 decode_network_msg_type(<< 0:1, 1:1, 0:1>>) -> discovery_responce;
 decode_network_msg_type(<< _:1, _:1, _:1>>) -> reserved.
@@ -175,12 +175,12 @@ decode_payload_header(0, _, Bin) -> {undefined, Bin};
 decode_payload_header(1, #{chunk := 1}, Bin) ->
     {DataSetWriterID, Rest} = opcua_codec_binary_builtin:decode(uint16, Bin),
     throw({not_implemented, chunked_network_message});
-decode_payload_header(1, #{network_message_type := data_set_message}, Bin) ->
+decode_payload_header(1, #{network_message_type := dataset_message}, Bin) ->
     <<MsgCount:8/unsigned-little, Rest/binary>> = Bin,
     <<DataWriterIDs:(MsgCount*2)/binary, Rest2/binary>> = Rest,
     {#{
         count => MsgCount,
-        data_set_writer_ids =>
+        dataset_writer_ids =>
             [ DataWriterID || <<DataWriterID:16/unsigned-little>> <= DataWriterIDs]
     }, Rest2};
 decode_payload_header(1, #{network_message_type := discovery_request}, Bin) ->
@@ -190,30 +190,30 @@ decode_payload_header(1, #{network_message_type := discovery_responce}, Bin) ->
 
 
 
-decode_multi_data_set_message(Bin, Sizes) ->
-    decode_multi_data_set_message(Bin, Sizes, []).
+decode_multi_dataset_message(Bin, Sizes) ->
+    decode_multi_dataset_message(Bin, Sizes, []).
 
-decode_multi_data_set_message(<<>>, [], Result) -> lists:reverse(Result);
-decode_multi_data_set_message(Bin, [S|TL], Result) ->
+decode_multi_dataset_message(<<>>, [], Result) -> lists:reverse(Result);
+decode_multi_dataset_message(Bin, [S|TL], Result) ->
     <<DSM:S/binary, Rest/binary>> = Bin,
-    {DSM_header, Binary1} = decode_data_set_message_header(DSM),
-    decode_multi_data_set_message(Rest, [ {DSM_header, Binary1} | Result], TL).
+    {DSM_header, Binary1} = decode_dataset_message_header(DSM),
+    decode_multi_dataset_message(Rest, [ {DSM_header, Binary1} | Result], TL).
 
 
 
-decode_data_set_message_header(DataSetMessageBinary) ->
-    {DataSetFlags1, Rest} = decode_data_set_flags1(DataSetMessageBinary),
-    {DataSetFlags2, Rest1} = decode_data_set_flags2(DataSetFlags1, Rest),
-    {DataSetSeqNum, Rest2} = decode_data_set_seq_num(DataSetFlags1, Rest1),
-    {Timestamp, Rest3} = decode_data_set_timestamp(DataSetFlags2, Rest2),
-    {Picoseconds, Rest4} = decode_data_set_picoseconds(DataSetFlags2, Rest3),
-    {Status, Rest5} = decode_data_set_status(DataSetFlags1, Rest4),
-    {ConfigVerMajorVer, Rest6} = decode_data_set_cfg_major_ver(DataSetFlags1, Rest5),
-    {ConfigVerMinorVer, Rest7} = decode_data_set_cfg_minor_ver(DataSetFlags1, Rest6),
+decode_dataset_message_header(DataSetMessageBinary) ->
+    {DataSetFlags1, Rest} = decode_dataset_flags1(DataSetMessageBinary),
+    {DataSetFlags2, Rest1} = decode_dataset_flags2(DataSetFlags1, Rest),
+    {DataSetSeqNum, Rest2} = decode_dataset_seq_num(DataSetFlags1, Rest1),
+    {Timestamp, Rest3} = decode_dataset_timestamp(DataSetFlags2, Rest2),
+    {Picoseconds, Rest4} = decode_dataset_picoseconds(DataSetFlags2, Rest3),
+    {Status, Rest5} = decode_dataset_status(DataSetFlags1, Rest4),
+    {ConfigVerMajorVer, Rest6} = decode_dataset_cfg_major_ver(DataSetFlags1, Rest5),
+    {ConfigVerMinorVer, Rest7} = decode_dataset_cfg_minor_ver(DataSetFlags1, Rest6),
     {#{
-        data_set_flags1 => DataSetFlags1,
-        data_set_flags2 => DataSetFlags2,
-        data_set_seq_num => DataSetSeqNum,
+        dataset_flags1 => DataSetFlags1,
+        dataset_flags2 => DataSetFlags2,
+        dataset_seq_num => DataSetSeqNum,
         timestamp => Timestamp,
         picoseconds => Picoseconds,
         status => Status,
@@ -222,7 +222,7 @@ decode_data_set_message_header(DataSetMessageBinary) ->
     },
     Rest7}.
 
-decode_data_set_flags1(<<
+decode_dataset_flags1(<<
         DataSetFlags2:1,
         ConfigVerMinorVer:1,
         ConfigVerMajorVer:1,
@@ -232,13 +232,13 @@ decode_data_set_flags1(<<
         DataSetMsgValid:1,
         Rest/binary>>) ->
     {#{
-        data_set_msg_valid => DataSetMsgValid,
+        dataset_msg_valid => DataSetMsgValid,
         field_encoding => decode_field_encoding(FieldEncoding),
-        data_set_msg_seq_num => DataSetMsgSeqNum,
+        dataset_msg_seq_num => DataSetMsgSeqNum,
         status => Status,
         config_ver_minor_ver => ConfigVerMajorVer,
         config_ver_major_ver => ConfigVerMinorVer,
-        data_set_flags2 => DataSetFlags2
+        dataset_flags2 => DataSetFlags2
     }, Rest}.
 
 decode_field_encoding(<<0:1, 0:1>>) -> variant;
@@ -246,51 +246,51 @@ decode_field_encoding(<<0:1, 1:1>>) -> raw;
 decode_field_encoding(<<1:1, 0:1>>) -> data_value;
 decode_field_encoding(<<1:1, 1:1>>) -> reserved.
 
-decode_data_set_flags2(#{data_set_flags2 := 0}, Bin) ->
+decode_dataset_flags2(#{dataset_flags2 := 0}, Bin) ->
     {#{
-        msg_type => decode_data_set_message_type(<<0:4>>),
+        msg_type => decode_dataset_message_type(<<0:4>>),
         timestamp => 0,
         picoseconds => 0}, Bin};
-decode_data_set_flags2(#{data_set_flags2 := 1},
+decode_dataset_flags2(#{dataset_flags2 := 1},
         <<_Reserved:2,
         PicoSeconds:1,
         Timestamp:1,
         DataMsgType:4/bitstring,
         Rest/binary>>) ->
     {#{
-        msg_type => decode_data_set_message_type(DataMsgType),
+        msg_type => decode_dataset_message_type(DataMsgType),
         timestamp => Timestamp,
         picoseconds => PicoSeconds
     }, Rest}.
 
-decode_data_set_message_type(<<0:4>>) -> data_key_frame;
-decode_data_set_message_type(<<0:1, 0:1, 0:1, 1:1>>) -> data_delta_frame;
-decode_data_set_message_type(<<0:1, 0:1, 1:1, 0:1>>) -> event;
-decode_data_set_message_type(<<0:1, 0:1, 1:1, 1:1>>) -> keep_alive;
-decode_data_set_message_type(<<_:4>>) -> reserved.
+decode_dataset_message_type(<<0:4>>) -> data_key_frame;
+decode_dataset_message_type(<<0:1, 0:1, 0:1, 1:1>>) -> data_delta_frame;
+decode_dataset_message_type(<<0:1, 0:1, 1:1, 0:1>>) -> event;
+decode_dataset_message_type(<<0:1, 0:1, 1:1, 1:1>>) -> keep_alive;
+decode_dataset_message_type(<<_:4>>) -> reserved.
 
-decode_data_set_seq_num(#{data_set_msg_seq_num := 0}, Bin) -> {undefined, Bin};
-decode_data_set_seq_num(#{data_set_msg_seq_num := 1}, Bin) ->
+decode_dataset_seq_num(#{dataset_msg_seq_num := 0}, Bin) -> {undefined, Bin};
+decode_dataset_seq_num(#{dataset_msg_seq_num := 1}, Bin) ->
     opcua_codec_binary_builtin:decode(uint16, Bin).
 
-decode_data_set_timestamp(#{timestamp := 0}, Bin) -> {undefined, Bin};
-decode_data_set_timestamp(#{timestamp := 1}, Bin) ->
+decode_dataset_timestamp(#{timestamp := 0}, Bin) -> {undefined, Bin};
+decode_dataset_timestamp(#{timestamp := 1}, Bin) ->
     opcua_codec_binary_builtin:decode(date_time, Bin).
 
-decode_data_set_picoseconds(#{picoseconds := 0}, Bin) -> {undefined, Bin};
-decode_data_set_picoseconds(#{picoseconds := 1}, Bin) ->
+decode_dataset_picoseconds(#{picoseconds := 0}, Bin) -> {undefined, Bin};
+decode_dataset_picoseconds(#{picoseconds := 1}, Bin) ->
     opcua_codec_binary_builtin:decode(uint16, Bin).
 
-decode_data_set_status(#{status := 0}, Bin) -> {undefined, Bin};
-decode_data_set_status(#{status := 1}, Bin) ->
+decode_dataset_status(#{status := 0}, Bin) -> {undefined, Bin};
+decode_dataset_status(#{status := 1}, Bin) ->
     opcua_codec_binary_builtin:decode(uint16, Bin).
 
-decode_data_set_cfg_major_ver(#{config_ver_major_ver := 0}, Bin) ->
+decode_dataset_cfg_major_ver(#{config_ver_major_ver := 0}, Bin) ->
     {undefined, Bin};
-decode_data_set_cfg_major_ver(#{config_ver_major_ver := 1}, Bin) ->
+decode_dataset_cfg_major_ver(#{config_ver_major_ver := 1}, Bin) ->
     opcua_codec_binary_builtin:decode(uint32, Bin).
 
-decode_data_set_cfg_minor_ver(#{config_ver_minor_ver := 0}, Bin) ->
+decode_dataset_cfg_minor_ver(#{config_ver_minor_ver := 0}, Bin) ->
     {undefined, Bin};
-decode_data_set_cfg_minor_ver(#{config_ver_minor_ver := 1}, Bin) ->
+decode_dataset_cfg_minor_ver(#{config_ver_minor_ver := 1}, Bin) ->
     opcua_codec_binary_builtin:decode(uint32, Bin).

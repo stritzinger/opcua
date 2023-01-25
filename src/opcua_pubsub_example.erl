@@ -1,11 +1,12 @@
 -module(opcua_pubsub_example).
 
--export([run/0]).
+-export([subscription/0]).
+-export([publication/0]).
 
 -include("opcua.hrl").
 -include("opcua_pubsub.hrl").
 
-run() ->
+subscription() ->
     Url = <<"opc.udp://224.0.0.22:4840">>,
     ConnectionConfig = #{},
     {ok, Conn} = opcua_pubsub:new_connection(Url, ConnectionConfig),
@@ -13,17 +14,17 @@ run() ->
     ReaderGroupconfig = #{ name => <<"Simple Reader Group">>},
     {ok, RG_id, Conn2} = opcua_pubsub:add_reader_group(Conn, ReaderGroupconfig),
 
-    DSR_config = #data_set_reader_config{
+    DSR_config = #dataset_reader_config{
         name = <<"Example Reader">>,
         publisher_id = 2234,
         publisher_id_type = uint16,
         writer_group_id = 100,
-        data_set_writer_id = 62541,
-        data_set_metadata = #data_set_metadata{
+        dataset_writer_id = 62541,
+        dataset_metadata = #dataset_metadata{
             name = "DataSet 1",
             description = "An example from 62541",
             fields = [
-                #data_set_field_metadata{
+                #dataset_field_metadata{
                     name = "DateTime 1",
                     builtin_type = date_time,
                     data_type = opcua_node:id(date_time),
@@ -32,7 +33,7 @@ run() ->
         }
     },
     {ok, DSR_id, Conn3} =
-            opcua_pubsub:add_data_set_reader(Conn2, RG_id, DSR_config),
+            opcua_pubsub:add_dataset_reader(Conn2, RG_id, DSR_config),
 
     % A dedicated object on the server (or any address space available)
     % containing all variables that will be updated by the DSR
@@ -41,7 +42,7 @@ run() ->
                                           undefined, date_time, 0),
 
     TGT = #target_variable{
-        data_set_field_id = 0,
+        dataset_field_id = 0,
         target_node_id = VarNodeId,
         attribute_id = ?UA_ATTRIBUTEID_VALUE
     },
@@ -49,3 +50,52 @@ run() ->
 
     {ok, ID} = opcua_pubsub:start_connection(Conn4),
     ok.
+
+publication() ->
+
+    PDS_cfg = #published_dataset{
+        name = "PublishedDataSet Example",
+        dataset_metadata = #dataset_metadata{
+            name = "My Metadata"
+        }
+    },
+    {ok, PDS_id} = opcua_pubsub:add_published_dataset(PDS_cfg),
+
+    % we specify the fields metadata and their sources
+    % In this case we list available variables as sources
+    FieldsMetaData = [#dataset_field_metadata{
+        name = "DateTime 1",
+        builtin_type = date_time,
+        data_type = opcua_node:id(date_time),
+        valueRank = -1 % a scalar,
+    }],
+    FieldsSource = [
+        #published_variable{
+            published_variable = ?NNID(2256),
+            attribute_id = ?UA_ATTRIBUTEID_VALUE
+        }],
+    ok = opcua_pubsub:add_published_dataset_field(PDS_id, FieldsMetaData, FieldsSource),
+
+    Url = <<"opc.udp://224.0.0.22:4840">>,
+    ConnectionConfig = #{
+        publisher_id_type => uint16,
+        publisher_id => 2234
+    },
+    {ok, Conn} = opcua_pubsub:new_connection(Url, ConnectionConfig),
+
+    WriterGroupconfig = #writer_group_config{
+        name = <<"Simple Writer Group">>,
+        writer_group_id = 100,
+        publishing_interval = 100
+    },
+    {ok, WG_id, Conn2} = opcua_pubsub:add_writer_group(Conn, WriterGroupconfig),
+
+    DataSetWriterConfig = #dataset_writer_config{
+        name = <<"Simple DataSet Writer">>,
+        dataset_writer_id = 62541,
+        keyframe_count = 10
+    },
+    {ok, DSW_id, Conn3} = opcua_pubsub:add_dataset_writer(Conn2, WG_id,
+                                                    PDS_id, DataSetWriterConfig),
+    ok.
+

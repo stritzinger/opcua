@@ -1,14 +1,20 @@
 -module(opcua_pubsub_connection).
 
--export([start_link/2]).
--export([send/2]).
 -export([create/2]).
 -export([add_reader_group/2]).
--export([add_data_set_reader/3]).
+-export([add_dataset_reader/3]).
 -export([create_target_variables/4]).
+
+-export([add_writer_group/2]).
+-export([add_dataset_writer/4]).
+
+-export([start_link/2]).
+-export([send/2]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
+
+-include("opcua_pubsub.hrl").
 
 -record(state, {
     id,
@@ -18,7 +24,6 @@
     writer_groups = #{}
 }).
 
--include("opcua_pubsub.hrl").
 
 % CONFIGURATION API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % These help to build the Connection process state
@@ -36,9 +41,9 @@ add_reader_group(ReaderGroupCfg, #state{reader_groups = RG} = S) ->
     RG2 = maps:put(RG_id, ReaderGroup, RG),
     {ok, RG_id, S#state{reader_groups = RG2}}.
 
-add_data_set_reader(RG_id, DSR_cfg, #state{reader_groups = RGs} = S) ->
+add_dataset_reader(RG_id, DSR_cfg, #state{reader_groups = RGs} = S) ->
     RG = maps:get(RG_id, RGs),
-    {ok, DSR_id, NewRG} = opcua_pubsub_reader_group:add_data_set_reader(DSR_cfg, RG),
+    {ok, DSR_id, NewRG} = opcua_pubsub_reader_group:add_dataset_reader(DSR_cfg, RG),
     NewGroups = maps:put(RG_id, NewRG, RGs),
     {ok, DSR_id, S#state{reader_groups = NewGroups}}.
 
@@ -48,6 +53,17 @@ create_target_variables(RG_id, DSR_id, Config, #state{reader_groups = RGs} = S) 
     NewGroups = maps:put(RG_id, NewRG, RGs),
     {ok, S#state{reader_groups = NewGroups}}.
 
+add_writer_group(ReaderGroupCfg, #state{writer_groups = WGs} = S) ->
+    WG_id = uuid:get_v4(),
+    {ok, WriterGroup} = opcua_pubsub_writer_group:new(ReaderGroupCfg),
+    WGs2 = maps:put(WG_id, WriterGroup, WGs),
+    {ok, WG_id, S#state{writer_groups = WGs2}}.
+
+add_dataset_writer(WG_id, PDS_id, WriterCfg, #state{writer_groups = WGs} = S) ->
+    WG = maps:get(WG_id, WGs),
+    {ok, DSW_is, NewWriterGroup} = opcua_pubsub_writer_group:add_dataset_writer(PDS_id, WriterCfg, WG),
+    WGs2 = maps:put(WG_id, NewWriterGroup, WGs),
+    {ok, DSW_is, S#state{writer_groups = WGs2}}.
 
 %%% GEN_SERVER API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -112,7 +128,7 @@ handle_network_message(Binary, #state{reader_groups = RGs} = S) ->
             % opcua_pubsub_security: ... not_implemented yet
             % Then we decode all messages
             DataSetMessages = opcua_pubsub_uadp:decode_payload(Headers, Payload),
-            #{payload_header := #{data_set_writer_ids := DSW_ids}} = Headers,
+            #{payload_header := #{dataset_writer_ids := DSW_ids}} = Headers,
             BundledMessages = lists:zip(DSW_ids, DataSetMessages),
             % After processing, the DSRs could change state.
             % All groups must be updated
