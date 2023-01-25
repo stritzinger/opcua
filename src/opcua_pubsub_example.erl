@@ -97,5 +97,9 @@ publication() ->
     },
     {ok, DSW_id, Conn3} = opcua_pubsub:add_dataset_writer(Conn2, WG_id,
                                                     PDS_id, DataSetWriterConfig),
+
+
+    {ok, ID} = opcua_pubsub:start_connection(Conn3),
+
     ok.
 

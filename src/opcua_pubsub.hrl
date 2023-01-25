@@ -51,7 +51,7 @@
 -record(published_variable,{
     published_variable,
     attribute_id,
-    sampling_interval_hint,
+    sampling_interval_hint = -1,
     deadband_type = 0           :: 0 | 1 | 2,
     deadband_value = 0.0        :: float(),
     index_rande,
@@ -77,7 +77,7 @@
 }).
 
 -record(writer_group_config,{
-    enabled,
+    enabled = true :: boolean(),
     name,
     writer_group_id,
     publishing_interval,

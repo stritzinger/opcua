@@ -22,8 +22,8 @@
 
 -export([start_connection/1]).
 -export([stop_connection/1]).
-
 -export([register_connection/1]).
+-export([get_published_dataset/1]).
 
 -include("opcua_pubsub.hrl").
 
@@ -41,7 +41,6 @@ start_link() ->
 start_connection(Connection) ->
     gen_server:call(?MODULE, {?FUNCTION_NAME, Connection}).
 
-
 stop_connection(ConnectionID) ->
     gen_server:call(?MODULE, {?FUNCTION_NAME, ConnectionID}).
 
@@ -52,6 +51,9 @@ add_published_dataset(Config) ->
 % Adds definitions per-field for a PublishedDataSet
 add_published_dataset_field(PDS_ID, FieldsMetaData, FieldsSource) ->
     gen_server:call(?MODULE, {?FUNCTION_NAME, PDS_ID, FieldsMetaData, FieldsSource}).
+
+get_published_dataset(PDS_ID) ->
+    gen_server:call(?MODULE, {?FUNCTION_NAME, PDS_ID}).
 
 new_connection(Url, Opts) ->
     opcua_pubsub_connection:create(Url, Opts).
@@ -102,7 +104,10 @@ handle_call({add_published_dataset_field, PDS_id, FieldsMetadata, FieldsSources}
     PDS = maps:get(PDS_id, PDSs),
     NewPDS = h_add_published_dataset_field(PDS, FieldsMetadata, FieldsSources),
     NewMap = maps:put(PDS_id, NewPDS, PDSs),
-    {reply, ok, S#state{published_datasets = NewMap}}.
+    {reply, ok, S#state{published_datasets = NewMap}};
+handle_call({get_published_dataset, PDS_ID},
+            _, #state{published_datasets = PublishedDatasets} = S) ->
+    {reply, maps:get(PDS_ID, PublishedDatasets), S}.
 
 handle_cast({register_connection, ID, Pid}, #state{connections = Conns} = State) ->
     {noreply, State#state{connections =  maps:put(ID, Pid, Conns)}}.

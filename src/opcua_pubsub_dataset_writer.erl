@@ -1,7 +1,7 @@
 -module(opcua_pubsub_dataset_writer).
 
 -export([new/2]).
--export([write/1]).
+-export([write_dataset_message/1]).
 
 -include("opcua.hrl").
 -include("opcua_pubsub.hrl").
@@ -41,5 +41,8 @@ new(PDS_ID, #dataset_writer_config{
         connected_published_dataset = PDS_ID
     }}.
 
-write(#state{} = S) ->
-    S.
+
+write_dataset_message(#state{connected_published_dataset = PDS_id} = S) ->
+    PDS = opcua_pubsub:get_published_dataset(PDS_id),
+    {<<>>, S}.
+

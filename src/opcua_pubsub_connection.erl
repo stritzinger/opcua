@@ -9,7 +9,6 @@
 -export([add_dataset_writer/4]).
 
 -export([start_link/2]).
--export([send/2]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
@@ -26,7 +25,7 @@
 
 
 % CONFIGURATION API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% These help to build the Connection process state
+% These help to build the initial Connection process state
 % which holds the settings of all pubsub sub-entities
 
 create(Url, Config) ->
@@ -53,9 +52,9 @@ create_target_variables(RG_id, DSR_id, Config, #state{reader_groups = RGs} = S) 
     NewGroups = maps:put(RG_id, NewRG, RGs),
     {ok, S#state{reader_groups = NewGroups}}.
 
-add_writer_group(ReaderGroupCfg, #state{writer_groups = WGs} = S) ->
+add_writer_group(WriterGroupCfg, #state{writer_groups = WGs} = S) ->
     WG_id = uuid:get_v4(),
-    {ok, WriterGroup} = opcua_pubsub_writer_group:new(ReaderGroupCfg),
+    {ok, WriterGroup} = opcua_pubsub_writer_group:new(WriterGroupCfg),
     WGs2 = maps:put(WG_id, WriterGroup, WGs),
     {ok, WG_id, S#state{writer_groups = WGs2}}.
 
@@ -70,17 +69,18 @@ add_dataset_writer(WG_id, PDS_id, WriterCfg, #state{writer_groups = WGs} = S) ->
 start_link(ID, ConfiguredState) ->
     gen_server:start_link(?MODULE, [ID, ConfiguredState], []).
 
-send(Pid, Data) ->
-    gen_server:cast(Pid, {?FUNCTION_NAME, Data}).
-
 %%% GEN_SERVER CALLBACKS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init([ID, #state{config = Config} = ConfiguredState]) ->
+init([ID, #state{
+        config = Config,
+        writer_groups = WriterGroups} = ConfiguredState]) ->
     case start_transport(Config) of
         {ok, Module, State} ->
             opcua_pubsub:register_connection(ID),
+            WG2 = init_writer_groups(WriterGroups),
             {ok, ConfiguredState#state{
                 id = ID,
+                writer_groups = WG2,
                 middleware = {Module, State}
             }};
         {error, E} -> error(E)
@@ -89,10 +89,19 @@ init([ID, #state{config = Config} = ConfiguredState]) ->
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
-handle_cast({send, Data}, #state{middleware = {M,S}} = State) ->
-    M:send(Data, S),
+handle_cast(_, State) ->
     {noreply, State}.
 
+handle_info({publish, WG_ID}, #state{
+            middleware = {Module, MiddlewareState},
+            writer_groups = WriterGroups} = State) ->
+    WG = maps:get(WG_ID, WriterGroups),
+    {NetMsg, NewWG} = opcua_pubsub_writer_group:write_network_message(WG),
+    io:format("Sending NetworkMsg: ~p~n",[NetMsg]),
+    %MiddlewareState2 = Module:send(NetMsg, MiddlewareState),
+    {noreply, State#state{
+        %middleware = {Module, MiddlewareState2},
+        writer_groups = maps:put(WG_ID, NewWG, WriterGroups)}};
 handle_info(Info, #state{middleware = {M, S}} = State) ->
     {ok, NewS} = handle_network_message(M:handle_info(Info, S), State),
     {noreply, NewS}.
@@ -146,3 +155,8 @@ dispatchMessages(BundledMessages, InterestedReaders) ->
         {RG_id, NewRG}
      end || {RG_id, RG, DSR_ids} <- InterestedReaders].
 
+init_writer_groups(WriterGroups) ->
+    maps:from_list([begin
+            NewWG = opcua_pubsub_writer_group:init(ID, G),
+            {ID, NewWG}
+        end || {ID, G} <- maps:to_list(WriterGroups)]).
