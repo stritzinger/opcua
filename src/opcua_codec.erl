@@ -24,6 +24,7 @@
 -export([unpack_type/3]).
 -export([unpack_enum/2]).
 -export([unpack_option_set/2]).
+-export([unpack_variant/1]).
 -export([builtin_type_name/1]).
 -export([builtin_type_id/1]).
 
@@ -118,6 +119,18 @@ unpack_option_set(#opcua_option_set{fields = Fields}, Value) ->
         end
      end, [], Fields),
     lists:reverse(FieldNames).
+
+-spec unpack_variant(opcua:variant()) -> term().
+unpack_variant(#opcua_variant{type = extension_object,
+                                      value = #opcua_extension_object{
+                                            type_id = DataTypeID,
+                                            body = Data
+                                      }}) ->
+    % Not sure what to do here ...
+    % For now I just extract the type and value
+    {DataTypeID, Data};
+unpack_variant(#opcua_variant{type = _, value = _}) ->
+    error(bad_not_implemented).
 
 builtin_type_name( 1) -> boolean;
 builtin_type_name( 2) -> sbyte;

@@ -6,7 +6,8 @@
 -include_lib("kernel/include/logger.hrl").
 
 -record(state, {
-    socket
+    socket,
+    out_socket
 }).
 
 
@@ -24,23 +25,26 @@ init(#{
         {active, true},
         {reuseaddr, true},
         {ip, MulticastGroup},
-        {multicast_ttl, 10}
+        {multicast_ttl, 10},
+        {multicast_loop, false}
     ],
     case gen_udp:open(Port, Opts) of
         {ok, Socket} ->
-            inet:setopts(Socket, [{add_membership,{MulticastGroup,InterfaceIP}}]),
+            inet:setopts(Socket, [{add_membership,{MulticastGroup, InterfaceIP}}]),
+            {ok, S} = gen_udp:open(0),
             {ok, #state{
-                socket = Socket
+                socket = Socket,
+                out_socket = S
             }};
         {error, Reason} -> {error, Reason}
     end.
 
-send(Data, #state{socket = Socket}) ->
-    ok = gen_udp:send(Socket, Data).
+send(Data, #state{out_socket = Socket} = S) ->
+    ok = gen_udp:send(Socket, {224,0,0,22}, 4840, Data),
+    S.
 
 handle_info({udp, Socket, _IP, _Port, Packet}, #state{socket = Socket} = S) ->
     Packet.
-
 
 % helpers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %

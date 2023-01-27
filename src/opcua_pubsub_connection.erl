@@ -1,6 +1,6 @@
 -module(opcua_pubsub_connection).
 
--export([create/2]).
+-export([create/3]).
 -export([add_reader_group/2]).
 -export([add_dataset_reader/3]).
 -export([create_target_variables/4]).
@@ -17,7 +17,10 @@
 
 -record(state, {
     id,
-    config,
+    uri,
+    transport_config,
+    publisher_id,
+    publisher_id_type,
     middleware :: {module(), term()},
     reader_groups = #{},
     writer_groups = #{}
@@ -28,11 +31,17 @@
 % These help to build the initial Connection process state
 % which holds the settings of all pubsub sub-entities
 
-create(Url, Config) ->
+create(Url,
+       #connection_config{publisher_id = PublisherId,
+                          publisher_id_type = PublisherIdType},
+       TransportOpts) ->
     Uri = uri_string:parse(Url),
-    Config2 = maps:merge(default_config(), Config),
-    Config3 = maps:put(uri, Uri, Config2),
-    {ok, #state{config = Config3}}.
+    Config2 = maps:merge(default_config(), TransportOpts),
+    Config3 = maps:merge(Config2, #{uri => Uri}),
+    {ok, #state{uri = Uri,
+                transport_config = Config3,
+                publisher_id = PublisherId,
+                publisher_id_type = PublisherIdType}}.
 
 add_reader_group(ReaderGroupCfg, #state{reader_groups = RG} = S) ->
     RG_id = uuid:get_v4(),
@@ -52,9 +61,14 @@ create_target_variables(RG_id, DSR_id, Config, #state{reader_groups = RGs} = S) 
     NewGroups = maps:put(RG_id, NewRG, RGs),
     {ok, S#state{reader_groups = NewGroups}}.
 
-add_writer_group(WriterGroupCfg, #state{writer_groups = WGs} = S) ->
+add_writer_group(WriterGroupCfg, #state{
+            publisher_id = PublisherId,
+            publisher_id_type = PublisherIdType,
+            writer_groups = WGs} = S) ->
     WG_id = uuid:get_v4(),
-    {ok, WriterGroup} = opcua_pubsub_writer_group:new(WriterGroupCfg),
+    {ok, WriterGroup} = opcua_pubsub_writer_group:new(PublisherId,
+                                                      PublisherIdType,
+                                                      WriterGroupCfg),
     WGs2 = maps:put(WG_id, WriterGroup, WGs),
     {ok, WG_id, S#state{writer_groups = WGs2}}.
 
@@ -71,9 +85,8 @@ start_link(ID, ConfiguredState) ->
 
 %%% GEN_SERVER CALLBACKS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init([ID, #state{
-        config = Config,
-        writer_groups = WriterGroups} = ConfiguredState]) ->
+init([ID, #state{transport_config = Config,
+                 writer_groups = WriterGroups} = ConfiguredState]) ->
     case start_transport(Config) of
         {ok, Module, State} ->
             opcua_pubsub:register_connection(ID),
@@ -98,13 +111,17 @@ handle_info({publish, WG_ID}, #state{
     WG = maps:get(WG_ID, WriterGroups),
     {NetMsg, NewWG} = opcua_pubsub_writer_group:write_network_message(WG),
     io:format("Sending NetworkMsg: ~p~n",[NetMsg]),
-    %MiddlewareState2 = Module:send(NetMsg, MiddlewareState),
+    MiddlewareState2 = Module:send(NetMsg, MiddlewareState),
     {noreply, State#state{
-        %middleware = {Module, MiddlewareState2},
+        middleware = {Module, MiddlewareState2},
         writer_groups = maps:put(WG_ID, NewWG, WriterGroups)}};
 handle_info(Info, #state{middleware = {M, S}} = State) ->
-    {ok, NewS} = handle_network_message(M:handle_info(Info, S), State),
-    {noreply, NewS}.
+    case M:handle_info(Info, S) of
+        %ignored -> {noreply, State};
+        NetMsg ->
+            {ok, NewS} = handle_network_message(NetMsg, State),
+            {noreply, NewS}
+    end.
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -115,13 +132,17 @@ start_transport(_Config) ->
     {error, unsupported_transport}.
 
 default_config() -> #{
-        publisher_id_type => ?UA_PUBLISHERIDTYPE_UINT16,
+        publisher_id_type => uint16,
         publisher_id => 1111,
         name => "Unnamed"
     }.
 
 handle_network_message(Binary, #state{reader_groups = RGs} = S) ->
     {Headers, Payload} = opcua_pubsub_uadp:decode_network_message_headers(Binary),
+
+    DataSetMessages = opcua_pubsub_uadp:decode_payload(Headers, Payload),
+    io:format("Msgs  = ~p\n",[DataSetMessages]),
+
     InterestedReaders =
         [begin
             DSR_ids = opcua_pubsub_reader_group:filter_readers(Headers,RG),
@@ -131,8 +152,11 @@ handle_network_message(Binary, #state{reader_groups = RGs} = S) ->
     ReadersCount = lists:sum([length(DSR_ids)
                                     || {_, _, DSR_ids} <- InterestedReaders]),
     case ReadersCount > 0 of
-        false -> io:format("Skipped NetMsg\n"),{ok, S};
+        false ->
+            io:format("Skipped NetMsg = ~p\n",[Binary]),
+            {ok, S};
         true ->
+            io:format("Accepting NetMsg = ~p\n",[Headers]),
             % we can procede with the security step if needed:
             % opcua_pubsub_security: ... not_implemented yet
             % Then we decode all messages

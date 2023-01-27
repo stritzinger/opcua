@@ -6,6 +6,11 @@
 
 -type pubsub_state_machine() :: operational | error | enabled | paused.
 
+-record(connection_config, {
+    publisher_id,
+    publisher_id_type
+}).
+
 -record(dataset_mirror,{}).
 
 -record(target_variable,{
@@ -76,6 +81,32 @@
     dataset_source = []    :: published_dataset_source()
 }).
 
+-define(UADP_NET_MSG_CONTENT_MASK_PUBLISHER_ID, (1 bsl 0)).
+-define(UADP_NET_MSG_CONTENT_MASK_GROUP_HEADER, (1 bsl 1)).
+-define(UADP_NET_MSG_CONTENT_MASK_WRITER_GROUP_ID, (1 bsl 2)).
+-define(UADP_NET_MSG_CONTENT_MASK_GROUP_VERSION, (1 bsl 3)).
+-define(UADP_NET_MSG_CONTENT_MASK_NET_MSG_NUM, (1 bsl 4)).
+-define(UADP_NET_MSG_CONTENT_MASK_SEQ_NUM, (1 bsl 5)).
+-define(UADP_NET_MSG_CONTENT_MASK_PAYLOAD_HEADER, (1 bsl 6)).
+-define(UADP_NET_MSG_CONTENT_MASK_TIMESTAMP, (1 bsl 7)).
+-define(UADP_NET_MSG_CONTENT_MASK_PICOSECONDS, (1 bsl 8)).
+-define(UADP_NET_MSG_CONTENT_MASK_DATASET_CLASSID, (1 bsl 9)).
+-define(UADP_NET_MSG_CONTENT_MASK_PROMOTED_FIELDS, (1 bsl 10)).
+
+-define(DEFAULT_NET_MSG_CONTENT,
+            ?UADP_NET_MSG_CONTENT_MASK_PUBLISHER_ID
+        bor ?UADP_NET_MSG_CONTENT_MASK_GROUP_HEADER
+        bor ?UADP_NET_MSG_CONTENT_MASK_WRITER_GROUP_ID
+        bor ?UADP_NET_MSG_CONTENT_MASK_PAYLOAD_HEADER).
+
+-record(uadp_writer_group_message_data,{
+    groupVersion,
+    dataSetOrdering,
+    networkMessageContentMask = ?DEFAULT_NET_MSG_CONTENT,
+    samplingOffset,
+    publishingOffset
+}).
+
 -record(writer_group_config,{
     enabled = true :: boolean(),
     name,
@@ -85,15 +116,26 @@
     priority,
     locale_ids,
     transport_settings,
-    message_settings
+    message_settings = #uadp_writer_group_message_data{}
 }).
 
+-define(UADP_DATA_SET_FIELD_MASK_TIMESTAMP, 1).
+-define(UADP_DATA_SET_FIELD_MASK_PICOSECONDS, (1 bsl 1)).
+-define(UADP_DATA_SET_FIELD_MASK_STATUS, (1 bsl 2)).
+-define(UADP_DATA_SET_FIELD_MASK_MAJORVERSION, (1 bsl 3)).
+-define(UADP_DATA_SET_FIELD_MASK_MINORVERSION, (1 bsl 4)).
+-define(UADP_DATA_SET_FIELD_MASK_SEQUENCENUMBER, (1 bsl 5)).
+
+-define(DEFAULT_DATA_SET_FIELD_CONTENT,
+            ?UADP_DATA_SET_FIELD_MASK_TIMESTAMP).
+
 -record(dataset_writer_config,{
-    name                        :: binary(),
-    dataset_writer_id           :: non_neg_integer(),
-    dataset_field_content_mask,
-    keyframe_count = 1          :: non_neg_integer(),
-    dataset_name                :: string(),
+    name                            :: binary(),
+    dataset_writer_id               :: non_neg_integer(),
+    dataset_field_content_mask = ?DEFAULT_DATA_SET_FIELD_CONTENT,
+    keyframe_count = 1              :: non_neg_integer(),
+    dataset_name                    :: string(),
     transport_settings,
     message_settings
 }).
+

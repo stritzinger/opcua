@@ -10,7 +10,7 @@
 -export([add_published_dataset/1]).
 -export([add_published_dataset_field/3]).
 
--export([new_connection/2]).
+-export([new_connection/3]).
 
 -export([add_reader_group/2]).
 -export([add_writer_group/2]).
@@ -55,8 +55,8 @@ add_published_dataset_field(PDS_ID, FieldsMetaData, FieldsSource) ->
 get_published_dataset(PDS_ID) ->
     gen_server:call(?MODULE, {?FUNCTION_NAME, PDS_ID}).
 
-new_connection(Url, Opts) ->
-    opcua_pubsub_connection:create(Url, Opts).
+new_connection(Url, Config, Opts) ->
+    opcua_pubsub_connection:create(Url, Config, Opts).
 
 % Just a place to group DataSetReaders
 add_reader_group(Connection, Config) ->

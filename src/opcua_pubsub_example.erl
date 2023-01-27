@@ -8,8 +8,8 @@
 
 subscription() ->
     Url = <<"opc.udp://224.0.0.22:4840">>,
-    ConnectionConfig = #{},
-    {ok, Conn} = opcua_pubsub:new_connection(Url, ConnectionConfig),
+    ConnectionConfig = #connection_config{},
+    {ok, Conn} = opcua_pubsub:new_connection(Url, ConnectionConfig, #{}),
 
     ReaderGroupconfig = #{ name => <<"Simple Reader Group">>},
     {ok, RG_id, Conn2} = opcua_pubsub:add_reader_group(Conn, ReaderGroupconfig),
@@ -71,17 +71,17 @@ publication() ->
     }],
     FieldsSource = [
         #published_variable{
-            published_variable = ?NNID(2256),
+            published_variable = ?NNID(2258),
             attribute_id = ?UA_ATTRIBUTEID_VALUE
         }],
     ok = opcua_pubsub:add_published_dataset_field(PDS_id, FieldsMetaData, FieldsSource),
 
     Url = <<"opc.udp://224.0.0.22:4840">>,
-    ConnectionConfig = #{
-        publisher_id_type => uint16,
-        publisher_id => 2234
+    ConnectionConfig = #connection_config{
+        publisher_id = 2234,
+        publisher_id_type = uint16
     },
-    {ok, Conn} = opcua_pubsub:new_connection(Url, ConnectionConfig),
+    {ok, Conn} = opcua_pubsub:new_connection(Url, ConnectionConfig, #{}),
 
     WriterGroupconfig = #writer_group_config{
         name = <<"Simple Writer Group">>,
