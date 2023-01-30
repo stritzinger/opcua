@@ -24,8 +24,8 @@
 }).
 
 -record(dataset_field_metadata,{
-    name            :: string(),
-    description     :: string(),
+    name            :: binary(),
+    description     :: undefined | binary(),
     field_flags,    % This flag indicates if the field is promoted to the NetworkMessage header
     builtin_type    :: opcua:builtin_type(),
     data_type       :: opcua:node_id(),
@@ -75,7 +75,7 @@
 
 -record(published_dataset,{
     name,
-    dataset_folder         :: list(),% path to the destination folder
+    dataset_folder         :: undefined | list(binary()),% path to the destination folder
     dataset_metadata       :: #dataset_metadata{},
     extension_fields,
     dataset_source = []    :: published_dataset_source()
@@ -134,7 +134,7 @@
     dataset_writer_id               :: non_neg_integer(),
     dataset_field_content_mask = ?DEFAULT_DATA_SET_FIELD_CONTENT,
     keyframe_count = 1              :: non_neg_integer(),
-    dataset_name                    :: string(),
+    dataset_name                    :: undefined | binary(),
     transport_settings,
     message_settings
 }).

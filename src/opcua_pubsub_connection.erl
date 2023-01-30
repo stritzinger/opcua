@@ -21,7 +21,7 @@
     transport_config,
     publisher_id,
     publisher_id_type,
-    middleware :: {module(), term()},
+    middleware,
     reader_groups = #{},
     writer_groups = #{}
 }).
@@ -74,7 +74,8 @@ add_writer_group(WriterGroupCfg, #state{
 
 add_dataset_writer(WG_id, PDS_id, WriterCfg, #state{writer_groups = WGs} = S) ->
     WG = maps:get(WG_id, WGs),
-    {ok, DSW_is, NewWriterGroup} = opcua_pubsub_writer_group:add_dataset_writer(PDS_id, WriterCfg, WG),
+    {ok, DSW_is, NewWriterGroup} =
+            opcua_pubsub_writer_group:add_dataset_writer(PDS_id, WriterCfg, WG),
     WGs2 = maps:put(WG_id, NewWriterGroup, WGs),
     {ok, DSW_is, S#state{writer_groups = WGs2}}.
 
@@ -110,7 +111,7 @@ handle_info({publish, WG_ID}, #state{
             writer_groups = WriterGroups} = State) ->
     WG = maps:get(WG_ID, WriterGroups),
     {NetMsg, NewWG} = opcua_pubsub_writer_group:write_network_message(WG),
-    io:format("Sending NetworkMsg: ~p~n",[NetMsg]),
+    % io:format("Sending NetworkMsg: ~p~n",[NetMsg]),
     MiddlewareState2 = Module:send(NetMsg, MiddlewareState),
     {noreply, State#state{
         middleware = {Module, MiddlewareState2},
@@ -139,10 +140,6 @@ default_config() -> #{
 
 handle_network_message(Binary, #state{reader_groups = RGs} = S) ->
     {Headers, Payload} = opcua_pubsub_uadp:decode_network_message_headers(Binary),
-
-    DataSetMessages = opcua_pubsub_uadp:decode_payload(Headers, Payload),
-    io:format("Msgs  = ~p\n",[DataSetMessages]),
-
     InterestedReaders =
         [begin
             DSR_ids = opcua_pubsub_reader_group:filter_readers(Headers,RG),
@@ -152,11 +149,9 @@ handle_network_message(Binary, #state{reader_groups = RGs} = S) ->
     ReadersCount = lists:sum([length(DSR_ids)
                                     || {_, _, DSR_ids} <- InterestedReaders]),
     case ReadersCount > 0 of
-        false ->
-            io:format("Skipped NetMsg = ~p\n",[Binary]),
+        false -> % io:format("Skipped NetMsg = ~p\n",[Binary]),
             {ok, S};
-        true ->
-            io:format("Accepting NetMsg = ~p\n",[Headers]),
+        true -> % io:format("Accepting NetMsg = ~p\n",[Headers]),
             % we can procede with the security step if needed:
             % opcua_pubsub_security: ... not_implemented yet
             % Then we decode all messages

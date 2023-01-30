@@ -43,7 +43,7 @@ send(Data, #state{out_socket = Socket} = S) ->
     ok = gen_udp:send(Socket, {224,0,0,22}, 4840, Data),
     S.
 
-handle_info({udp, Socket, _IP, _Port, Packet}, #state{socket = Socket} = S) ->
+handle_info({udp, Socket, _IP, _Port, Packet}, #state{socket = Socket} = _S) ->
     Packet.
 
 % helpers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

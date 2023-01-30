@@ -134,15 +134,18 @@ update_subscribed_dataset(DataSet, #state{subscribed_dataset = TGT_vars} = S)
     ok = update_target_variables(DataSet, TGT_vars),
     S.
 
-update_target_variables([], TGT_vars) -> ok;
-update_target_variables([{FieldMD, Variable}|DataSet], TGT_vars) ->
+update_target_variables([], _TGT_vars) -> ok;
+update_target_variables([{FieldMD, Variable} | RemainingDataSet], TGT_vars) ->
     FieldId = FieldMD#dataset_field_metadata.dataset_field_id,
-    [TGT|_] = [ Var || #target_variable{dataset_field_id = DataSetFieldId} = Var
-                    <- TGT_vars, DataSetFieldId == FieldId],
+    {[TGT], OtherTGTs} = lists:partition(
+                fun(#target_variable{dataset_field_id = DataSetFieldId}) ->
+                    DataSetFieldId == FieldId
+                end,
+                TGT_vars),
     TargetNodeId = TGT#target_variable.target_node_id,
     AttrId = TGT#target_variable.attribute_id,
     update_tgt_var_attribute(TargetNodeId, AttrId, Variable),
-    ok.
+    update_target_variables(RemainingDataSet, OtherTGTs).
 
 update_tgt_var_attribute(TargetNodeId, ?UA_ATTRIBUTEID_VALUE,
                                             #opcua_variant{value = Value}) ->

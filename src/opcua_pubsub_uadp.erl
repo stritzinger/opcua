@@ -7,6 +7,7 @@
 
 -export([encode_dataset_message_field/2]).
 -export([encode_dataset_message_header/4]).
+-export([encode_dataset_message/2]).
 -export([encode_payload/1]).
 -export([encode_network_message_headers/4]).
 
@@ -122,13 +123,14 @@ decode_dataset_message_field(_, _, _) ->
 
 encode_dataset_message_field(#dataset_field_metadata{
                 data_type = DataType}, #opcua_variant{} = V) ->
+    % TODO: make sure to correctly extract a value before encoding.
     %io:format("Original Variant: ~p~n",[V]),
     {_TypeID, Val} = opcua_codec:unpack_variant(V),
-    V2 = opcua_codec:pack_variant(opcua_server_space, DataType, Val),
+    V2 = opcua_codec:pack_variant(opcua_server_space, DataType, -1, Val),
     %io:format("Variant to publish: ~p~n",[V2]),
     {Binary, _} = opcua_codec_binary:encode(variant, V2),
     %io:format("Encoded ~p~n", [Binary]),
-    {Result, _Rest} = opcua_codec_binary:decode(variant, Binary),
+    {_Result, _Rest} = opcua_codec_binary:decode(variant, Binary),
     %io:format("Decoded: ~p~n",[Result]),
     Binary.
 
@@ -137,7 +139,6 @@ encode_dataset_message_header(FieldEncoding, MsgType, ContentMask,
     Flags1 = ?DATASET_FLAGS1_VALID
                 bor encode_field_encoding(FieldEncoding)
                 bor ?DATASET_FLAGS1_FLAGS2_ENABLED,
-    io:format("Flags1 ~p~n",[Flags1]),
     Flags2 = 0,
     % DataSetFlags1
     % F1 = #{
@@ -170,12 +171,14 @@ encode_dataset_message_header(FieldEncoding, MsgType, ContentMask,
     %     0 -> {<<>>, maps:put(picoseconds, 0, F2_1)}
     iolist_to_binary([Flags1, Flags2_1, Timestamp]).
 
+encode_dataset_message(Header, Fields) ->
+    FieldCount = <<(length(Fields)):16/unsigned-little>>,
+    iolist_to_binary([Header, FieldCount, Fields]).
+
 encode_payload([DataSetMessage]) -> DataSetMessage;
 encode_payload(DataSetMessages) ->
     Sizes = [ <<(byte_size(DSM)):16/unsigned-little>> || DSM <- DataSetMessages],
     iolist_to_binary([Sizes, DataSetMessages]).
-
-
 
 encode_network_message_headers(PublisherID, PublisherIdType, DSW_IDS,
         #writer_group_config{
@@ -198,7 +201,7 @@ encode_network_message_headers(PublisherID, PublisherIdType, DSW_IDS,
     end,
     {UADPFlags3, PH} = case Mask band ?UADP_NET_MSG_CONTENT_MASK_GROUP_HEADER of
         0 -> {UADPFlags2, <<>>};
-        _ -> H_ = encode_payload_header(WriterGroupCfg, DSW_IDS),
+        _ -> H_ = encode_payload_header(DSW_IDS),
             {UADPFlags2 bor ?PAYLOAD_HEADER_ENABLED, H_}
     end,
     % ExtendedFlags1 always enabled
@@ -230,12 +233,12 @@ encode_network_message_headers(PublisherID, PublisherIdType, DSW_IDS,
     %  and defaults to dataset_message
     ExtFlags1_6 = ExtFlags1_5, % bor ?EXT_FLAGS_2_ENABLED,
 
-    %ExtFlags2_1 = ExtFlags2 bor 0, % TODO: add check and support for ?CHUNK_MESSAGE
+    % ExtFlags2_1 = ExtFlags2 bor 0, % TODO: add check and support for ?CHUNK_MESSAGE
     % {ExtFlags2_2, PromotedFields} = case Mask band ?UADP_NET_MSG_CONTENT_MASK_PROMOTED_FIELDS of
     %     0 -> {ExtFlags2_1, <<>>};
-    %     _ -> {ExtFlags2_1 bor ?PROMOTED_FIELD_ENABLED, error(not_implemented)}
+    %     _ -> {ExtFlags2_1 bor ?EXT_FLAGS2_PROMOTED_FIELD_ENABLED, error(not_implemented)}
     % end,
-    % TODO: support more message types
+    % % TODO: support more message types
     % HardcodedMsgType = dataset_message,
     % ExtFlags2_3 = ExtFlags2_2 bor encode_network_msg_type(HardcodedMsgType),
 
@@ -468,42 +471,9 @@ decode_dataset_cfg_minor_ver(#{config_ver_minor_ver := 1}, Bin) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-encode_dataset_message_flags1(#{
-            dataset_msg_valid := DataSetMsgValid,
-            field_encoding := FieldEncoding,
-            dataset_msg_seq_num := DataSetMsgSeqNum,
-            status := Status,
-            config_ver_minor_ver := ConfigVerMajorVer,
-            config_ver_major_ver := ConfigVerMinorVer,
-            dataset_flags2 := DataSetFlags2
-        }) ->
-    <<DataSetFlags2:1,
-      ConfigVerMinorVer:1,
-      ConfigVerMajorVer:1,
-      Status:1,
-      DataSetMsgSeqNum:1,
-      (encode_field_encoding(FieldEncoding)):2/bitstring,
-      DataSetMsgValid:1>>.
-
 encode_field_encoding(variant) -> ?DATASET_FLAGS1_VARIANT;
 encode_field_encoding(raw) -> ?DATASET_FLAGS1_RAWDATA;
 encode_field_encoding(data_value) -> ?DATASET_FLAGS1_DATAVALUE.
-
-encode_dataset_message_flags2(#{
-            msg_type := DataMsgType,
-            timestamp := Timestamp,
-            picoseconds := PicoSeconds
-        }) ->
-    <<0:2,
-     PicoSeconds:1,
-     Timestamp:1,
-     (encode_dataset_message_type(DataMsgType)):4/bitstring>>.
-
-
-encode_dataset_message_type(data_key_frame) -> <<0:4>>;
-encode_dataset_message_type(data_delta_fram) -> <<0:1, 0:1, 0:1, 1:1>>;
-encode_dataset_message_type(event) -> <<0:1, 0:1, 1:1, 0:1>>;
-encode_dataset_message_type(keep_alive) -> <<0:1, 0:1, 1:1, 1:1>>.
 
 encode_publisher_id_type(byte)   -> ?UA_PUBLISHERIDTYPE_BYTE;
 encode_publisher_id_type(uint16) -> ?UA_PUBLISHERIDTYPE_UINT16;
@@ -511,13 +481,11 @@ encode_publisher_id_type(uint32) -> ?UA_PUBLISHERIDTYPE_UINT32;
 encode_publisher_id_type(uint64) -> ?UA_PUBLISHERIDTYPE_UINT64;
 encode_publisher_id_type(string) -> ?UA_PUBLISHERIDTYPE_STRING.
 
-encode_network_msg_type(dataset_message) ->     ?EXT_FLAGS2_DATASET_MSG_TYPE;
-encode_network_msg_type(discovery_request) ->   ?EXT_FLAGS2_DISCOVERY_REQUEST_MSG_TYPE;
-encode_network_msg_type(discovery_responce) ->  ?EXT_FLAGS2_DISCOVERY_RESPONSE_MSG_TYPE.
+% encode_network_msg_type(dataset_message) ->     ?EXT_FLAGS2_DATASET_MSG_TYPE;
+% encode_network_msg_type(discovery_request) ->   ?EXT_FLAGS2_DISCOVERY_REQUEST_MSG_TYPE;
+% encode_network_msg_type(discovery_responce) ->  ?EXT_FLAGS2_DISCOVERY_RESPONSE_MSG_TYPE.
 
-
-
-encode_payload_header(WriterGroupCfg, DSW_IDS) ->
+encode_payload_header(DSW_IDS) ->
     IDS = [<<ID:16/unsigned-little>> || ID <- DSW_IDS ],
     Count = <<(length(DSW_IDS)):8/unsigned-little>>,
     iolist_to_binary([Count | IDS]).

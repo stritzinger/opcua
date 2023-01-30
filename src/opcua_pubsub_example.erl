@@ -6,8 +6,10 @@
 -include("opcua.hrl").
 -include("opcua_pubsub.hrl").
 
+-define(URL, <<"opc.udp://224.0.0.22:4840">>).
+
 subscription() ->
-    Url = <<"opc.udp://224.0.0.22:4840">>,
+    Url = ?URL,
     ConnectionConfig = #connection_config{},
     {ok, Conn} = opcua_pubsub:new_connection(Url, ConnectionConfig, #{}),
 
@@ -21,11 +23,11 @@ subscription() ->
         writer_group_id = 100,
         dataset_writer_id = 62541,
         dataset_metadata = #dataset_metadata{
-            name = "DataSet 1",
-            description = "An example from 62541",
+            name = <<"DataSet 1">>,
+            description = <<"An example from 62541">>,
             fields = [
                 #dataset_field_metadata{
-                    name = "DateTime 1",
+                    name = <<"DateTime 1">>,
                     builtin_type = date_time,
                     data_type = opcua_node:id(date_time),
                     valueRank = -1 % a scalar,
@@ -54,9 +56,9 @@ subscription() ->
 publication() ->
 
     PDS_cfg = #published_dataset{
-        name = "PublishedDataSet Example",
+        name = <<"PublishedDataSet Example">>,
         dataset_metadata = #dataset_metadata{
-            name = "My Metadata"
+            name = <<"My Metadata">>
         }
     },
     {ok, PDS_id} = opcua_pubsub:add_published_dataset(PDS_cfg),
@@ -64,7 +66,7 @@ publication() ->
     % we specify the fields metadata and their sources
     % In this case we list available variables as sources
     FieldsMetaData = [#dataset_field_metadata{
-        name = "DateTime 1",
+        name = <<"DateTime 1">>,
         builtin_type = date_time,
         data_type = opcua_node:id(date_time),
         valueRank = -1 % a scalar,
@@ -76,7 +78,7 @@ publication() ->
         }],
     ok = opcua_pubsub:add_published_dataset_field(PDS_id, FieldsMetaData, FieldsSource),
 
-    Url = <<"opc.udp://224.0.0.22:4840">>,
+    Url = ?URL,
     ConnectionConfig = #connection_config{
         publisher_id = 2234,
         publisher_id_type = uint16
