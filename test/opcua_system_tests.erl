@@ -15,15 +15,11 @@ basic_client_server_connection_test_() ->
     setup_teardown([
         {"basic client/server connection", fun() ->
             {ok, Client} = opcua_client:connect(<<"opc.tcp://127.0.0.1">>),
-            ?assertMatch(#opcua_variant{
-                            type = qualified_name,
-                            value = #opcua_qualified_name{ns = 0, name = <<"Server">>}
-                         }, opcua_client:read(Client, server, browse_name)),
+            ?assertMatch(#opcua_qualified_name{ns = 0, name = <<"Server">>},
+                         opcua_client:read(Client, server, browse_name)),
             %FIXME: This should actually return 'object' for node class...
-            ?assertMatch(#{
-                node_id := #opcua_variant{type = node_id, value = ?NNID(?OBJ_SERVER)},
-                node_class := #opcua_variant{type = int32, value = 1}
-            }, opcua_client:read(Client, server, [node_id, node_class])),
+            ?assertMatch(#{node_id := ?NNID(?OBJ_SERVER), node_class := object},
+                         opcua_client:read(Client, server, [node_id, node_class])),
             Refs = opcua_client:browse(Client, root, #{
                 direction => forward,
                 type => ?REF_ORGANIZES,

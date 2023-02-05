@@ -102,19 +102,9 @@
     description                 :: opcua:optional(binary()),
     write_mask                  :: opcua:optional(non_neg_integer()),
     user_write_mask             :: opcua:optional(non_neg_integer()),
-    value                       :: opcua:optional(term()),
-    data_type                   :: opcua:optional(opcua:data_type()),
-    value_rank                  :: opcua:optional(opcua:value_rank()),
-    array_dimensions            :: opcua:optional(opcua:array_dimensions()),
-    access_level                :: opcua:optional(opcua:access_level()),
-    user_access_level           :: opcua:optional(opcua:access_level()),
-    minimum_sampling_interval   :: opcua:optional(float()),
-    historizing                 :: opcua:optional(boolean())
-    % data_type_definition        :: opcua:optional(???),
-    % role_permissions            :: opcua:optional(opcua:role_permission()),
-    % user_role_permissions       :: opcua:optional(opcua:role_permissions()),
-    % access_restrictions         :: opcua:optional(non_neg_integer())
-    % access_level_ex             :: opcua:optional(opcua:access_level()),
+    role_permissions            :: opcua:optional(opcua:role_permission()),
+    user_role_permissions       :: opcua:optional(opcua:role_permissions()),
+    access_restrictions         :: opcua:optional(non_neg_integer())
 }).
 
 -record(opcua_object, {

@@ -12,9 +12,13 @@
 
 %% API Functions
 -export([pack_variant/3]).
--export([unpack_variant/3]).
 -export([builtin_type_name/1]).
 -export([builtin_type_id/1]).
+
+%% Schema resolver
+-export([resolve/3]).
+-export([resolve_enum/2]).
+-export([resolve_option_set/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -39,9 +43,29 @@ pack_variant(Space, #opcua_node_id{} = NodeId, Value) ->
 pack_variant(Space, NodeSpec, Value) ->
     pack_variant(Space, opcua_node:id(NodeSpec), Value).
 
--spec unpack_variant(opcua_space:state(), opcua:node_spec(), opcua:variant()) -> term().
-unpack_variant(_Space, _Type, _Value) ->
-    throw(bad_not_implemented).
+-spec resolve(opcua_space:state(), opcua:node_spec(), integer()) -> term().
+resolve(Space, TypeId, Value) ->
+    case opcua_space:schema(Space, TypeId) of
+        undefined -> throw({schema_not_found, TypeId});
+        #opcua_enum{} = Schema -> resolve_enum(Schema, Value);
+        #opcua_option_set{} = Schema -> resolve_option_set(Schema, Value);
+        _Schema -> throw(not_implemented)
+    end.
+
+resolve_enum(#opcua_enum{node_id = TypeId, fields = Fields}, Value) ->
+    case [F || F = #opcua_field{value = V} <- Fields, Value =:= V] of
+        [Field] -> Field#opcua_field.name;
+        [] -> throw({bad_enum_value, TypeId, Value})
+    end.
+
+resolve_option_set(#opcua_option_set{fields = Fields}, Value) ->
+    FieldNames = lists:foldl(fun(X, Acc) ->
+        case (Value bsr X#opcua_field.value) rem 2 of
+            0  -> Acc;
+            1  -> [X#opcua_field.name | Acc]
+        end
+     end, [], Fields),
+    lists:reverse(FieldNames).
 
 builtin_type_name( 1) -> boolean;
 builtin_type_name( 2) -> sbyte;

@@ -404,9 +404,11 @@ handle_event({call, From}, {write, WriteSpec, Opts},
              connected = State, Data) ->
     Data2 = do_write(Data, WriteSpec, Opts, From, fun contfun_reply/4),
     {keep_state, Data2, enter_timeouts(State, Data2)};
-handle_event({call, _From}, {get, _NodeIds, _Opts}, connected = State, Data) ->
-    %TODO: IMPLEMENTE ME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    {keep_state, Data, enter_timeouts(State, Data)};
+handle_event({call, From}, {get, NodeIds, _Opts}, connected = State, Data) ->
+    Attribs = [{{A, undefined}, #{}} || A <- opcua_nodeset:attributes()],
+    ReadSpec = [{NID, Attribs} || NID <- NodeIds],
+    Data2 = do_read(Data, ReadSpec, #{}, From, fun contfun_pack_nodes/4),
+    {keep_state, Data2, enter_timeouts(State, Data2)};
 %% STATE: {reconnecting, Endpoint}
 handle_event(enter, _OldState, {reconnecting, _Endpoint} = State, Data) ->
     ?LOG_DEBUG("Client ~p entered reconnecting", [self()]),
@@ -554,8 +556,9 @@ do_continue(Data, Key, Outcome, Result) ->
 do_abort_all(#data{continuations = ContMap} = Data, Reason) ->
     do_continue(Data, [{K, error, Reason} || K <- maps:keys(ContMap)]).
 
-contfun_unpack_read(Data, ok, Results, {ReadSpec, SubParams, SubContFun}) ->
-    UnpackedResult = unpack_read_result(ReadSpec, Results),
+contfun_unpack_read(#data{conn = Conn} = Data, ok, Results,
+                    {ReadSpec, SubParams, SubContFun}) ->
+    UnpackedResult = unpack_read_result(Conn, ReadSpec, Results),
     SubContFun(Data, ok, UnpackedResult, SubParams).
 
 contfun_unpack_write(Data, ok, Results, {WriteSpec, SubParams, SubContFun}) ->
@@ -567,6 +570,13 @@ contfun_reply(Data, Outcome, '_NO_RESULT_', From) ->
     Data;
 contfun_reply(Data, Outcome, ResultOrReason, From) ->
     gen_statem:reply(From, {Outcome, ResultOrReason}),
+    Data.
+
+contfun_pack_nodes(Data, error, Reason, From) ->
+    gen_statem:reply(From, {error, Reason}),
+    Data;
+contfun_pack_nodes(Data, ok, Result, From) ->
+    gen_statem:reply(From, {ok, [opcua_node:from_attributes(A) || A <- Result]}),
     Data.
 
 delay_response(Data, Tag, From) ->
@@ -608,7 +618,8 @@ prepare_connect_options(Opts) ->
 
 prepare_browse_spec([], Acc) ->
     lists:reverse(Acc);
-prepare_browse_spec([{NodeSpec, Opts} | Rest], Acc) ->
+prepare_browse_spec([{NodeSpec, Opts} | Rest], Acc)
+  when is_map(Opts); Opts =:= undefined ->
     FixedOpts = prepare_browse_opts(Opts),
     Acc2 = [{opcua_node:id(NodeSpec), FixedOpts} | Acc],
     prepare_browse_spec(Rest, Acc2);
@@ -760,18 +771,31 @@ select_endpoint(Conn, Mode, Policy, AuthSpec, Endpoints) ->
 auth_type(anonymous) -> anonymous;
 auth_type({user_name, _, _}) -> user_name.
 
-unpack_read_result(ReadSpec, ReadResult) ->
-    unpack_read_result(ReadSpec, ReadResult, #{}, []).
+unpack_read_result(Space, ReadSpec, ReadResult) ->
+    unpack_read_result(Space, ReadSpec, ReadResult, #{}, []).
 
-unpack_read_result([], [], _, Acc) ->
+unpack_read_result(_Space, [], [], _, Acc) ->
     lists:reverse(Acc);
-unpack_read_result([{_NodeId, []} | MoreNodes], ReadResult, Map, Acc) ->
-    unpack_read_result(MoreNodes, ReadResult, #{}, [Map | Acc]);
-unpack_read_result([{NodeId, [{AttribSpec, _} | MoreAttribs]} | MoreNodes],
+unpack_read_result(Space, [{_NodeId, []} | MoreNodes], ReadResult, Map, Acc) ->
+    unpack_read_result(Space, MoreNodes, ReadResult, #{}, [Map | Acc]);
+unpack_read_result(Space, [{NodeId, [{AttribSpec, _} | MoreAttribs]} | MoreNodes],
                    [Result | MoreResults], Map, Acc) ->
     ResultKey = result_key(AttribSpec),
-    unpack_read_result([{NodeId, MoreAttribs} | MoreNodes], MoreResults,
-                       Map#{ResultKey => Result}, Acc).
+    AttribType = opcua_nodeset:attribute_type(ResultKey),
+    UnpackedResult = unpack_attribute_value(Space, ResultKey, AttribType, Result),
+    unpack_read_result(Space, [{NodeId, MoreAttribs} | MoreNodes], MoreResults,
+                       Map#{ResultKey => UnpackedResult}, Acc).
+
+unpack_attribute_value(_Space, _, _, #opcua_error{} = Value) -> Value;
+unpack_attribute_value(_Space, _, variant, #opcua_variant{} = Value) -> Value;
+unpack_attribute_value(_Space, _, Type, #opcua_variant{type = Type, value = Value}) -> Value;
+unpack_attribute_value(Space, _, #opcua_node_id{} = Type, #opcua_variant{value = Value}) ->
+    opcua_codec:resolve(Space, Type, Value);
+unpack_attribute_value(_Space, Key, Type, Value) ->
+    ?LOG_ERROR("Unexpected attribute ~s value with expected type ~p: ~p",
+               [Key, Type, Value]),
+    %TODO: Should we just crash if we receive unexpected attribute data ?
+    Value.
 
 unpack_write_result(WriteSpec, WriteResult) ->
     unpack_write_result(WriteSpec, WriteResult, #{}, []).

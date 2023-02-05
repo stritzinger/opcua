@@ -109,12 +109,12 @@ decode_schema(Ctx, #opcua_structure{with_options = true, fields = Fields}, Data)
 decode_schema(Ctx, #opcua_union{fields = Fields}, Data) ->
     {SwitchValue, Data2, Ctx2} = decode_builtin(?PUSHF(Ctx, switch), uint32, Data),
     resolve_union_value(?POPF(Ctx2, switch), SwitchValue, Fields, Data2);
-decode_schema(Ctx, #opcua_enum{fields = Fields}, Data) ->
+decode_schema(Ctx, #opcua_enum{} = Schema, Data) ->
     {Value, Data2, Ctx2} = decode_builtin(?PUSHF(Ctx, value), int32, Data),
-    {resolve_enum_value(Value, Fields), Data2, ?POPF(Ctx2, value)};
-decode_schema(Ctx, #opcua_option_set{mask_type = MaskNodeId, fields = Fields}, Data) ->
+    {opcua_codec:resolve_enum(Schema, Value), Data2, ?POPF(Ctx2, value)};
+decode_schema(Ctx, #opcua_option_set{mask_type = MaskNodeId} = Schema, Data) ->
     {Value, Data2, Ctx2} = decode_type(?PUSHF(Ctx, value), MaskNodeId, Data),
-    {resolve_option_set_value(Value, Fields), Data2, ?POPF(Ctx2, value)};
+    {opcua_codec:resolve_option_set(Schema, Value), Data2, ?POPF(Ctx2, value)};
 decode_schema(Ctx, #opcua_builtin{builtin_node_id = BuiltinNodeId}, Data) ->
     decode_type(Ctx, BuiltinNodeId, Data).
 
@@ -164,19 +164,6 @@ resolve_union_value(Ctx, SwitchValue, Fields, Data) ->
     [Field] = [F || F = #opcua_field{value=Value, is_optional=Optional} <- Fields,
                     Optional and (Value == SwitchValue)],
     decode_fields(Ctx, [Field], Data).
-
-resolve_enum_value(EnumValue, Fields) ->
-    [Field] = [F || F = #opcua_field{value=Value} <- Fields, Value == EnumValue],
-    Field#opcua_field.name.
-
-resolve_option_set_value(OptionSetValue, Fields) ->
-    FieldNames = lists:foldl(fun(X, Acc) ->
-                                case (OptionSetValue bsr X#opcua_field.value) rem 2 of
-                                    0  -> Acc;
-                                    1  -> [X#opcua_field.name|Acc]
-                                end
-                             end, [], Fields),
-    lists:reverse(FieldNames).
 
 decode_extension_object(Ctx, Data) ->
     {TypeId, <<Mask:8, T/binary>>, Ctx2} = decode_builtin(?PUSHF(Ctx, node_id), node_id, Data),

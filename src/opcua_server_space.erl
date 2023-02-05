@@ -11,6 +11,7 @@
 
 %% API Functions
 -export([start_link/0]).
+-export([add_namespace/2]).
 -export([add_nodes/1]).
 -export([del_nodes/1]).
 -export([add_references/1]).
@@ -44,6 +45,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+add_namespace(Id, Uri) ->
+    gen_server:call(?MODULE, {add_namespace, Id, Uri}).
 
 add_nodes(Nodes) ->
     gen_server:call(?MODULE, {add_nodes, Nodes}).
@@ -90,6 +94,9 @@ namespaces() ->
 init([]) ->
     {ok, opcua_space_backend:new(?MODULE, [opcua_nodeset])}.
 
+handle_call({add_namespace, Id, Uri}, _From, Space) ->
+    opcua_space:add_namespace(Space, Id, Uri),
+    {reply, ok, Space};
 handle_call({add_nodes, Nodes}, _From, Space) ->
     opcua_space:add_nodes(Space, Nodes),
     {reply, ok, Space};

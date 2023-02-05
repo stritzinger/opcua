@@ -36,6 +36,7 @@
 -export([new/0, new/1, new/2]).
 -export([init/0, init/1]).
 -export([terminate/1]).
+-export([add_namespace/3]).
 -export([add_nodes/2]).
 -export([del_nodes/2]).
 -export([add_references/2]).
@@ -172,6 +173,20 @@ terminate(Space) ->
     cleanup_persistent_terms(Keys),
     ok.
 
+% @doc Adds a namespace to a space, if multiple layers of space are given, only
+% the last one is modified (the head).
+-spec add_namespace(space() | spaces(), Id, Uri) -> ok
+    when Id :: non_neg_integer(), Uri :: binary().
+add_namespace([Space | _], Id, Uri) ->
+    NsUriTable = table(Space, namespace_uris),
+    NsIdTable = table(Space, namespace_ids),
+    Tup = {Id, Uri},
+    ets:insert(NsUriTable, Tup),
+    ets:insert(NsIdTable, Tup),
+    ok;
+add_namespace(Space, Id, Uri) ->
+    add_namespace([Space], Id, Uri).
+
 % @doc Adds a node to a space, if multiple layers of space are given, only
 % the last one is modified (the head).
 -spec add_nodes(space() | spaces(), [opcua:node_rec()]) -> ok.
@@ -234,9 +249,6 @@ del_references(Space, Refs) ->
                      opcua:stream_encoding()) -> ok.
 add_descriptor([Space | _], DescriptorSpec, TypeSpec, Encoding) ->
     Term = {opcua_node:id(DescriptorSpec), {opcua_node:id(TypeSpec), Encoding}},
-    {DescId, {TypeId, _}} = Term,
-    io:format("DDDDDDDDDD DESCRIPTOR ADDED: ~p -(~s)-> ~p~n",
-              [opcua_node:spec(TypeId), Encoding, opcua_node:spec(DescId)]),
     ets:insert(table(Space, type2desc), Term),
     ets:insert(table(Space, desc2type), Term),
     ok.
@@ -248,8 +260,6 @@ del_descriptor([Space | _] = Spaces, DescriptorSpec) ->
     case data_type(Spaces, DescId) of
         undefined -> ok;
         {_TypeId, _Encoding} = Key ->
-            io:format("DDDDDDDDDD DESCRIPTOR DELETED: ~p -(~s)-> ~p~n",
-                      [opcua_node:spec(_TypeId), _Encoding, opcua_node:spec(DescId)]),
             ets:insert(table(Space, type2desc), {deleted, Key}),
             ets:insert(table(Space, desc2type), {DescId, deleted}),
             ok

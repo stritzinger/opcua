@@ -19,6 +19,7 @@
 %% API Functions
 -export([attributes/0]).
 -export([attribute_name/1]).
+-export([attribute_type/1]).
 -export([attribute_id/1]).
 -export([status/1]).
 -export([status_code/1]).
@@ -62,6 +63,36 @@ attributes() ->
 attribute_name(Attr) ->
     {_, Name} = persistent_term:get({?MODULE, attribute, Attr}),
     Name.
+
+%TODO: Why would we load the names from the specs but we would hardcode the types ???
+attribute_type(node_id) -> node_id;
+attribute_type(node_class) -> ?NNID(257);
+attribute_type(browse_name) -> qualified_name;
+attribute_type(display_name) -> localized_text;
+attribute_type(description) -> localized_text;
+attribute_type(write_mask) -> ?NNID(347);
+attribute_type(user_write_mask) -> ?NNID(347);
+attribute_type(is_abstract) -> boolean;
+attribute_type(symmetric) -> boolean;
+attribute_type(inverse_name) -> boolean;
+attribute_type(contains_no_loops) -> boolean;
+attribute_type(event_notifier) -> byte_string;
+attribute_type(value) -> variant;
+attribute_type(data_type) -> node_id;
+attribute_type(value_rank) -> int32;
+attribute_type(array_dimensions) -> uint32;
+attribute_type(access_level) -> ?NNID(15031);
+attribute_type(user_access_level) -> ?NNID(15031);
+attribute_type(minimum_sampling_interval) -> double;
+attribute_type(historizing) -> boolean;
+attribute_type(executable) -> boolean;
+attribute_type(user_executable) -> boolean;
+attribute_type(data_type_definition) -> ?NNID(97);
+attribute_type(role_permissions) -> ?NNID(96); % It is a list
+attribute_type(user_role_permissions) -> ?NNID(96); % It is a list
+attribute_type(access_restrictions) -> ?NNID(95); % It is a list
+attribute_type(access_level_ex) -> ?NNID(95); % It is a list
+attribute_type(_Attr) -> error(bad_attribute_id_invalid).
 
 attribute_id(Attr) ->
     {Id, _} = persistent_term:get({?MODULE, attribute, Attr}),

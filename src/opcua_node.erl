@@ -14,28 +14,9 @@
 -export([format/1, format/2]).
 -export([parse/1]).
 -export([class/1]).
+-export([from_attributes/1]).
 -export([attribute/2]).
 -export([attribute_type/2]).
--export([parse_access_level/1]).
--export([format_access_level/1]).
-
-
-%%% MACROS FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--define(ACCESS_LEVEL_SPEC, [
-    % https://reference.opcfoundation.org/v104/Core/docs/Part3/8.57/
-    {current_read,          2#00000000001},
-    {current_write,         2#00000000010},
-    {history_read,          2#00000000100},
-    {history_write,         2#00000001000},
-    {semantic_change,       2#00000010000},
-    {status_write,          2#00000100000},
-    {timestamp_write,       2#00001000000},
-    % https://reference.opcfoundation.org/v104/Core/docs/Part3/8.58/
-    {nonatomic_read,        2#00010000000},
-    {nonatomic_write,       2#00100000000},
-    {write_full_array_only, 2#01000000000}
-]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -187,6 +168,34 @@ parse(<<"ns=", Rest/binary>>) ->
 parse(_Data) ->
     erlang:error(badarg).
 
+from_attributes(Attribs) ->
+    #{
+        node_id := NodeId,
+        node_class := NodeClass,
+        %TODO: We should keep the namespace of the browse name
+        browse_name := #opcua_qualified_name{name = BrowseName},
+        display_name := #opcua_localized_text{text = DisplayName},
+        description := #opcua_localized_text{text = Description},
+        write_mask := WriteMask,
+        user_write_mask := UserWriteMask,
+        role_permissions := RolePermissions,
+        user_role_permissions := UserRolePermissions,
+        access_restrictions := AccessRestrictions
+    } = Attribs,
+    #opcua_node{
+        node_id = NodeId,
+        node_class = node_class_from_attributes(NodeClass, Attribs),
+        origin = remote,
+        browse_name = BrowseName,
+        display_name = DisplayName,
+        description = Description,
+        write_mask = if_defined(WriteMask),
+        user_write_mask = if_defined(UserWriteMask),
+        role_permissions = if_defined(RolePermissions),
+        user_role_permissions = if_defined(UserRolePermissions),
+        access_restrictions = if_defined(AccessRestrictions)
+    }.
+
 class(#opcua_node{node_class = #opcua_object{}})         -> object;
 class(#opcua_node{node_class = #opcua_variable{}})       -> variable;
 class(#opcua_node{node_class = #opcua_method{}})         -> method;
@@ -203,6 +212,7 @@ attribute(node_class, Node) ->
     class(Node);
 attribute(browse_name, #opcua_node{node_id = ?NID_NS(NS), browse_name = V})
   when V =:= undefined; is_binary(V) ->
+    %TODO: Properties shouldn't use the node namespace for the browse name
     #opcua_qualified_name{ns = NS, name = V};
 attribute(display_name, #opcua_node{display_name = undefined, browse_name = V})
   when V =:= undefined; is_binary(V) ->
@@ -213,8 +223,8 @@ attribute(display_name, #opcua_node{display_name = V})
 attribute(description, #opcua_node{description = V})
   when V =:= undefined; is_binary(V) ->
     #opcua_localized_text{text = V};
-% attribute(write_mask, #opcua_node{write_mask = V}) -> V;
-% attribute(user_write_mask, #opcua_node{user_write_mask = V}) -> V;
+attribute(write_mask, #opcua_node{write_mask = V}) -> V;
+attribute(user_write_mask, #opcua_node{user_write_mask = V}) -> V;
 % attribute(role_permissions, #opcua_node{role_permissions = V}) -> V;
 % attribute(user_role_permissions, #opcua_node{user_role_permissions = V}) -> V;
 % attribute(access_restrictions, #opcua_node{access_restrictions = V}) -> V;
@@ -265,46 +275,89 @@ attribute(value, #opcua_node{node_class = #opcua_variable{value = V}})
 % attribute(event_notifier, #opcua_node{node_class = #opcua_view{event_notifier = V}}) -> V;
 attribute(_Attr, #opcua_node{}) -> error(bad_attribute_id_invalid).
 
-%TODO: figure out if these types are correct, and fill in the undefined ones
-attribute_type(node_id, _Node) -> node_id;
-attribute_type(node_class, _Node) -> ?NNID(257);
-attribute_type(browse_name, _Node) -> qualified_name;
-attribute_type(display_name, _Node) -> localized_text;
-attribute_type(description, _Node) -> localized_text;
-% attribute_type(write_mask, _Node) -> undefined;
-% attribute_type(user_write_mask, _Node) -> undefined;
-% attribute_type(is_abstract, _Node) -> boolean;
-% attribute_type(symmetric, _Node) -> boolean;
-% attribute_type(inverse_name, _Node) -> boolean;
-% attribute_type(contains_no_loops, _Node) -> boolean;
-% attribute_type(event_notifier, _Node) -> byte_string;
 attribute_type(value, #opcua_node{node_class = #opcua_variable{data_type = T}}) -> T;
-attribute_type(data_type, _Node) -> node_id;
-% attribute_type(value_rank, _Node) -> int32;
-% attribute_type(array_dimensions, _Node) -> int32;
-% attribute_type(access_level, _Node) -> undefined;
-% attribute_type(user_access_level, _Node) -> undefined;
-% attribute_type(minimum_sampling_interval, _Node) -> undefined;
-% attribute_type(historizing, _Node) -> undefined;
-% attribute_type(executable, _Node) -> undefined;
-% attribute_type(user_executable, _Node) -> undefined;
-% attribute_type(data_type_definition, _Node) -> undefined;
-% attribute_type(role_permissions, _Node) -> undefined;
-% attribute_type(user_role_permissions, _Node) -> undefined;
-% attribute_type(access_restrictions, _Node) -> undefined;
-% attribute_type(access_level_ex, _Node) -> undefined;
-attribute_type(_Attr, _Node) -> error(bad_attribute_id_invalid).
+attribute_type(Name, _Node) -> opcua_nodeset:attribute_type(Name).
 
-parse_access_level(Flags) when is_integer(Flags) ->
-    lists:foldl(fun({Key, Mask}, Result) ->
-        Result#{Key => ((Flags band Mask) =/= 0)}
-    end, #{}, ?ACCESS_LEVEL_SPEC).
 
-format_access_level(#{} = Map) ->
-    lists:foldl(fun({Key, Mask}, Result) ->
-        case maps:find(Key, Map) of
-            error -> Result;
-            {ok, false} -> Result;
-            {ok, true} -> Result band Mask
-        end
-    end, 0, ?ACCESS_LEVEL_SPEC).
+%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if_defined(#opcua_error{status = bad_attribute_id_invalid}) -> undefined;
+if_defined(Value) -> Value.
+
+node_class_from_attributes(object, Attribs) ->
+    #{event_notifier := EventNotifier} = Attribs,
+    #opcua_object{event_notifier = if_defined(EventNotifier)};
+node_class_from_attributes(variable, Attribs) ->
+    #{value := Value,
+      data_type := DataType,
+      value_rank := ValueRank,
+      array_dimensions := ArrayDimensions,
+      access_level := AccessLevel,
+      user_access_level := UserAccessLevel,
+      minimum_sampling_interval := MinimumSamplingInterval,
+      historizing := Historizing,
+      access_level_ex := AccessLevelEx
+    } = Attribs,
+    #opcua_variable{
+        value = Value,
+        data_type = DataType,
+        value_rank = if_defined(ValueRank),
+        array_dimensions =  if_defined(ArrayDimensions),
+        access_level =  if_defined(AccessLevel),
+        user_access_level =  if_defined(UserAccessLevel),
+        minimum_sampling_interval =  if_defined(MinimumSamplingInterval),
+        historizing =  if_defined(Historizing),
+        access_level_ex =  if_defined(AccessLevelEx)
+    };
+node_class_from_attributes(method, Attribs) ->
+    #{executable := Executable,
+      user_executable :=  UserExecutable
+    } = Attribs,
+    #opcua_method{
+        executable =  if_defined(Executable),
+        user_executable =  if_defined(UserExecutable)
+    };
+node_class_from_attributes(object_type, Attribs) ->
+    #{is_abstract :=  IsAbstract} = Attribs,
+    #opcua_object_type{is_abstract =  if_defined(IsAbstract)};
+node_class_from_attributes(variable_type, Attribs) ->
+    #{value := Value,
+      data_type := DataType,
+      value_rank :=  ValueRank,
+      array_dimensions :=  ArrayDimensions,
+      is_abstract :=  IsAbstract
+    } = Attribs,
+    #opcua_variable_type{
+        value = Value,
+        data_type = DataType,
+        value_rank =  if_defined(ValueRank),
+        array_dimensions =  if_defined(ArrayDimensions),
+        is_abstract =  if_defined(IsAbstract)
+    };
+node_class_from_attributes(reference_type, Attribs) ->
+    #{is_abstract := IsAbstract,
+      symmetric := Symmetric,
+      inverse_name := InverseName
+    } = Attribs,
+    %TODO: Maybe we want to convert the localized text to simple binary ?
+    #opcua_reference_type{
+        is_abstract =  if_defined(IsAbstract),
+        symmetric =  if_defined(Symmetric),
+        inverse_name =  if_defined(InverseName)
+    };
+node_class_from_attributes(data_type, Attribs) ->
+    #{is_abstract := IsAbstract,
+      data_type_definition := DataTypeDef
+    } = Attribs,
+    #opcua_data_type{
+        is_abstract =  if_defined(IsAbstract),
+        data_type_definition =  if_defined(DataTypeDef)
+    };
+node_class_from_attributes(view, Attribs) ->
+    #{contains_no_loops := ContainsNoLoops,
+      event_notifier := EventNotifier
+    } = Attribs,
+    #opcua_view{
+        contains_no_loops =  if_defined(ContainsNoLoops),
+        event_notifier =  if_defined(EventNotifier)
+    }.

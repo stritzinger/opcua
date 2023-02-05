@@ -20,7 +20,7 @@
 
 -define(NODE(N, V), #opcua_node{
     node_id = ?NNID(N),
-    value = V
+    node_class = #opcua_variable{value = V}
 }).
 
 -define(REF(TYPE, SOURCE, TARGET), #opcua_reference{
