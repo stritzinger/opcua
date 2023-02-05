@@ -404,10 +404,8 @@ handle_event({call, From}, {write, WriteSpec, Opts},
              connected = State, Data) ->
     Data2 = do_write(Data, WriteSpec, Opts, From, fun contfun_reply/4),
     {keep_state, Data2, enter_timeouts(State, Data2)};
-handle_event({call, From}, {get, NodeIds, _Opts}, connected = State, Data) ->
-    Attribs = [{{A, undefined}, #{}} || A <- opcua_nodeset:attributes()],
-    ReadSpec = [{NID, Attribs} || NID <- NodeIds],
-    Data2 = do_read(Data, ReadSpec, #{}, From, fun contfun_pack_nodes/4),
+handle_event({call, From}, {get, NodeIds, Opts}, connected = State, Data) ->
+    Data2 = do_get(Data, NodeIds, Opts, From, fun contfun_reply/4),
     {keep_state, Data2, enter_timeouts(State, Data2)};
 %% STATE: {reconnecting, Endpoint}
 handle_event(enter, _OldState, {reconnecting, _Endpoint} = State, Data) ->
@@ -528,8 +526,11 @@ do_write(Data, WriteSpec, Opts, Params, ContFun) ->
                                   fun contfun_unpack_write/4)
     end.
 
-% do_get(_Data, _NodeIds, _Opts, _Params, _ContFun) ->
-%     erlang:error(not_implemented).
+do_get(Data, NodeIds, _Opts, Params, ContFun) ->
+    Attribs = [{{A, undefined}, #{}} || A <- opcua_nodeset:attributes()],
+    ReadSpec = [{NID, Attribs} || NID <- NodeIds],
+    UnpackParams = {Params, ContFun},
+    do_read(Data, ReadSpec, #{}, UnpackParams, fun contfun_unpack_get/4).
 
 schedule_continuation(#data{continuations = ContMap} = Data, Key, Params, ContFun) ->
     ?assertNot(maps:is_key(Key, ContMap)),
@@ -565,18 +566,17 @@ contfun_unpack_write(Data, ok, Results, {WriteSpec, SubParams, SubContFun}) ->
     UnpackedResult = unpack_write_result(WriteSpec, Results),
     SubContFun(Data, ok, UnpackedResult, SubParams).
 
+contfun_unpack_get(Data, error, Reason, {Params, ContFun}) ->
+    ContFun(Data, error, Reason, Params);
+contfun_unpack_get(Data, ok, Result, {Params, ContFun}) ->
+    Nodes = [opcua_node:from_attributes(A) || A <- Result],
+    ContFun(Data, ok, Nodes, Params).
+
 contfun_reply(Data, Outcome, '_NO_RESULT_', From) ->
     gen_statem:reply(From, Outcome),
     Data;
 contfun_reply(Data, Outcome, ResultOrReason, From) ->
     gen_statem:reply(From, {Outcome, ResultOrReason}),
-    Data.
-
-contfun_pack_nodes(Data, error, Reason, From) ->
-    gen_statem:reply(From, {error, Reason}),
-    Data;
-contfun_pack_nodes(Data, ok, Result, From) ->
-    gen_statem:reply(From, {ok, [opcua_node:from_attributes(A) || A <- Result]}),
     Data.
 
 delay_response(Data, Tag, From) ->
