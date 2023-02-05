@@ -168,6 +168,7 @@ parse(<<"ns=", Rest/binary>>) ->
 parse(_Data) ->
     erlang:error(badarg).
 
+from_attributes(#{node_id := #opcua_error{} = Error}) -> Error;
 from_attributes(Attribs) ->
     #{
         node_id := NodeId,
@@ -175,7 +176,7 @@ from_attributes(Attribs) ->
         %TODO: We should keep the namespace of the browse name
         browse_name := #opcua_qualified_name{name = BrowseName},
         display_name := #opcua_localized_text{text = DisplayName},
-        description := #opcua_localized_text{text = Description},
+        description := DescriptionRec,
         write_mask := WriteMask,
         user_write_mask := UserWriteMask,
         role_permissions := RolePermissions,
@@ -188,7 +189,7 @@ from_attributes(Attribs) ->
         origin = remote,
         browse_name = BrowseName,
         display_name = DisplayName,
-        description = Description,
+        description = text_if_defined(DescriptionRec),
         write_mask = if_defined(WriteMask),
         user_write_mask = if_defined(UserWriteMask),
         role_permissions = if_defined(RolePermissions),
@@ -280,6 +281,10 @@ attribute_type(Name, _Node) -> opcua_nodeset:attribute_type(Name).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+text_if_defined(#opcua_localized_text{text = Text}) -> Text;
+text_if_defined(#opcua_error{status = bad_attribute_id_invalid}) -> undefined;
+text_if_defined(Value) -> Value.
 
 if_defined(#opcua_error{status = bad_attribute_id_invalid}) -> undefined;
 if_defined(Value) -> Value.
