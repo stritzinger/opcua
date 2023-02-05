@@ -31,6 +31,7 @@
 -export([namespace_uri/1]).
 -export([namespace_id/1]).
 -export([namespaces/0]).
+-export([is_subtype/2]).
 -export([node/1]).
 -export([references/1, references/2]).
 
@@ -137,6 +138,9 @@ namespace_id(Uri) ->
 
 namespaces() ->
     opcua_space_backend:namespaces(?MODULE).
+
+is_subtype(SubTypeSpec, SuperTypeSpec) ->
+    opcua_space_backend:is_subtype(?MODULE, SubTypeSpec, SuperTypeSpec).
 
 node(NodeSpec) ->
     opcua_space_backend:node(?MODULE, NodeSpec).

@@ -53,6 +53,7 @@
 -export([namespace_uri/2]).
 -export([namespace_id/2]).
 -export([namespaces/1]).
+-export([is_subtype/3]).
 
 %% Persistence API Functions
 -export([fold/3]).
@@ -334,6 +335,12 @@ namespaces([_Space | _Rest] = Spaces) ->
 namespaces(Space) ->
     get_namespaces([Space]).
 
+-spec is_subtype(space() | spaces(),  opcua:node_spec(), opcua:node_spec()) -> boolean().
+is_subtype([_|_] = Spaces, SubTypeSpec, SuperTypeSpec) ->
+    check_is_subtype(Spaces, opcua_node:id(SubTypeSpec), opcua_node:id(SuperTypeSpec));
+is_subtype(Space, SubTypeSpec, SuperTypeSpec) ->
+    is_subtype([Space], SubTypeSpec, SuperTypeSpec).
+
 
 %%% STORAGE API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -447,6 +454,15 @@ update_reference_cache(Spaces, deleted, Source, ?NNID(?REF_HAS_SUBTYPE), Target)
 update_reference_cache(_Spaces, _Action, _Source, _Type, _Target) ->
     ok.
 
+check_is_subtype(_Spaces, Type, Type) -> true;
+check_is_subtype([], _SubType, _SuperType) -> false;
+check_is_subtype([Space | Rest], SubType, SuperType) ->
+    SubTable = table(Space, ref_subtypes),
+    case ets:lookup(SubTable, SuperType) of
+        [{SuperType, #{SubType := Result}}] -> Result;
+        _ -> check_is_subtype(Rest, SubType, SuperType)
+    end.
+
 add_subtype([Space | _] = Spaces, Type, SubType) ->
     SubTable = table(Space, ref_subtypes),
     mark_subtype(SubTable, Type, SubType, true),
@@ -486,21 +502,10 @@ mark_subtype(SubTable, SuperType, SubType, Mark) ->
     ets:insert(SubTable, {SuperType, SubTypes}),
     ok.
 
-is_subtype(_Spaces, Type, Type) ->
-    true;
-is_subtype([], _SubType, _SuperType) ->
-    false;
-is_subtype([Space | Rest], SubType, SuperType) ->
-    SubTable = table(Space, ref_subtypes),
-    case ets:lookup(SubTable, SuperType) of
-        [{SuperType, #{SubType := Result}}] -> Result;
-        _ -> is_subtype(Rest, SubType, SuperType)
-    end.
-
 type_filter(Spaces, #{include_subtypes := true, type := #opcua_node_id{} = Type}) ->
     {
         '_',
-        fun(#space_refs{index = {_, T, _}}) -> is_subtype(Spaces, T, Type) end
+        fun(#space_refs{index = {_, T, _}}) -> check_is_subtype(Spaces, T, Type) end
     };
 type_filter(_Spaces, #{include_subtypes := false, type := Type}) ->
     {

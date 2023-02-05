@@ -24,6 +24,7 @@
 -export([namespace_uri/1]).
 -export([namespace_id/1]).
 -export([namespaces/0]).
+-export([is_subtype/2]).
 
 %% Behaviour gen_server callback functions
 -export([init/1]).
@@ -87,6 +88,9 @@ namespace_id(Uri) ->
 
 namespaces() ->
     opcua_space_backend:namespaces([?MODULE, opcua_nodeset]).
+
+is_subtype(SubTypeSpec, SuperTypeSpec) ->
+    opcua_space_backend:is_subtype([?MODULE, opcua_nodeset], SubTypeSpec, SuperTypeSpec).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

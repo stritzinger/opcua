@@ -69,6 +69,10 @@
     when State :: term(), NamespaceId :: non_neg_integer(),
          NamespaceUri :: binary().
 
+-callback is_subtype(State, SubTypeSpec, SuperTypeSpec) -> boolean()
+    when State :: term(), SubTypeSpec :: opcua:node_spec(),
+         SuperTypeSpec :: opcua:node_spec().
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -94,6 +98,7 @@
 -export([namespace_uri/2]).
 -export([namespace_id/2]).
 -export([namespaces/1]).
+-export([is_subtype/3]).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -236,6 +241,14 @@ namespaces({Mod, Sub}) ->
     Mod:namespaces(Sub);
 namespaces(Mod) ->
     Mod:namespaces().
+
+% @doc Checks if the given type is a subtype of given super type.
+is_subtype(#uacp_connection{space = Space}, SubTypeSpec, SuperTypeSpec) ->
+    is_subtype(Space, SubTypeSpec, SuperTypeSpec);
+is_subtype({Mod, Sub}, SubTypeSpec, SuperTypeSpec) ->
+    Mod:is_subtype(Sub, SubTypeSpec, SuperTypeSpec);
+is_subtype(Mod, SubTypeSpec, SuperTypeSpec) ->
+    Mod:is_subtype(SubTypeSpec, SuperTypeSpec).
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
