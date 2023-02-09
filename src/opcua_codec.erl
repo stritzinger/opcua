@@ -49,7 +49,14 @@ resolve(Space, TypeId, Value) ->
         undefined -> throw({schema_not_found, TypeId});
         #opcua_enum{} = Schema -> resolve_enum(Schema, Value);
         #opcua_option_set{} = Schema -> resolve_option_set(Schema, Value);
+        #opcua_structure{} -> resolve_structure(Space, TypeId, Value);
         _Schema -> throw(not_implemented)
+    end.
+
+resolve_structure(Space, RootType, #opcua_extension_object{type_id = SubType, body = Data}) ->
+    case opcua_space:is_subtype(Space, SubType, RootType) of
+        false -> throw({invalid_subtype, SubType, RootType});
+        true -> Data
     end.
 
 resolve_enum(#opcua_enum{node_id = TypeId, fields = Fields}, Value) ->
