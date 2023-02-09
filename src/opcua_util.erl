@@ -158,9 +158,15 @@ policy_type(?POLICY_BASIC256SHA256) -> basic256sha256;
 policy_type(_) -> unsupported.
 
 % @doc Converts nodes, nodes id and references to something more human readable.
+% May not be reversible, some type information and namespace is lost.
 for_human(#opcua_node_id{} = NodeId) -> opcua_node:spec(NodeId);
-for_human(#opcua_reference{type_id = Type, source_id = S, target_id = T}) ->
-    {ref, opcua_node:spec(Type), opcua_node:spec(S), opcua_node:spec(T)};
+for_human(#opcua_qualified_name{name = Name}) -> Name;
+for_human(#opcua_localized_text{text = Text}) -> Text;
+for_human(#opcua_expanded_node_id{node_id = NodeId,
+            namespace_uri = undefined,server_index = undefined}) ->
+    for_human(NodeId);
+for_human(T) when is_tuple(T) ->
+    list_to_tuple(for_human(tuple_to_list(T)));
 for_human(L) when is_list(L) ->
     [for_human(V) || V <- L];
 for_human(M) when is_map(M) ->
