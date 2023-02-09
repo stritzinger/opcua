@@ -1,7 +1,7 @@
 -module(opcua_client).
 
 -behaviour(gen_statem).
-% Insipired by: https://gist.github.com/ferd/c86f6b407cf220812f9d893a659da3b8
+% Inspired by: https://gist.github.com/ferd/c86f6b407cf220812f9d893a659da3b8
 
 
 % When adding a state handler, remember to always add a timeout by calling

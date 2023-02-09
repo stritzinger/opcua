@@ -4,6 +4,20 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -module(opcua_server).
 
+%% TODO %%
+%%
+%% - Implemente a plugable service API that whould handle all the nodes under
+%%   some mount point node, delegating all node handling to some callback module.
+%% - Add suport for method calls.
+%% - Add support for object instanciation from defined type, with instanciation
+%%   of all properties and components defined.
+%% - Add support for object deletion with all its properties.
+%% - Add some notifications of changes so a plugable service could react
+%%   to changes made to there managed nodes. Ideally, there should be a way
+%%   for the service to be able to validate the changes before they even take
+%%   place, so the service can ensure consistency and access managment.
+
+
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -include("opcua.hrl").

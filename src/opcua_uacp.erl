@@ -1,7 +1,11 @@
 -module(opcua_uacp).
 
-%TODO: Check maximum number of inflight requests.
-%TODO: Handle response chunking...
+%% TODO %%
+%%
+%% - Check maximum number of inflight requests.
+%% - Check for maximum chunk size
+%% - Check for maximum message size
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

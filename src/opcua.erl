@@ -2,15 +2,17 @@
 
 -behaviour(application).
 
-%TODO: Security checks:
-%   - The ApplicationUri specified in the Server Certificate is the same as the ApplicationUri provided in the EndpointDescription.
-%   - The Server Certificate returned in CreateSession response is the same as the Certificate used to create the SecureChannel.
-%   - The EndpointDescriptions returned from the DiscoveryEndpoint are the same as the EndpointDescriptions returned in the CreateSession response.
-%   - Client and server should check time synchronization (default: max 5 min)
-%   - Verifiy all certificates against a trusted keychain
-%   - Support sending/receiving certificate chains
-%   - Verify we are enforcing the buffer size restriction correctly (Big certificate chain?)
-%   - Stongly validate the security header
+%% TODO %%
+%%
+%% - Add security checks:
+%%   - The ApplicationUri specified in the Server Certificate is the same as the ApplicationUri provided in the EndpointDescription.
+%%   - The Server Certificate returned in CreateSession response is the same as the Certificate used to create the SecureChannel.
+%%   - The EndpointDescriptions returned from the DiscoveryEndpoint are the same as the EndpointDescriptions returned in the CreateSession response.
+%%   - Client and server should check time synchronization (default: max 5 min)
+%%   - Verifiy all certificates against a trusted keychain
+%%   - Support sending/receiving certificate chains
+%%   - Verify we are enforcing the buffer size restriction correctly (Big certificate chain?)
+%%   - Stongly validate the security header
 
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

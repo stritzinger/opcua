@@ -4,6 +4,18 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -module(opcua_space).
 
+%% TODO %%
+%%
+%% - Move the is_subtype logic to opcua_space so the backend is only handling storage
+%% - Add data type definition generate schemas dynamically
+%% - If not data type definition is found use EnumStrings, EnumValues
+%%   or OptionSetValues and OptionSetLength to deduce a proper schema,
+%%   as some servers seem to not always provide a data type definition
+%%   for enums and option sets.
+%% - Properly update the node version when modifying a data type references.
+%%   We probably wnat this to be optional so it is not done when the space
+%%   is used as a cache for the server space in the client.
+
 
 %%% BEHAVIOUR opcua_database DEFINITION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

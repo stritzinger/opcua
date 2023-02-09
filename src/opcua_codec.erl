@@ -1,5 +1,12 @@
 -module(opcua_codec).
 
+%% TODO %%
+%%
+%% - Add or validate support for variable sized option sets
+%% - Add or validate the support of data types with subtype as fields;
+%%   e.g. a structure data type with a field that could be specified as any
+%%   subtype of sthe defined type. See https://reference.opcfoundation.org/Core/Part3/v105/docs/8.49
+
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -include_lib("kernel/include/logger.hrl").

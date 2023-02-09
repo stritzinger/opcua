@@ -262,7 +262,6 @@ decode_chunk(_Space, MsgType, ChunkType, Data, Chunk)
        MsgType =:= error, ChunkType =:= final ->
     Chunk#uacp_chunk{body = Data};
 decode_chunk(Space, channel_open, final, Data, Chunk) ->
-    %TODO: Pass space to the codec
     #uacp_chunk{header = MessageHeader} = Chunk,
     Spec = [uint32, string, byte_string, byte_string],
     {DecFields, LockedData} = decode(Space, Spec, Data),
@@ -289,7 +288,6 @@ decode_chunk(Space, channel_open, final, Data, Chunk) ->
 decode_chunk(Space, MsgType, ChunkType, Data, Chunk)
   when MsgType =:= channel_close, ChunkType =:= final;
        MsgType =:= channel_message ->
-    %TODO: Pass space to the codec
     #uacp_chunk{header = MessageHeader} = Chunk,
     Spec = [uint32, uint32],
     {[ChannelId, TokenId], LockedData} = decode(Space, Spec, Data),
@@ -346,7 +344,6 @@ freeze_chunk(Space, #uacp_chunk{state = State, message_type = MsgType,
                                  locked_size = LockedSize} = Chunk)
   when State =:= unlocked, MsgType =:= channel_open, ChunkType =:= final,
        HeaderSize =/= undefined, LockedSize =/= undefined ->
-    %TODO: Pass space to the codec
     #uacp_chunk{
         channel_id = ChannelId,
         security = #uacp_chunk_security{
@@ -373,7 +370,6 @@ freeze_chunk(Space, #uacp_chunk{state = State, message_type = MsgType,
        HeaderSize =/= undefined, LockedSize =/= undefined;
        State =:= unlocked, MsgType =:= channel_message,
        HeaderSize =/= undefined, LockedSize =/= undefined ->
-    %TODO: Pass space to the codec
     #uacp_chunk{
         channel_id = ChannelId,
         security = TokenId,

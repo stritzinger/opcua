@@ -262,17 +262,12 @@ handle_response(_State, _Channel, _Conn, activating, Handle, ?NID_SERVICE_FAULT,
     ?LOG_ERROR("Service fault while activating session: ~s", [Reason]),
     {error, Reason};
 handle_response(State, Channel, Conn, activated, Handle, ?NID_BROWSE_RES, Payload) ->
-    %TODO: Add support for batching and error handling
     #{results := Results} = Payload,
     {ok, [{Handle, ok, unpack_browse_results(Results)}], [], Conn, Channel, State};
 handle_response(State, Channel, Conn, activated, Handle, ?NID_READ_RES, Payload) ->
-    %TODO: Add support for multi-node batching and error handling
-    %TODO: Add option to allow per-attribute error instead of all-or-nothing
     #{results := Results} = Payload,
     {ok, [{Handle, ok, unpack_read_results(Results)}], [], Conn, Channel, State};
 handle_response(State, Channel, Conn, activated, Handle, ?NID_WRITE_RES, Payload) ->
-    %TODO: Add support for multi-node batching and error handling
-    %TODO: Add option to allow per-attribute error instead of all-or-nothing
     #{results := Results} = Payload,
     {ok, [{Handle, ok, Results}], [], Conn, Channel, State};
 handle_response(State, Channel, Conn, activated, _Handle, ?NID_CLOSE_SESS_RES, _Payload) ->

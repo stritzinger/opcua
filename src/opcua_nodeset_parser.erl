@@ -7,6 +7,16 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -module(opcua_nodeset_parser).
 
+%% TODO %%
+%%
+%% - When opcua_space has been updated to handle the generation of all the
+%%   metadata dynamically (subtypes, type definition...), use a space and
+%%   store it.
+%% - Properly parse XML values from the NodeSet XML file.
+%%   e.g. Variables like EnumValues (i=15633) should have a value.
+%% - The namespace handling is probably wrong, check how loading multiple
+%%   nodesets with a different list of namespaces would work.
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -109,6 +119,9 @@ parse(DestDir, [File | Files], Meta, Nodes) ->
 %%% XML SAX PARSER CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 parse_node_set({<<"UANodeSet">>, _Attrs, Content}, Meta, Nodes) ->
+    %FIXME: This is probably wrong, checks that the namespaces and alias are
+    % not supposed to be local to a nodeset definition, if they are we shouldn't
+    % merge them into the global map.
     Namespaces = parse_namespaces(get_value([<<"NamespaceUris">>], Content, [])),
     Aliases = parse_aliases(get_value([<<"Aliases">>], Content)),
     Meta2 = Meta#{
