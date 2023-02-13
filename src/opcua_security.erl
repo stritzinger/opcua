@@ -45,15 +45,22 @@
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 supported_endpoints(EndpointUrl) ->
-    [ServerIdent] = opcua_keychain:lookup(alias, server),
-    ServerChain = opcua_keychain:chain(ServerIdent, der),
-    DerBlob = iolist_to_binary(ServerChain),
-    SupportedCombos =
-        [{0, none, none, [anonymous, user_name]},
-         {65, sign, basic256sha256, [anonymous, user_name]},
-         {115, sign_and_encrypt, basic256sha256, [anonymous, user_name]},
-         {60, sign, aes128_sha256_RsaOaep, [anonymous, user_name]},
-         {110, sign_and_encrypt, aes128_sha256_RsaOaep, [anonymous, user_name]}],
+    BaseCombo = {0, none, none, [anonymous, user_name]},
+    SecureCombos = [
+        {65, sign, basic256sha256, [anonymous, user_name]},
+        {115, sign_and_encrypt, basic256sha256, [anonymous, user_name]},
+        {60, sign, aes128_sha256_RsaOaep, [anonymous, user_name]},
+        {110, sign_and_encrypt, aes128_sha256_RsaOaep, [anonymous, user_name]}],
+    LookupResult = opcua_keychain:lookup(alias, server),
+    DerBlob = case LookupResult of
+        not_found -> undefined;
+        [ServerIdent] ->
+            iolist_to_binary(opcua_keychain:chain(ServerIdent, der))
+    end,
+    SupportedCombos = case LookupResult of
+        not_found -> [BaseCombo];
+        _ ->  [BaseCombo | SecureCombos]
+    end,
     [{EndpointUrl, DerBlob, L, M, P, T} || {L, M, P, T} <- SupportedCombos].
 
 init_client(Conn) ->

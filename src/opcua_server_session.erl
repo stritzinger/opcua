@@ -214,9 +214,11 @@ session_create_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     },
     Endpoints = opcua_server_discovery:format_endopoints(
                                 opcua_security:supported_endpoints(EndpointUrl)),
-    ServerIdent = opcua_connection:self_identity(Conn),
-    ServerChain = opcua_keychain:chain(Conn, ServerIdent, der),
-    DerBlob = iolist_to_binary(ServerChain),
+    DerBlob = case opcua_connection:self_identity(Conn) of
+        undefined -> <<>>;
+        ServerIdent ->
+            iolist_to_binary(opcua_keychain:chain(Conn, ServerIdent, der))
+     end,
     Payload = #{
         session_id => SessId,
         authentication_token => AuthToken,
