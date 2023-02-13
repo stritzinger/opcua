@@ -747,23 +747,24 @@ select_endpoint(Conn, Mode, Policy, AuthSpec, Endpoints) ->
     AuthType = auth_type(AuthSpec),
     FilteredBySecurity = filter_by_security(Endpoints, Mode, PolicyUri, ServerCert),
     FilteredByTokens = filter_by_token_type(FilteredBySecurity, AuthType),
-    case take_first_who_validates(Conn, FilteredByTokens) of
+    case take_first_who_validates(Conn, Mode, FilteredByTokens) of
         not_found -> {error, not_found};
         {Conn3, PeerIdentity, #{user_identity_tokens:= Tokens} = Endpoint} ->
             [#{policy_id := PolicyId} | _] = filter_tokens(Tokens, AuthType),
             {ok, Conn3, PeerIdentity, Endpoint, PolicyId, AuthSpec}
     end.
 
-take_first_who_validates(_, []) ->
+take_first_who_validates(_, _, []) ->
     not_found;
-take_first_who_validates(Conn, [#{server_certificate := undefined}| Rest]) ->
-    take_first_who_validates(Conn, Rest);
-take_first_who_validates(Conn, [CandidateEndpoint| Rest]) ->
+take_first_who_validates(Conn,  Mode, [#{server_certificate := undefined}| Rest])
+when Mode =/= none ->
+    take_first_who_validates(Conn,  Mode, Rest);
+take_first_who_validates(Conn,  Mode, [CandidateEndpoint| Rest]) ->
     #{server_certificate := C} = CandidateEndpoint,
     case opcua_keychain:validate(Conn, C) of
         {ok, Conn2, PeerIdentity} -> {Conn2, PeerIdentity, CandidateEndpoint};
         {error, _Reason} ->
-            take_first_who_validates(Conn, Rest)
+            take_first_who_validates(Conn,  Mode, Rest)
     end.
 
 filter_by_security(Endpoints, Mode, PolicyUri, ServerDerCert) ->
