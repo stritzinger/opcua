@@ -37,9 +37,7 @@
     channel                         :: term(),
     proto                           :: term(),
     sess                            :: term(),
-    endpoint_selector               :: function(),
-    security_mode                   :: atom(),
-    security_policy                 :: atom()
+    endpoint_selector               :: function()
 }).
 
 
@@ -55,8 +53,6 @@ init(Mode, Opts) ->
                 mode = Mode,
                 introspection = maps:get(introspection, AllOpts),
                 endpoint_selector = maps:get(endpoint_selector, AllOpts),
-                security_mode = maps:get(mode, AllOpts),
-                security_policy = maps:get(policy, AllOpts),
                 proto = Proto
             },
             {ok, State}
@@ -210,12 +206,12 @@ handle_response(#state{mode = lookup_endpoint} = State, Conn, Response) ->
         {open, Conn2, State2} ->
             no_result(channel_get_endpoints(State2, Conn2));
         {endpoints, Endpoints, Conn2, State2} ->
-            case select_endpoint(State2, Conn, Endpoints) of
+            case select_endpoint(State2, Conn2, Endpoints) of
                 {error, Reason} ->
                     {error, Reason, State2};
-                {ok, Endpoint} ->
-                    opcua_connection:notify(Conn2, {reconnect, Endpoint}),
-                    {ok, Conn2, State2}
+                {ok, Conn3, PeerInfo} ->
+                    opcua_connection:notify(Conn3, {reconnect, PeerInfo}),
+                    {ok, Conn3, State2}
             end;
         {closed, Conn2, State2} ->
             opcua_connection:notify(Conn, closed),
@@ -241,7 +237,9 @@ handle_response(#state{mode = open_session} = State, Conn, Response) ->
 select_endpoint(#state{endpoint_selector = Selector}, Conn, Endpoints) ->
     case Selector(Conn, Endpoints) of
         {error, not_found} -> {error, no_compatible_server_endpoint};
-        {ok, Endpoint, _AuthPolicyId, _AuthSpec} -> {ok, Endpoint}
+        {ok, Conn2, PeerIdent,
+            #{endpoint_url := Url} = _Endpoint, _AuthPolicyId, _AuthSpec} ->
+            {ok, Conn2, {PeerIdent, Url}}
     end.
 
 
@@ -341,17 +339,17 @@ session_abort_response(#state{channel = Channel, sess = Sess} = State, Conn, Msg
 
 %== Channel Module Abstraction Functions =======================================
 
-channel_open(#state{channel = undefined, security_mode = Mode,
-                    security_policy = Policy} = State, Conn) ->
-    case opcua_client_channel:init(Conn, Mode, Policy) of
+channel_open(#state{channel = undefined} = State, Conn) ->
+    case opcua_client_channel:init(Conn) of
         {error, Reason} ->
+            ?LOG_WARNING("Error: ~p", [Reason]),
             {error, Reason, State};
-        {ok, Channel} ->
-            case opcua_client_channel:open(Conn, Channel) of
+        {ok, Conn2, Channel} ->
+            case opcua_client_channel:open(Conn2, Channel) of
                 % No error use-case yet, disabled to make dialyzer happy
                 % {error, _Reason} = Error -> Error;
-                {ok, Req, Conn2, Channel2} ->
-                    {ok, Req, Conn2, State#state{channel = Channel2}}
+                {ok, Req, Conn3, Channel2} ->
+                    {ok, Req, Conn3, State#state{channel = Channel2}}
             end
     end.
 

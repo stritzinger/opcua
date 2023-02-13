@@ -28,7 +28,6 @@
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(ENC_ALGO_RSA_OAEP, <<"http://www.w3.org/2001/04/xmlenc#rsa-oaep">>).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -69,7 +68,7 @@ create(Conn, Channel, #state{status = undefined} = State) ->
         endpoint_url => opcua_connection:endpoint_url(Conn),
         session_name => <<"Stritzinger OPCUA Session 1">>,
         client_nonce => opcua_util:nonce(),
-        client_certificate => undefined,
+        client_certificate => opcua_connection:self_certificate(Conn),
         requested_session_timeout => 3600000.0,
         max_response_message_size => 0
     },
@@ -220,7 +219,7 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
         authentication_token := AuthToken,
         max_request_message_size := _MaxReqMsgSize,
         revised_session_timeout := _RevisedSessTimeout,
-        server_certificate := _ServerCert,
+        server_certificate := ServerDerCert,
         server_endpoints := ServerEndpoints,
         server_nonce := ServerNonce,
         server_signature := _ServerSig,
@@ -236,10 +235,8 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
         {ok, Conn2, State3} ->
             IdentToken = identity_token(State3, Conn2, ServerNonce),
             ReqPayload = #{
-                client_signature => #{
-                    algorithm => <<"http://www.w3.org/2000/09/xmldsig#rsa-sha1">>,
-                    signature => undefined
-                },
+                client_signature => add_client_signature(Conn2, ServerDerCert,
+                                                         ServerNonce),
                 client_software_certificates => [],
                 locale_ids => [<<"en">>],
                 user_identity_token => IdentToken,
@@ -254,6 +251,10 @@ handle_response(State, Channel, Conn, creating, _Handle, ?NID_CREATE_SESS_RES, R
                                      ?NID_ACTIVATE_SESS_REQ, ReqPayload),
             {ok, [], [Req], Conn3, Channel2, State5}
     end;
+handle_response(_State, _Channel, _Conn, creating, Handle, ?NID_SERVICE_FAULT,
+                #{response_header := #{request_handle := Handle, service_result := Reason}}) ->
+    ?LOG_ERROR("Service fault while creating session: ~s", [Reason]),
+    {error, Reason};
 handle_response(State, Channel, Conn, activating, _Handle, ?NID_ACTIVATE_SESS_RES, _Payload) ->
     opcua_connection:notify(Conn, ready),
     {ok, [], [], Conn, Channel, State#state{status = activated}};
@@ -280,17 +281,16 @@ select_endpoint(#state{endpoint = undefined} = State, Conn, Endpoints) ->
     #state{selector = Selector} = State,
     case Selector(Conn, Endpoints) of
         {error, not_found} -> {error, no_compatible_server_endpoint};
-        {ok, Endpoint, TokenPolicyId, AuthSpec} ->
-            #{server_certificate := Cert,
-              user_identity_tokens := Tokens} = Endpoint,
-            case opcua_connection:validate_peer(Conn, Cert) of
+        {ok, Conn2, PeerIdent, Endpoint, TokenPolicyId, AuthSpec} ->
+            #{user_identity_tokens := Tokens} = Endpoint,
+            case opcua_connection:lock_peer(Conn2, PeerIdent) of
                 {error, _Reason} = Error -> Error;
-                {ok, Conn2} ->
+                {ok, Conn3} ->
                     FilteredTokens = [T || T = #{policy_id := I} <- Tokens,
                                            I =:= TokenPolicyId],
                     Endpoint2 = Endpoint#{user_identity_tokens => FilteredTokens},
                     State2 = State#state{endpoint = Endpoint2, auth_spec = AuthSpec},
-                    {ok, Conn2, State2}
+                    {ok, Conn3, State2}
             end
     end.
 
@@ -326,17 +326,17 @@ identity_token(#state{endpoint = #{
         }
     };
 identity_token(#state{endpoint = #{
-                        security_policy_uri := ?POLICY_NONE,
+                        security_policy_uri := _,
                         user_identity_tokens := [
                             #{token_type := user_name, policy_id := PolicyId,
-                              security_policy_uri := ?POLICY_BASIC256SHA256}]},
+                        % TODO TokenPolicyri could be empty! use secure channel policy in the case
+                              security_policy_uri := TokenPolicyUri}]},
                       auth_spec = {user_name, Username, Password}},
                Conn, ServerNonce) ->
-    %TODO: Handle not having a server certificate ?
-    PublicKey = opcua_connection:peer_public_key(Conn),
-    CleatTextSize = byte_size(Password) + byte_size(ServerNonce),
-    ClearText = <<CleatTextSize:32/little, Password/binary, ServerNonce/binary>>,
-    Secret = public_key:encrypt_public(ClearText, PublicKey, [{rsa_padding, rsa_pkcs1_oaep_padding}]),
+    {ok, Policy} = opcua_util:security_policy(opcua_util:policy_type(TokenPolicyUri)),
+    Secret = opcua_security:encrypt_user_password(Conn, Password,
+                                                  ServerNonce, Policy),
+    Algoritm = Policy#uacp_security_policy.asymmetric_encryption_algorithm,
     #opcua_extension_object{
         type_id = ?NID_USERNAME_IDENTITY_TOKEN,
         encoding = byte_string,
@@ -344,10 +344,13 @@ identity_token(#state{endpoint = #{
             policy_id => PolicyId,
             user_name => Username,
             password => Secret,
-            encryption_algorithm => ?ENC_ALGO_RSA_OAEP
+            encryption_algorithm => opcua_util:algoritm_uri(Algoritm)
         }
     }.
 
+% TODO Token policy
+% select_password_algoritm(ChannelPolicy, TokenPolicy) ->
+%     ok.
 
 %== Channel Module Abstraction Functions =======================================
 
@@ -380,3 +383,14 @@ channel_make_request(State, Channel, Conn, NodeId, Payload) ->
         opcua_client_channel:make_request(channel_message, NodeId,
                                           Payload, State, Conn, Channel),
     {ok, Req, Conn2, Channel2, State}.
+
+add_client_signature(Conn, ServerDerCert, ServerNonce) ->
+    case opcua_connection:security_mode(Conn) of
+        none ->
+            #{algorithm => undefined, signature => undefined};
+        _M ->
+            Policy = opcua_connection:security_policy(Conn),
+            PrivateKey = opcua_connection:self_private_key(Conn),
+            opcua_security:session_signature(Policy, PrivateKey,
+                                         ServerDerCert, ServerNonce)
+        end.

@@ -49,7 +49,7 @@
 
 %-- OPCUA Types ----------------------------------------------------------------
 
--type endpoint() :: #opcua_endpoint{}.
+-type endpoint_url() :: #opcua_endpoint_url{}.
 -type node_id_type() :: numeric | string | guid | opaque.
 -type node_id() :: #opcua_node_id{}.
 -type node_origin() :: nodeset | local | remote.
@@ -78,7 +78,7 @@
 -type array_dimensions() :: [] | [non_neg_integer()].
 
 -export_type([
-    endpoint/0,
+    endpoint_url/0,
     node_id_type/0,
     node_id/0,
     expanded_node_id/0,
@@ -255,6 +255,7 @@
 -type channel_id() :: pos_integer().
 -type sequence_num() :: pos_integer().
 -type request_id() :: pos_integer().
+-type symmetric_keys() :: #uacp_symmetric_keys{}.
 -type security_policy() :: #uacp_security_policy{}.
 -type security_mode() :: none | sign | sign_and_encrypt.
 -type auth_token_type() :: anonymous | user_name.
@@ -293,6 +294,7 @@
     channel_id/0,
     sequence_num/0,
     request_id/0,
+    symmetric_keys/0,
     security_policy/0,
     security_mode/0,
     auth_token_type/0,

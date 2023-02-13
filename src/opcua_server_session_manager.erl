@@ -53,7 +53,7 @@ start_link(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Opts, []).
 
 handle_request(Conn, #uacp_message{node_id = #opcua_node_id{value = 459}} = Req) ->
-    Conn2 = opcua_connection:share(Conn),
+    Conn2 = opcua_keychain:shareable(Conn),
     case gen_server:call(?SERVER, {create_session, Conn2, Req}) of
         {error, _Reason} = Error -> Error;
         {created, Resp, Conn3, SessPid} ->
@@ -61,7 +61,7 @@ handle_request(Conn, #uacp_message{node_id = #opcua_node_id{value = 459}} = Req)
             {created, Resp, Conn4, SessPid}
     end;
 handle_request(Conn, #uacp_message{} = Req) ->
-    Conn2 = opcua_connection:share(Conn),
+    Conn2 = opcua_keychain:shareable(Conn),
     case gen_server:call(?SERVER, {forward_request, Conn2, Req}) of
         {error, _Reason} = Error -> Error;
         {Tag, Resp, #uacp_connection{} = Conn3, SessPid} ->

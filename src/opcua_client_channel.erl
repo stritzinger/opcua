@@ -15,7 +15,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API functions
--export([init/3]).
+-export([init/1]).
 -export([make_request/6]).
 -export([open/2]).
 -export([get_endpoints/2]).
@@ -33,6 +33,7 @@
 
 -record(state, {
     channel_id                      :: undefined | pos_integer(),
+    opening_nonce                   :: undefined | binary(),
     security                        :: term(),
     req_id = 1                      :: pos_integer(),
     req_handle = 1                  :: pos_integer()
@@ -41,8 +42,12 @@
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(_Conn, Mode, Policy) ->
-    security_init(#state{}, Mode, Policy).
+init(Conn) ->
+    case security_init(Conn) of
+        {error, _Reason} = Error ->
+            ?LOG_WARNING("Error: ~p", [Error]),Error;
+        {ok, Conn2, Sec} -> {ok, Conn2, #state{security = Sec}}
+    end.
 
 make_request(Type, NodeId, Payload, Sess, Conn, State)
   when Type =:= channel_open; Type =:= channel_close; Type =:= channel_message ->
@@ -63,19 +68,16 @@ make_request(Type, NodeId, Payload, Sess, Conn, State)
     {ok, Req, Conn, State2}.
 
 open(Conn, State) ->
+    OpeningNonce = opcua_security:nonce(State#state.security),
     Payload = #{
         client_protocol_version => 0,
         request_type => issue,
-        security_mode => none,
-        client_nonce => undefined,
+        security_mode => opcua_connection:security_mode(Conn),
+        client_nonce => OpeningNonce,
         requested_lifetime => 3600000
     },
-    % TODO: Apply Asimmetric encryption at this step
-    %
-    %
-    %
     make_request(channel_open, ?NID_CHANNEL_OPEN_REQ, Payload,
-                 undefined, Conn, State).
+                 undefined, Conn, State#state{opening_nonce = OpeningNonce}).
 
 get_endpoints(Conn, State) ->
     Payload = #{
@@ -94,13 +96,16 @@ handle_response(#uacp_message{type = channel_open, sender = server,
                              node_id = ?NID_CHANNEL_OPEN_RES,
                              payload = Payload}, Conn, State) ->
     %TODO: validate that the payload match the current security
-    %
-    % THIS IS THE SECUDER MESSAGE RESPONCE
-    % -> Derivate secrets for simmetric encryption
-    %
     ?LOG_DEBUG("Secure channel opened: ~p", [Payload]),
-    #{security_token := #{channel_id := ChannelId, token_id := TokenId}} = Payload,
-    {open, Conn, security_token_id(State#state{channel_id = ChannelId}, TokenId)};
+    #{security_token := #{channel_id := ChannelId, token_id := TokenId},
+    server_nonce := ServerNonce} = Payload,
+    #state{security = Sec, opening_nonce = ClientNonce} = State,
+    NewSec = opcua_security:derive_keys(ClientNonce, ServerNonce, Sec),
+    NewState = security_token_id(State#state{
+                                        channel_id = ChannelId,
+                                        security = NewSec
+                                    }, TokenId),
+    {open, Conn, NewState};
 handle_response(#uacp_message{type = channel_message, sender = server,
                              node_id = ?NID_GET_ENDPOINTS_RES,
                              payload = Payload}, Conn, State) ->
@@ -170,11 +175,8 @@ lock_chunk(State, Conn, Chunk) ->
 
 %== Security Module Abstraction Functions ======================================
 
-security_init(#state{security = undefined} = State, Mode, Policy) ->
-    case opcua_security:init_client(Mode, Policy) of
-        {error, _Reason} = Error -> Error;
-        {ok, Sec} -> {ok, State#state{security = Sec}}
-    end.
+security_init(Conn) ->
+    opcua_security:init_client(Conn).
 
 security_token_id(#state{security = Sec} = State, TokenId) ->
     Sec2 = opcua_security:token_id(TokenId, Sec),

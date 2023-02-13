@@ -6,9 +6,10 @@
 %%%
 %%%
 %%% WARNING:
-%%%  - When passed to a different process, the share/1 function must be called.
-%%%    This will make the keychain read-only. When getting the connection back
-%%%    from the process, the merge/2 must be calledto reconciliate the result
+%%%  - When passed to a different process, the opcua_keychain:shareable/1
+%%%    function must be called. This will make the keychain read-only.
+%%%    When getting the connection back from the process,
+%%%    the merge/2 must be calledto reconciliate the result
 %%%    and the original data. For now the result is just discarded.
 %%%
 %%% @end
@@ -27,9 +28,12 @@
 
 %% API functions
 -export([new/6]).
--export([share/1]).
 -export([merge/2]).
 -export([endpoint_url/1]).
+-export([security_policy/1]).
+-export([security_mode/1]).
+-export([set_security_policy/2]).
+-export([set_security_mode/2]).
 -export([monitor/1]).
 -export([demonitor/2]).
 -export([notify/2]).
@@ -38,32 +42,29 @@
 -export([response/4]).
 
 %% Keychain API functions
+-export([self_identity/1]).
 -export([self_certificate/1]).
+-export([self_private_key/1]).
 -export([self_thumbprint/1]).
+-export([peer_identity/1]).
 -export([peer_certificate/1]).
 -export([peer_public_key/1]).
 -export([peer_thumbprint/1]).
 -export([lock_peer/2]).
--export([validate_peer/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-new(Space, Keychain, Identity, Endpoint, PeerAddr, SockAddr) ->
+new(Space, Keychain, Identity, EndpointUrl, PeerAddr, SockAddr) ->
     #uacp_connection{
-        pid         = self(),
-        space       = Space,
-        keychain    = Keychain,
-        self_ident  = Identity,
-        endpoint    = Endpoint,
-        peer        = PeerAddr,
-        sock        = SockAddr
+        pid          = self(),
+        space        = Space,
+        keychain     = Keychain,
+        self_ident   = Identity,
+        endpoint_url = EndpointUrl,
+        peer         = PeerAddr,
+        sock         = SockAddr
     }.
-
-% @doc Prepares the connection to be shared with other processes.
-% The keychain of a shared connection is read-only.
-share(#uacp_connection{keychain = Keychain} = Conn) ->
-    Conn#uacp_connection{keychain = opcua_keychain:shareable(Keychain)}.
 
 % @doc Merge the changes of a connection that has been shared with another
 % process with the previous unshared connection. The main role of this merge
@@ -73,7 +74,17 @@ share(#uacp_connection{keychain = Keychain} = Conn) ->
 merge(#uacp_connection{} = Original, #uacp_connection{} = _Shared) ->
     Original.
 
-endpoint_url(#uacp_connection{endpoint = #opcua_endpoint{url = Url}}) -> Url.
+endpoint_url(#uacp_connection{endpoint_url = #opcua_endpoint_url{url = Url}}) -> Url.
+
+security_policy(#uacp_connection{security_policy = P}) -> P.
+
+security_mode(#uacp_connection{security_mode = M}) -> M.
+
+set_security_policy(#uacp_connection{security_policy = undefined} = Conn, Policy) ->
+    Conn#uacp_connection{ security_policy = Policy}.
+
+set_security_mode(#uacp_connection{security_mode = undefined} = Conn, Mode) ->
+    Conn#uacp_connection{security_mode = Mode}.
 
 monitor(#uacp_connection{pid = Pid}) ->
     erlang:monitor(process, Pid).
@@ -120,74 +131,60 @@ response(#uacp_connection{}, #uacp_message{sender = client} = Req, NodeId, ResPa
 
 %%% KEYCHAIN API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+self_identity(#uacp_connection{self_ident = SI}) -> SI.
+
 self_certificate(#uacp_connection{self_ident = undefined}) -> undefined;
 self_certificate(#uacp_connection{self_ident = Ident, keychain = Keychain}) ->
-    %TODO: Figure out when more than one certificate is required
-    %TODO: Maybe fail if the identity is not found ?
     case opcua_keychain:certificate(Keychain, Ident, der) of
-        not_found -> undefined;
+        not_found -> {error, certificate_not_found};
         CertDer -> CertDer
+    end.
+
+self_private_key(#uacp_connection{self_ident = undefined}) -> undefined;
+self_private_key(#uacp_connection{self_ident = Ident, keychain = Keychain}) ->
+    case opcua_keychain:private_key(Keychain, Ident, rec) of
+        not_found -> {error, certificate_not_found};
+        KeyRecord -> KeyRecord
     end.
 
 self_thumbprint(#uacp_connection{self_ident = undefined}) -> undefined;
 self_thumbprint(#uacp_connection{self_ident = Ident, keychain = Keychain}) ->
-    %TODO: Maybe fail if the identity is not found ?
     case opcua_keychain:info(Keychain, Ident) of
-        not_found -> undefined;
+        not_found -> {error, certificate_not_found};
         #{thumbprint := Thumbprint} -> Thumbprint
     end.
 
+peer_identity(#uacp_connection{peer_ident = PI}) -> PI.
+
 peer_certificate(#uacp_connection{peer_ident = undefined}) -> undefined;
 peer_certificate(#uacp_connection{peer_ident = Ident, keychain = Keychain}) ->
-    %TODO: Maybe fail if the identity is not found ?
     case opcua_keychain:certificate(Keychain, Ident, der) of
-        not_found -> undefined;
+        not_found -> {error, peer_certificate_not_found};
         CertDer -> CertDer
     end.
 
 peer_public_key(#uacp_connection{peer_ident = undefined}) -> undefined;
 peer_public_key(#uacp_connection{peer_ident = Ident, keychain = Keychain}) ->
-    %TODO: Maybe fail if the identity is not found ?
     case opcua_keychain:public_key(Keychain, Ident, rec) of
-        not_found -> undefined;
+        not_found -> {error, peer_certificate_not_found};
         KeyRec -> KeyRec
     end.
 
 peer_thumbprint(#uacp_connection{peer_ident = undefined}) -> undefined;
 peer_thumbprint(#uacp_connection{peer_ident = Ident, keychain = Keychain}) ->
-    %TODO: Maybe fail if the identity is not found ?
     case opcua_keychain:info(Keychain, Ident) of
-        not_found -> undefined;
+        not_found -> {error, peer_certificate_not_found};
         #{thumbprint := Thumbprint} -> Thumbprint
     end.
 
 lock_peer(#uacp_connection{peer_ident = Ident} = Conn, Ident) -> {ok, Conn};
 lock_peer(#uacp_connection{keychain = Keychain, peer_ident = undefined} = Conn, Ident) ->
-    %TODO: Should we validate anything, or just trust the caller ?
     case opcua_keychain:add_alias(Keychain, Ident, peer) of
         not_found -> {error, peer_certificate_not_found};
         {ok, Keychain2} ->
             {ok, Conn#uacp_connection{keychain = Keychain2, peer_ident = Ident}}
     end.
 
-validate_peer(#uacp_connection{peer_ident = undefined} = Conn, undefined) ->
-    {ok, Conn};
-validate_peer(#uacp_connection{keychain = Keychain, peer_ident = undefined} = Conn, DerData) ->
-    IdentOpts = #{alias => peer},
-    case opcua_keychain:add_certificate(Keychain, DerData, IdentOpts) of
-        {error, _Reason} = Error -> Error;
-        {ok, #{id := Ident}, Keychain2} ->
-            case opcua_keychain:validate(Keychain2, Ident) of
-                {error, _Reason} = Error -> Error;
-                ok ->
-                    %TODO: Validate certificate hostname if needed
-                    {ok, Conn#uacp_connection{keychain = Keychain2,
-                                              peer_ident = Ident}}
-            end
-    end;
-validate_peer(#uacp_connection{keychain = Keychain, peer_ident = Ident} = Conn, DerData) ->
-    case opcua_keychain:certificate(Keychain, Ident, der) of
-        not_found -> {error, internal_error};
-        DerData -> {ok, Conn};
-        _OtherDer -> {error, peer_identity_changed}
-    end.
+%%% UTILITY FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+

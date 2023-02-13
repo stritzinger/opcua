@@ -26,10 +26,13 @@
 -export([get_int/3]).
 -export([convert_name/1]).
 -export([parse_range/1]).
--export([parse_endpoint/1, parse_endpoint/2]).
+-export([parse_endpoint/1]).
+-export([algoritm_type/1]).
+-export([algoritm_uri/1]).
 -export([policy_uri/1]).
 -export([policy_type/1]).
 -export([for_human/1]).
+-export([security_policy/1]).
 
 %% Debug functions
 -export([decode_client_message/1]).
@@ -133,28 +136,37 @@ parse_range(undefined) -> undefined;
 parse_range(<<>>) -> undefined;
 parse_range(Range) -> parse_range_dims(Range, []).
 
-parse_endpoint(EndpointSpec, ServerCert) ->
-    Endpoint = parse_endpoint(EndpointSpec),
-    Endpoint#opcua_endpoint{cert = ServerCert}.
-
 parse_endpoint({{A, B, C, D} = Ip, Port})
   when is_integer(A), A >= 0, A < 256, is_integer(B), B >= 0, B < 256,
        is_integer(C), C >= 0, C < 256, is_integer(D), D >= 0, D < 256,
        is_integer(Port), Port >= 0, Port < 65536 ->
     Url = iolist_to_binary(io_lib:format("opc.tcp://~w.~w.~w.~w:~w", [A, B, C, D, Port])),
-    #opcua_endpoint{url = Url, host = Ip, port = Port};
+    #opcua_endpoint_url{url = Url, host = Ip, port = Port};
 parse_endpoint(Url) when is_binary(Url) ->
     Map = #{host := BinHost} = uri_string:parse(Url),
     <<"opc.tcp">> = maps:get(scheme, Map, <<"opc.tcp">>),
     Port = maps:get(port, Map, 4840),
     Host = binary_to_list(BinHost),
-    #opcua_endpoint{url = Url, host = Host, port = Port}.
+    #opcua_endpoint_url{url = Url, host = Host, port = Port}.
+
+algoritm_type(?RSA_OAEP) -> {sha, rsa_pkcs1_oaep_padding};
+algoritm_type(?RSA_SHA256) -> {sha256, rsa_pkcs1_padding};
+algoritm_type(?AES_128) -> {aes_128_cbc, 128, 16};
+algoritm_type(?AES_256) -> {aes_256_cbc, 256, 16};
+algoritm_type(_) -> unsupported.
+
+algoritm_uri({sha, rsa_pkcs1_oaep_padding}) -> ?RSA_OAEP;
+algoritm_uri({sha256, rsa_pkcs1_padding}) -> ?RSA_SHA256;
+algoritm_uri({aes_128_cbc, 128, 16}) -> ?AES_128;
+algoritm_uri({aes_256_cbc, 256, 16}) -> ?AES_256.
 
 policy_uri(none) -> ?POLICY_NONE;
-policy_uri(basic256sha256) -> ?POLICY_BASIC256SHA256.
+policy_uri(basic256sha256) -> ?POLICY_BASIC256SHA256;
+policy_uri(aes128_sha256_RsaOaep) -> ?POLICY_AES128_SHA256_RSAOAEP.
 
 policy_type(?POLICY_NONE) -> none;
 policy_type(?POLICY_BASIC256SHA256) -> basic256sha256;
+policy_type(?POLICY_AES128_SHA256_RSAOAEP) -> aes128_sha256_RsaOaep;
 policy_type(_) -> unsupported.
 
 % @doc Converts nodes, nodes id and references to something more human readable.
@@ -174,6 +186,40 @@ for_human(M) when is_map(M) ->
 for_human(O) ->
     O.
 
+security_policy(none) ->
+    {ok, #uacp_security_policy{
+        policy_uri = opcua_util:policy_uri(none)
+    }};
+security_policy(basic256sha256) ->
+   {ok, #uacp_security_policy{
+        policy_uri = policy_uri(basic256sha256),
+        symmetric_signature_algorithm = sha256,
+        symmetric_encryption_algorithm = algoritm_type(?AES_256),
+        asymmetric_signature_algorithm = algoritm_type(?RSA_SHA256),
+        asymmetric_encryption_algorithm = algoritm_type(?RSA_OAEP),
+        min_asymmetric_keyLength = 2048,
+        max_asymmetric_keyLength = 4096,
+        key_derivation_algorithm = sha256,
+        derived_signature_keyLength = 256,
+        certificate_signature_algorithm = ?RSA_SHA256,
+        secureChannelNonceLength = 32
+    }};
+security_policy(aes128_sha256_RsaOaep) ->
+    {ok, #uacp_security_policy{
+        policy_uri = policy_uri(aes128_sha256_RsaOaep),
+        symmetric_signature_algorithm = sha256,
+        symmetric_encryption_algorithm = algoritm_type(?AES_128),
+        asymmetric_signature_algorithm =  algoritm_type(?RSA_SHA256),
+        asymmetric_encryption_algorithm = algoritm_type(?RSA_OAEP),
+        min_asymmetric_keyLength = 2048,
+        max_asymmetric_keyLength = 4096,
+        key_derivation_algorithm = sha256,
+        derived_signature_keyLength = 256,
+        certificate_signature_algorithm = ?RSA_SHA256,
+        secureChannelNonceLength = 32
+    }};
+security_policy(_Policy) ->
+    {error, bad_security_policy_rejected}.
 
 %%% DEBUG FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -183,21 +229,23 @@ decode_client_message(Data) ->
         pid = self(),
         space = opcua_nodeset,
         keychain = default,
-        endpoint = #opcua_endpoint{
+        endpoint_url = #opcua_endpoint_url{
             url = <<"opc+tcp://localhost:4840">>,
             host = "localhost",
             port = 4840
         },
         peer = {{127, 0, 0, 1}, 4840},
-        sock = {{127, 0, 0, 1}, 6666}
+        sock = {{127, 0, 0, 1}, 6666},
+        security_mode = none,
+        security_policy = none
     },
-    case opcua_security:init_client(none, none) of
+    case opcua_security:init_client(Conn) of
         {error, _Reason} = Error -> Error;
-        {ok, Sec} ->
+        {ok, _Conn2, Sec} ->
             Sec2 = opcua_security:token_id(TokenId, Sec),
             {[Chunk], <<>>} = opcua_uacp_codec:decode_chunks(Conn, Data),
             Chunk2 = Chunk#uacp_chunk{security = TokenId},
-            {ok, Chunk3, _Conn2, _Sec3} = opcua_security:unlock(Chunk2, Conn, Sec2),
+            {ok, Chunk3, _Conn3, _Sec3} = opcua_security:unlock(Chunk2, Conn, Sec2),
             #uacp_chunk{message_type = MsgType, body = Body} = Chunk3,
             opcua_uacp_codec:decode_payload(Conn, MsgType, Body)
     end.

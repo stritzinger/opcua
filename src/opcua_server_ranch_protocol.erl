@@ -130,7 +130,7 @@ init(Parent, Ref, Socket, Transport, Opts) ->
 
 resolve_identity(Keychain, undefined) ->
     case opcua_keychain:lookup(Keychain, alias, server) of
-        [] -> undefined;
+        not_found -> undefined;
         [Id | _] -> Id
     end;
 resolve_identity(Keychain, Id) ->

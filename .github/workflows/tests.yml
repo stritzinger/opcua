@@ -1,0 +1,57 @@
+name: OPCUA Tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+
+jobs:
+  run_ct_suites:
+    runs-on: ubuntu-20.04
+    name: Eunit & CT
+    strategy:
+      matrix:
+        otp: ['25']
+        rebar3: ['3.19.0']
+    steps:
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v3
+        id: cache-build
+        env:
+          cache-name: build-cache
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+            priv
+          key: v1-${{runner.os}}-${{env.cache-name}}-otp_${{matrix.otp}}-rebar_${{matrix.rebar3}}-${{hashFiles('certificates/*.cfg')}}
+      - name: Run scripts
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: |
+          chmod +x scripts/*
+          ./scripts/generate_certificates.sh
+          ./scripts/update_nodeset.sh
+      - name: Eunit
+        run: |
+          rebar3 eunit
+      - name: CT running
+        run: |
+          rebar3 ct --cover
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ct.coverdata
+          path: _build/test/cover/ct.coverdata
+      - name: Cover Analysis
+        run: |
+          rebar3 cover
+      - name: Printing Report
+        run: cat _build/test/cover/index.html >> $GITHUB_STEP_SUMMARY
+
