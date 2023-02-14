@@ -1,120 +1,139 @@
-# OPCUA
 
-## Generate certificates
+<p align="center">
+   <img width="50%" src="doc/OPC-UA-Logo-Color_Large.png">
+</p>
 
-To generate certificates please see `certificates/README.MD`
+# OPC UA
 
-## Client
+A native Erlang implementation of the OPCUA Binary Protocol.
 
-### Connecting
+We use erlang 25 or develop and test this application.
 
-#### Anonymous Connection
+[![GitHub](https://github.com/stritzinger/opcua/workflows/opcua/badge.svg)](https://github.com/stritzinger/opcua/actions)
+[![License](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/stritzinger/opcua/blob/master/LICENSE)
+[![Version](https://img.shields.io/github/tag/stritzinger/opcua.svg?color=red&label=version)](https://github.com/sstritzinger/opcua/releases)
 
-e.g.
+---
+## Quick Start
 
-    `{ok, Client} = opcua_client:connect(<<"opc.tcp://localhost:4840">>).`
-    `{ok, Client} = opcua_client:connect(<<"opc.tcp://localhost:4840">>,
-        #{auth => anonymous}).`
+```sh
+# clone
+git clone https://github.com/stritzinger/opcua.git
+cd opcua
 
-#### Connecting with Username and Password
+# you can generate the certificates with
+./scripts/generate_certificates.sh
 
-e.g.
+# optionally update the nodesets
+./scripts/update_nodeset
+```
+You can quickly try it with the erlang shell:
+```sh
+# run default server
+rebar3 as server shell
 
-    `{ok, Client} = opcua_client:connect(<<"opc.tcp://localhost:4840">>,
-        #{auth => {user_name, <<"test">>, <<"test">>}}).`
+# run default client
+rebar3 as client shell
+```
 
-#### Connecting with a specific Security mode and Policy
+Read the [Wiki](https://github.com/stritzinger/opcua/wiki) to learn about the available command line API.
 
-e.g.
+---
 
-    `{ok, Client} = opcua_client:connect(<<"opc.tcp://localhost:4840">>,
-       #{mode => sign_and_encrypt, policy =>basic256sha256}).`
+## Client-Server Features
+We base our development on release v1.04 of the OPCUA specification.
 
-### Browsing Nodes
+Striked checkboxes are not planned.
+Empty ones will be added in future.
 
-e.g.
+### Encoding
 
-    `opcua_client:browse(Client, objects).`
+- [x] OPC UA Binary
+- [ ] ~~OPC UA JSON~~
+- [ ] ~~OPC UA XML~~
 
-With explicit namespace:
+### Transport
 
-    `opcua_client:browse(Client, {1, <<"PLC1">>}).`
+- [x] OPC UA TCP (`opc.tcp`)
+- [ ] ~~OPC UA HTTPS~~
+- [ ] ~~OPC UA XML~~
+- [ ] ~~WebSockets~~
 
-### Reading Attributes
+### Security
 
-e.g.
+#### Modes
 
-With explicit namespace:
+- [x] none
+- [x] sign
+- [x] sign_and_encypt
 
-    `opcua_client:read(Client, {4, <<"OPCUA.int1">>}, value).`
+#### Policies
 
-Batch read:
+- [x] Basic256Sha256
+- [x] Aes128-Sha256-RsaOaep
 
-    `opcua_client:read(Client, {4, <<"OPCUA.int1">>}, [node_id, value]).`
+#### Authentication
 
-With array index:
+- [x] Anonymous
+- [x] User Name Password
+- [ ] X509 Certificate
 
-    `opcua_client:read(Client, {4, <<"OPCUA.array1">>}, {value, 2}).`
+#### Certificate Validation
 
-With multidimensional array index:
+- [x] x509 validation (signature, validity ecc ...)
+- [ ] Hostname & Application Uri ecc ...
+- [ ] Certificate Revocation Lists (CRL)
 
-    `opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, [1, 0, 3]}).`
+### Services
 
-Batch read with indexes:
+The current sets of supported services.
 
-    `opcua_client:read(Client, {4, <<"OPCUA.array1">>}, [{value, 0}, {value, 5}]).`
+| Service Set                 | Service                       | Supported | Notes        |
+|-----------------------------|-------------------------------|-----------|--------------|
+| Discovery Service Set       | FindServers                   |           |              |
+|                             | FindServersOnNetwork          |           |              |
+|                             | GetEndpoints                  | Yes       |              |
+|                             | RegisterServer                |           |              |
+|                             | RegisterServer2               |           |              |
+| Secure Channel Service Set  | OpenSecureChannel             | Yes       |              |
+|                             | CloseSecureChannel            | Yes       |              |
+| Session Service Set         | CreateSession                 | Yes       |              |
+|                             | CloseSession                  | Yes       |              |
+|                             | ActivateSession               | Yes       |              |
+|                             | Cancel                        |           |              |
+| Node Management Service Set | AddNodes                      |           |              |
+|                             | AddReferences                 |           |              |
+|                             | DeleteNodes                   |           |              |
+|                             | DeleteReferences              |           |              |
+| View Service Set            | Browse                        | Yes       |              |
+|                             | BrowseNext                    |           |              |
+|                             | TranslateBrowsePathsToNodeIds |           |              |
+|                             | RegisterNodes                 |           |              |
+|                             | UnregisterNodes               |           |              |
+| Query Service Set           | QueryFirst                    |           |              |
+|                             | QueryNext                     |           |              |
+| Attribute Service Set       | Read                          | Yes       |              |
+|                             | Write                         | Yes       |              |
+|                             | HistoryRead                   |           |              |
+|                             | HistoryUpdate                 |           |              |
+| Method Service Set          | Call                          |           |              |
+| MonitoredItems Service Set  | CreateMonitoredItems          |           |              |
+|                             | DeleteMonitoredItems          |           |              |
+|                             | ModifyMonitoredItems          |           |              |
+|                             | SetMonitoringMode             |           |              |
+|                             | SetTriggering                 |           |              |
+| Subscription Service Set    | CreateSubscription            |           |              |
+|                             | ModifySubscription            |           |              |
+|                             | SetPublishingMode             |           |              |
+|                             | Publish                       |           |              |
+|                             | Republish                     |           |              |
+|                             | DeleteSubscriptions           |           |              |
+|                             | TransferSubscriptions         |           |              |
 
-With array range:
+---
 
-    `opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, {1,4}}).`
-    `opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, [0,{0,3},{2,4}]}).`
+## PubSub Features
 
-With expanded arrays of structs (server dependent):
+OPCUA PubSub can work with or without an OPCUA client and server.
 
-    `opcua_client:read(Client, {4, <<"OPCUA.array3[1]">>}, value).`
-
-### Writing Attributes
-
-e.g.
-
-With explicit namespace:
-
-    `opcua_client:write(Client, {4, <<"OPCUA.int1">>}, value, {opcua_variant, int16, 42}).`
-
-Full array write:
-
-    `opcua_client:write(Client, {4, <<"OPCUA.array1">>}, value, {opcua_variant, boolean, [false,true,false,true,false,true,false,true,false,true]}).`
-
-With array index:
-
-    `opcua_client:write(Client, {4, <<"OPCUA.array1">>}, {value, 2}, true).`
-
-With multidimensional array index:
-
-    `opcua_client:read(Client, {4, <<"OPCUA.array2">>}, {value, [1, 0, 3]}, false).`
-
-With expanded arrays of structs (server dependent):
-
-    `opcua_client:write(Client, {4, <<"OPCUA.array3[1]">>}, {value, {opcua_variant, extension_object, {opcua_extension_object, {opcua_node_id, 4, string, <<"<StructuredDataType>:DataStruct_OpCon_MDT">>}, byte_string, #{chg_over_wpc_no => 0, date_time => 0, dest_cell => 0, dest_workpos => 0, error_no => 0, identifier => <<"foobar">>, origin_cell => 0, origin_workpos => 0, repeat_counter => 0, state => 0, stator_angel => 0, str_type_no => <<>>, w_p_c_no => 0, w_p_c_no_exter => 0, winding => 0}}}}).`
-
-## Server
-
-## Database
-
-OPCUA needs a database of standard node, they are provided by XML NodeSet files.
-To speedup the startup of the client and server, these files are preprocessed
-and stored as term files. The special directory `priv/nodeset/Schema` must
-contain the standard OPCUA node-set definition `Opc.Ua.NodeSet2.Services.xml`,
-the attributes mapping definition `AttributeIds.csv` and the status code mapping
-`StatusCode.csv`. The generated data files needed for runtime are stored in
-`priv/nodeset/data`.
-
-The node-set can be extended by adding custom definitions in
-`priv/nodeset/reference` sub-directories as `XXX.NodeSet2.xml` files.
-
-To update the node-set, you can use the provided script:
-
-    `scripts/update_nodeset.sh -v v1.04`
-
-To only regenerate the internal data without updating the reference files:
-    `scripts/update_nodeset.sh refresh`
+This component is still in early development on a secondary branch.
