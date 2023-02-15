@@ -41,8 +41,18 @@ pack_variant(Space, #opcua_node_id{} = NodeId, Value) ->
     case opcua_space:schema(Space, NodeId) of
         undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
         #opcua_enum{fields = Fields} ->
+            %TODO: Remove code duplication with opcua_codec_binary
             [Idx] = [I || #opcua_field{name = N, value = I} <- Fields, Value =:= N],
             #opcua_variant{type = int32, value = Idx};
+        #opcua_option_set{fields = Fields} ->
+            %TODO: Remove code duplication with opcua_codec_binary
+            %TODO: Add support for variable option set size
+            ChosenFields = [Field || Field = #opcua_field{name = Name} <- Fields,
+                            lists:member(Name, Value)],
+            Int = lists:foldl(fun(X, Acc) ->
+                    Acc bxor (1 bsl X#opcua_field.value)
+            end, 0, ChosenFields),
+            #opcua_variant{type = uint32, value = Int};
         _Other ->
             ExtObj = #opcua_extension_object{type_id = NodeId, encoding = byte_string, body = Value},
             #opcua_variant{type = extension_object, value = ExtObj}

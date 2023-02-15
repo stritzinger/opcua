@@ -359,6 +359,9 @@ encode_schema(Ctx, #opcua_enum{fields = Fields}, Name) ->
     {Value, Data2, Ctx2} = encode_builtin(?PUSHF(Ctx, value), int32,
                                           Field#opcua_field.value),
     {Value, Data2, ?POPF(Ctx2, value)};
+encode_schema(Ctx, #opcua_option_set{mask_type = MaskNodeId}, undefined) ->
+    % If the option set is undefined, encode it as empty
+    encode_type(Ctx, MaskNodeId, 0);
 encode_schema(Ctx, #opcua_option_set{mask_type = MaskNodeId,
                                      fields = Fields}, OptionSet) ->
     ChosenFields = [Field || Field = #opcua_field{name = Name} <- Fields,
@@ -452,16 +455,21 @@ encode_extension_object(#ctx{space = Space} = Ctx,
                         #opcua_extension_object{type_id = NodeSpec,
                                                 encoding = byte_string,
                                                 body = Body}) ->
-    %TODO: Figure out what to do when lookup fail ?
-    case opcua_space:type_descriptor(Space, NodeSpec, binary) of
-        #opcua_node_id{} = TypeDescId ->
-            {EncodedBody, _, Ctx2} = encode_type(Ctx, NodeSpec, Body),
-            {NodeIdData, _, Ctx3} = encode_builtin(Ctx2, node_id, TypeDescId),
-            %% NOTE: encoding byte strings also encodes the 'Length' of those as prefix
-            {BodyData, _, Ctx4} = encode_builtin(Ctx3, byte_string, EncodedBody),
-            FlagData = <<16#01>>,
-            {[NodeIdData, FlagData, BodyData], undefined, Ctx4}
-    end;
+    Id = case opcua_space:type_descriptor(Space, NodeSpec, binary) of
+        #opcua_node_id{} = TypeDescId -> TypeDescId;
+        undefined ->
+            %TODO: figure out what type should be used when there is not type
+            %      descriptor. For noew we return the type itself, but maybe
+            %      we should be looking up parent types ? Use built-in types
+            %      if this is a subtype of one ?
+            opcua_node:id(NodeSpec)
+    end,
+    {EncodedBody, _, Ctx2} = encode_type(Ctx, NodeSpec, Body),
+    {NodeIdData, _, Ctx3} = encode_builtin(Ctx2, node_id, Id),
+    %% NOTE: encoding byte strings also encodes the 'Length' of those as prefix
+    {BodyData, _, Ctx4} = encode_builtin(Ctx3, byte_string, EncodedBody),
+    FlagData = <<16#01>>,
+    {[NodeIdData, FlagData, BodyData], undefined, Ctx4};
 encode_extension_object(Ctx, #opcua_extension_object{encoding = EncInfo}) ->
     opcua_codec_context:issue_encoding_not_supported(Ctx, EncInfo).
 

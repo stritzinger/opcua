@@ -100,11 +100,14 @@
     browse_name                 :: opcua:optional(binary()),
     display_name                :: opcua:optional(binary()),
     description                 :: opcua:optional(binary()),
-    write_mask                  :: opcua:optional(non_neg_integer()),
-    user_write_mask             :: opcua:optional(non_neg_integer()),
+    %TODO: create a type for write mask option set
+    write_mask                  :: opcua:optional(list(atom())),
+    user_write_mask             :: opcua:optional(list(atom())),
+    %FIXME: Role permision typing is broken
     role_permissions            :: opcua:optional(opcua:role_permission()),
     user_role_permissions       :: opcua:optional(opcua:role_permissions()),
-    access_restrictions         :: opcua:optional(non_neg_integer())
+    %TODO: create a type for access restriction option set
+    access_restrictions         :: opcua:optional(list(atom()))
 }).
 
 -record(opcua_object, {
