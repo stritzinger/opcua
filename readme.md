@@ -7,7 +7,7 @@
 
 A native Erlang implementation of the OPCUA Binary Protocol.
 
-We use erlang 25 or develop and test this application.
+We use erlang 25 to develop and test this application.
 
 [![Tests](https://github.com/stritzinger/opcua/actions/workflows/tests.yml/badge.svg)](https://github.com/stritzinger/opcua/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/stritzinger/opcua/blob/master/LICENSE)

@@ -359,9 +359,6 @@ encode_schema(Ctx, #opcua_enum{fields = Fields}, Name) ->
     {Value, Data2, Ctx2} = encode_builtin(?PUSHF(Ctx, value), int32,
                                           Field#opcua_field.value),
     {Value, Data2, ?POPF(Ctx2, value)};
-encode_schema(Ctx, #opcua_option_set{mask_type = MaskNodeId}, undefined) ->
-    % If the option set is undefined, encode it as empty
-    encode_type(Ctx, MaskNodeId, 0);
 encode_schema(Ctx, #opcua_option_set{mask_type = MaskNodeId,
                                      fields = Fields}, OptionSet) ->
     ChosenFields = [Field || Field = #opcua_field{name = Name} <- Fields,

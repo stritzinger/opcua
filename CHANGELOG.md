@@ -8,13 +8,9 @@ and this project adheres to
 
 ## [Unreleased]
 
-## [0.1.0] - yyy-mm-dd
+## [0.1.0] - 2023-02-16
 
-### Added
-
-### Changed
-
-### Fixed
+Initial Public Release
 
 [Unreleased]: https://github.com/stritzinger/opcua/compare/0.1.0...HEAD
-[0.1.0]: https://github.com/stritzinger/opcua/compare/put-commit-here...0.1.0
+[0.1.0]: https://github.com/stritzinger/opcua/compare/ad570a824e7ed0c6eef79166f6c12c05ab4c0ee9...0.1.0

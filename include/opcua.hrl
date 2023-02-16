@@ -101,13 +101,13 @@
     display_name                :: opcua:optional(binary()),
     description                 :: opcua:optional(binary()),
     %TODO: create a type for write mask option set
-    write_mask                  :: opcua:optional(list(atom())),
-    user_write_mask             :: opcua:optional(list(atom())),
+    write_mask = []             :: opcua:optional(list(atom())),
+    user_write_mask = []        :: opcua:optional(list(atom())),
     %FIXME: Role permision typing is broken
     role_permissions            :: opcua:optional(opcua:role_permission()),
     user_role_permissions       :: opcua:optional(opcua:role_permissions()),
     %TODO: create a type for access restriction option set
-    access_restrictions         :: opcua:optional(list(atom()))
+    access_restrictions = []    :: opcua:optional(list(atom()))
 }).
 
 -record(opcua_object, {

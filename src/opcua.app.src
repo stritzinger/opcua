@@ -1,5 +1,5 @@
 {application, opcua,
- [{description, "An OTP application"},
+ [{description, "OPCUA Erlang library"},
   {vsn, "0.1.0"},
   {registered, []},
   {mod, {opcua, []}},
@@ -15,6 +15,23 @@
   {env,[]},
   {modules, []},
 
-  {licenses, ["Apache 2.0"]},
-  {links, []}
+  {licenses, [
+    "Apache 2.0"
+  ]},
+  {links, [
+      {"Homepage", "https://github.com/stritzinger/opcua"},
+      {"Changelog", "https://github.com/stritzinger/opcua/blob/master/CHANGELOG.md"},
+      {"GitHub", "https://github.com/stritzinger/opcua"}
+  ]},
+  {files, [
+      "certificates",
+      "priv/nodeset",
+      "scripts",
+      "include",
+      "src",
+      "LICENSE",
+      "README.md",
+      "rebar.config",
+      "rebar.lock"
+  ]}
  ]}.

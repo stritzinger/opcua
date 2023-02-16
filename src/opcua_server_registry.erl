@@ -161,6 +161,8 @@ static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} 
                [opcua_node:format(Node), Attr]),
     Result = try {opcua_node:attribute_type(Attr, Node),
                   opcua_node:attribute(Attr, Node)} of
+        {_AttrType, undefined} ->
+            #opcua_data_value{status = bad_attribute_id_invalid};
         {AttrType, AttrValue} ->
             try opcua_codec:pack_variant(opcua_server_space, AttrType, AttrValue) of
                 Value -> #opcua_data_value{value = Value}
