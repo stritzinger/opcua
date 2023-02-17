@@ -17,10 +17,13 @@
 
 -define(REF_HAS_CHILD,              34).
 -define(REF_ORGANIZES,              35).
--define(REF_HAS_SUBTYPE,            45).
+-define(REF_HAS_ENCODING,           38).
+-define(REF_HAS_DESCRIPTION,        39).
 -define(REF_HAS_TYPE_DEFINITION,    40).
+-define(REF_HAS_SUBTYPE,            45).
 -define(REF_HAS_PROPERTY,           46).
 -define(REF_HAS_COMPONENT,          47).
+-define(REF_HAS_NOTIFIER,           48).
 
 -define(TYPE_BASE_OBJECT,           58).
 -define(TYPE_FOLDER,                61).

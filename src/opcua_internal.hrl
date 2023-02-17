@@ -65,14 +65,16 @@
 -define(TRANSPORT_PROFILE_BINARY,
         <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>).
 
--define(NID_HAS_COMPONENT,              ?NNID(47)).
--define(NID_HAS_PROPERTY,               ?NNID(46)).
--define(NID_ORGANIZES,                  ?NNID(35)).
--define(NID_HAS_NOTIFIER,               ?NNID(48)).
--define(NID_HAS_SUBTYPE,                ?NNID(45)).
--define(NID_HAS_TYPE_DEFINITION,        ?NNID(40)).
--define(NID_HAS_ENCODING,               ?NNID(38)).
--define(NID_HAS_DESCRIPTION,            ?NNID(39)).
+-define(NID_HAS_CHILD,                  ?NNID(?REF_HAS_CHILD)).
+-define(NID_ORGANIZES,                  ?NNID(?REF_ORGANIZES)).
+-define(NID_HAS_ENCODING,               ?NNID(?REF_HAS_ENCODING)).
+-define(NID_HAS_DESCRIPTION,            ?NNID(?REF_HAS_DESCRIPTION)).
+-define(NID_HAS_TYPE_DEFINITION,        ?NNID(?REF_HAS_TYPE_DEFINITION)).
+-define(NID_HAS_SUBTYPE,                ?NNID(?REF_HAS_SUBTYPE)).
+-define(NID_HAS_PROPERTY,               ?NNID(?REF_HAS_PROPERTY)).
+-define(NID_HAS_COMPONENT,              ?NNID(?REF_HAS_COMPONENT)).
+-define(NID_HAS_NOTIFIER,               ?NNID(?REF_HAS_NOTIFIER)).
+
 -define(NID_DATA_TYPE_ENCODING_TYPE,    ?NNID(76)).
 -define(NID_SERVICE_FAULT,              ?NNID(395)).
 -define(NID_GET_ENDPOINTS_REQ,          ?NNID(426)).

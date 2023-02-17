@@ -43,6 +43,8 @@
 -export([del_references/2]).
 -export([add_descriptor/4]).
 -export([del_descriptor/2]).
+-export([add_subtype/3]).
+-export([del_subtype/3]).
 
 %% API functions for shared reference
 -export([node/2]).
@@ -94,11 +96,15 @@
 new() ->
     new([]).
 
--spec new(spaces()) -> opcua_space:state().
+-spec new(spaces() | opcua_space:state()) -> opcua_space:state().
+new({?MODULE, Parent}) ->
+    new(Parent);
 new(Parent) when is_list(Parent) ->
     {?MODULE, [init() | Parent]}.
 
--spec new(space(), spaces()) -> opcua_space:state().
+-spec new(space(), spaces() | opcua_space:state()) -> opcua_space:state().
+new(Space, {?MODULE, Parent}) ->
+    new(Space, Parent);
 new(Space, Parent) when is_list(Parent) ->
     {?MODULE, [init(Space) | Parent]}.
 
@@ -223,7 +229,6 @@ add_references([Space | _] = Spaces, [Ref | Rest]) ->
     RefTable = table(Space, references),
     mark_reference(RefTable, Source, Type, forward, Target, true),
     mark_reference(RefTable, Target, Type, inverse, Source, true),
-    update_reference_cache(Spaces, added, Source, Type, Target),
     add_references(Spaces, Rest);
 add_references(Space, Refs) ->
     add_references([Space], Refs).
@@ -240,7 +245,6 @@ del_references([Space | _] = Spaces, [Ref | Rest]) ->
     RefTable = table(Space, references),
     mark_reference(RefTable, Source, Type, forward, Target, deleted),
     mark_reference(RefTable, Target, Type, inverse, Source, deleted),
-    update_reference_cache(Spaces, deleted, Source, Type, Target),
     del_references(Spaces, Rest);
 del_references(Space, Refs) ->
     del_references([Space], Refs).
@@ -252,7 +256,9 @@ add_descriptor([Space | _], DescriptorSpec, TypeSpec, Encoding) ->
     Term = {opcua_node:id(DescriptorSpec), {opcua_node:id(TypeSpec), Encoding}},
     ets:insert(table(Space, type2desc), Term),
     ets:insert(table(Space, desc2type), Term),
-    ok.
+    ok;
+add_descriptor(Space, DescriptorSpec, TypeSpec, Encoding) ->
+    add_descriptor([Space], DescriptorSpec, TypeSpec, Encoding).
 
 % @doc Removes a type encoding descriptor.
 -spec del_descriptor(space() | spaces(), opcua:node_spec()) -> ok.
@@ -264,7 +270,25 @@ del_descriptor([Space | _] = Spaces, DescriptorSpec) ->
             ets:insert(table(Space, type2desc), {deleted, Key}),
             ets:insert(table(Space, desc2type), {DescId, deleted}),
             ok
-    end.
+    end;
+del_descriptor(Space, DescriptorSpec) ->
+    del_descriptor([Space], DescriptorSpec).
+
+% @doc Add a subtype index entry
+-spec add_subtype(space() | spaces(), opcua:node_spec(), opcua:node_spec()) -> ok.
+add_subtype([Space | _], Type, SubType) ->
+    SubTable = table(Space, ref_subtypes),
+    mark_subtype(SubTable, opcua_node:id(Type), opcua_node:id(SubType), true);
+add_subtype(Space, Type, SubType) ->
+    add_subtype([Space], Type, SubType).
+
+% @doc Delete a subtype index entry
+-spec del_subtype(space() | spaces(), opcua:node_spec(), opcua:node_spec()) -> ok.
+del_subtype([Space | _], Type, SubType) ->
+    SubTable = table(Space, ref_subtypes),
+    mark_subtype(SubTable, opcua_node:id(Type), opcua_node:id(SubType), false);
+del_subtype(Space, Type, SubType) ->
+    del_subtype([Space], Type, SubType).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -447,13 +471,6 @@ expand_ref(deleted, Source, Type, Target, Acc, Del) ->
     Del2 = Del#{Ref => true},
     {Acc, Del2}.
 
-update_reference_cache(Spaces, added, Source, ?NNID(?REF_HAS_SUBTYPE), Target) ->
-    add_subtype(Spaces, Source, Target);
-update_reference_cache(Spaces, deleted, Source, ?NNID(?REF_HAS_SUBTYPE), Target) ->
-    del_subtype(Spaces, Source, Target);
-update_reference_cache(_Spaces, _Action, _Source, _Type, _Target) ->
-    ok.
-
 check_is_subtype(_Spaces, Type, Type) -> true;
 check_is_subtype([], _SubType, _SuperType) -> false;
 check_is_subtype([Space | Rest], SubType, SuperType) ->
@@ -462,28 +479,6 @@ check_is_subtype([Space | Rest], SubType, SuperType) ->
         [{SuperType, #{SubType := Result}}] -> Result;
         _ -> check_is_subtype(Rest, SubType, SuperType)
     end.
-
-add_subtype([Space | _] = Spaces, Type, SubType) ->
-    SubTable = table(Space, ref_subtypes),
-    mark_subtype(SubTable, Type, SubType, true),
-    SuperTypes = references(Spaces, Type, #{
-        type => ?NNID(?REF_HAS_SUBTYPE),
-        direction => inverse
-    }),
-    lists:map(fun(#opcua_reference{source_id = SuperType}) ->
-        add_subtype(Spaces, SuperType, SubType)
-    end, SuperTypes).
-
-del_subtype([Space | _] = Spaces, Type, SubType) ->
-    SubTable = table(Space, ref_subtypes),
-    mark_subtype(SubTable, Type, SubType, false),
-    SuperTypes = references(Spaces, Type, #{
-        type => ?NNID(?REF_HAS_SUBTYPE),
-        direction => inverse
-    }),
-    lists:map(fun(#opcua_reference{source_id = SuperType}) ->
-        del_subtype(Spaces, SuperType, SubType)
-    end, SuperTypes).
 
 mark_reference(RefTable, Source, Type, Direction, Target, Mark) ->
     Key = {Source, Type, Direction},

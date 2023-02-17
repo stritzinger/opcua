@@ -268,10 +268,10 @@ store_encoding({DescId, {TypeId, Encoding}}) ->
 
 store_node(#opcua_node{} = Node) ->
     %FIXME: Temporary backward compatible hack
-    opcua_space_backend:add_nodes(?MODULE, [Node]),
+    opcua_space:add_nodes({opcua_space_backend, [?MODULE]}, [Node]),
     ok.
 
 store_reference(#opcua_reference{} = Reference) ->
     %FIXME: Temporary backward compatible hack
-    opcua_space_backend:add_references(?MODULE, [Reference]),
+    opcua_space:add_references({opcua_space_backend, [?MODULE]}, [Reference]),
     ok.
