@@ -129,6 +129,8 @@ add_namespace(#uacp_connection{space = Space}, Id, Uri) ->
 add_namespace({Mod, Sub}, Id, Uri) ->
     Mod:add_namespace(Sub, Id, Uri);
 add_namespace(Mod, Id, Uri) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
     Mod:add_namespace(Id, Uri).
 
 % @doc Adds given nodes to the given database.
@@ -139,9 +141,10 @@ add_nodes(#uacp_connection{space = Space} = State, Nodes) ->
 add_nodes({Mod, Sub} = State, Nodes) ->
     Mod:add_nodes(Sub, Nodes),
     nodes_added(State, Nodes);
-add_nodes(Mod = State, Nodes) ->
-    Mod:add_nodes(Nodes),
-    nodes_added(State, Nodes).
+add_nodes(Mod, Nodes) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
+    Mod:add_nodes(Nodes).
 
 % @doc Removes the nodes with given node identifier from the given database.
 % Depending on the backend, may only be allowed from the owning process.
@@ -151,8 +154,9 @@ del_nodes(#uacp_connection{space = Space} = State, NodeIds) ->
 del_nodes({Mod, Sub} = State, NodeIds) ->
     nodes_deleted(State, NodeIds),
     Mod:del_nodes(Sub, NodeIds);
-del_nodes(Mod = State, NodeIds) ->
-    nodes_deleted(State, NodeIds),
+del_nodes(Mod, NodeIds) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
     Mod:del_nodes(NodeIds).
 
 % @doc Adds given references to the given database.
@@ -163,9 +167,10 @@ add_references(#uacp_connection{space = Space} = State, References) ->
 add_references({Mod, Sub} = State, References) ->
     Mod:add_references(Sub, References),
     references_added(State, References);
-add_references(Mod = State, References) ->
-    Mod:add_references(References),
-    references_added(State, References).
+add_references(Mod, References) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
+    Mod:add_references(References).
 
 % @doc Removes given references from given database.
 % Depending on the backend, may only be allowed from the owning process.
@@ -175,8 +180,9 @@ del_references(#uacp_connection{space = Space} = State, References) ->
 del_references({Mod, Sub} = State, References) ->
     references_deleted(State, References),
     Mod:del_references(Sub, References);
-del_references(Mod = State, References) ->
-    references_deleted(State, References),
+del_references(Mod, References) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
     Mod:del_references(References).
 
 
