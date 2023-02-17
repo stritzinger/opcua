@@ -206,7 +206,7 @@ decode_extension_object(Ctx, 16#02, TypeId, T) ->
 decode_extension_object(Ctx, _, _, _) ->
     opcua_codec_context:issue(Ctx, bad_extension_object).
 
-decode_variant(Ctx, <<0:6, Bin/binary>>) ->
+decode_variant(Ctx, <<0:8, Bin/binary>>) ->
     {undefined, Bin, Ctx};
 decode_variant(Ctx, <<ArrayFlag:1/bits, DimFlag:1/bits, TypeId:6/little-unsigned-integer, Bin/binary>>) ->
     decode_variant(Ctx, TypeId, DimFlag, ArrayFlag, Bin);
@@ -470,7 +470,8 @@ encode_extension_object(#ctx{space = Space} = Ctx,
 encode_extension_object(Ctx, #opcua_extension_object{encoding = EncInfo}) ->
     opcua_codec_context:issue_encoding_not_supported(Ctx, EncInfo).
 
-
+encode_variant(Ctx, undefined) ->
+    {<<0:8>>, undefined, Ctx};
 encode_variant(Ctx, #opcua_variant{type = Type, value = MultiArray})
   when is_list(MultiArray) ->
     TypeId = opcua_codec:builtin_type_id(Type),

@@ -808,6 +808,7 @@ unpack_read_result(Space, [{NodeId, [{AttribSpec, _} | MoreAttribs]} | MoreNodes
                        Map#{ResultKey => UnpackedResult}, Acc).
 
 unpack_attribute_value(_Space, _, _, #opcua_error{} = Value) -> Value;
+unpack_attribute_value(_Space, _, variant, undefined) -> undefined;
 unpack_attribute_value(_Space, _, variant, #opcua_variant{} = Value) -> Value;
 unpack_attribute_value(_Space, _, Type, #opcua_variant{type = Type, value = Value}) -> Value;
 unpack_attribute_value(Space, _, #opcua_node_id{} = Type, #opcua_variant{value = Value}) ->
