@@ -432,8 +432,8 @@ add_pem({Mod, Sub, Parent}, Data, Opts) ->
     case decode_pem(Data, Opts, Sub, fun
         (cert, State, Der) ->
             Mod:add_certificate(State, Der, normalize_ident_opts(Opts));
-        (priv, State, Der) ->
-            Mod:add_private(State, Der)
+        (priv, State, {Type, Der}) ->
+            Mod:add_private(State, {Type, Der})
     end) of
         {ok, Infos, Sub2} -> {ok, Infos, {Mod, Sub2, Parent}};
         Result -> Result
@@ -708,8 +708,10 @@ decode_pem_entries([{'Certificate', CertDer, not_encrypted} | Rest], Opts, State
             decode_pem_entries(Rest, Opts, State2, Fun, Acc#{Id => Info});
         Result -> Result
     end;
-decode_pem_entries([{'RSAPrivateKey', KeyDer, not_encrypted} | Rest], Opts, State, Fun, Acc) ->
-    case Fun(priv, State, KeyDer) of
+decode_pem_entries([{Type, KeyDer, not_encrypted} | Rest], Opts, State, Fun, Acc)
+when Type == 'RSAPrivateKey' orelse Type == 'PrivateKeyInfo' ->
+    %TODO: add support for EC keys
+    case Fun(priv, State, {Type, KeyDer}) of
         {ok, #{id := Id} = Info, State2} ->
             decode_pem_entries(Rest, Opts, State2, Fun, Acc#{Id => Info});
         Result -> Result
