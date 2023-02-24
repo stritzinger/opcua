@@ -8,6 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- Add support for openssl 3 `PrivateKeyInfo` Encoding #6
+
 ## [0.1.0] - 2023-02-16
 
 Initial Public Release
