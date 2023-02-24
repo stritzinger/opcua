@@ -157,10 +157,9 @@ add_certificate(#state{table = Table} = State, CertDer, Opts) ->
             {error, decoding_error}
     end.
 
-add_private(#state{read_only = true}, _KeyDer) -> {error, read_only};
-add_private(#state{table = Table} = State, KeyDer) ->
-    %TODO: add support for EC keys
-    try public_key:der_decode('RSAPrivateKey', KeyDer) of
+add_private(#state{read_only = true}, {_Type, _KeyDer}) -> {error, read_only};
+add_private(#state{table = Table} = State, {Type, KeyDer}) ->
+    try public_key:der_decode(Type, KeyDer)  of
         KeyRec ->
             Id = opcua_keychain:private_key_id(KeyRec),
             case ets:lookup(Table, Id) of
