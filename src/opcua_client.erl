@@ -558,12 +558,19 @@ do_continue(Data, Key, Outcome, Result) ->
 do_abort_all(#data{continuations = ContMap} = Data, Reason) ->
     do_continue(Data, [{K, error, Reason} || K <- maps:keys(ContMap)]).
 
+contfun_unpack_read(#data{conn = Conn} = Data, error, Reason,
+                    {_ReadSpec, SubParams, SubContFun}) ->
+    SubContFun(Data, error, Reason, SubParams);
 contfun_unpack_read(#data{conn = Conn} = Data, ok, Results,
                     {ReadSpec, SubParams, SubContFun}) ->
     UnpackedResult = unpack_read_result(Conn, ReadSpec, Results),
     SubContFun(Data, ok, UnpackedResult, SubParams).
 
-contfun_unpack_write(Data, ok, Results, {WriteSpec, SubParams, SubContFun}) ->
+contfun_unpack_write(Data, error, Reason,
+                     {_WriteSpec, SubParams, SubContFun}) ->
+    SubContFun(Data, error, Reason, SubParams);
+contfun_unpack_write(Data, ok, Results,
+                     {WriteSpec, SubParams, SubContFun}) ->
     UnpackedResult = unpack_write_result(WriteSpec, Results),
     SubContFun(Data, ok, UnpackedResult, SubParams).
 

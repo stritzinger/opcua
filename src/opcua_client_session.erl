@@ -120,7 +120,7 @@ abort_response(Msg, Reason, Conn, Channel, State) ->
             ?LOG_WARNING("Unknown request has been aborted", []),
             {error, unknown_request};
         Handle ->
-            {ok, [{Handle, {error, Reason}}], Conn, Channel, State}
+            {ok, [{Handle, error, Reason}], Conn, Channel, State}
     end.
 
 
