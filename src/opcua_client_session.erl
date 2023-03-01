@@ -273,6 +273,10 @@ handle_response(State, Channel, Conn, activated, Handle, ?NID_WRITE_RES, Payload
     {ok, [{Handle, ok, Results}], [], Conn, Channel, State};
 handle_response(State, Channel, Conn, activated, _Handle, ?NID_CLOSE_SESS_RES, _Payload) ->
     {closed, Conn, Channel, State};
+handle_response(_State, _Channel, _Conn, activated, Handle, ?NID_SERVICE_FAULT,
+                #{response_header := #{request_handle := Handle, service_result := Reason}}) ->
+    ?LOG_ERROR("Service fault while activated session: ~s", [Reason]),
+    {error, Reason};
 handle_response(State, Channel, Conn, Status, _Handle, NodeId, Payload) ->
     ?LOG_WARNING("Unexpected message while ~w session: ~p ~p", [Status, NodeId, Payload]),
     {ok, [], [], Conn, Channel, State}.
