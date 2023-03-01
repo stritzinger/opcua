@@ -28,7 +28,8 @@
 
 %% API Functions
 -export([new/2]).
--export([finalize/3]).
+-export([first_issue/1]).
+-export([finalize/2, finalize/3]).
 -export([resolve/3]).
 -export([catch_and_continue/6]).
 -export([export_issues/1]).
@@ -69,6 +70,15 @@ new(Mode, Opts)
         allow_partial = maps:get(allow_partial, Opts, false)
     }.
 
+first_issue(#ctx{issues = []}) -> undefined;
+first_issue(#ctx{issues = Issues}) -> lists:last(Issues).
+
+% Partial result is not yet supported for XML decoding
+finalize(#ctx{allow_partial = false, issues = []}, Result) ->
+    Result;
+finalize(#ctx{allow_partial = false} = Ctx, _Result) ->
+    throw_first_issue(Ctx).
+
 finalize(#ctx{allow_partial = false, issues = []}, Result, Remaining) ->
     {Result, Remaining};
 finalize(#ctx{allow_partial = false} = Ctx, _Result, _Remaining) ->
@@ -76,6 +86,7 @@ finalize(#ctx{allow_partial = false} = Ctx, _Result, _Remaining) ->
 finalize(#ctx{allow_partial = true} = Ctx, Result, Remaining) ->
     {Result, Remaining, opcua_codec_context:export_issues(Ctx)}.
 
+-spec resolve(term(), term(), term()) -> no_return().
 resolve(throw, {?MODULE, #ctx{} = Ctx}, _ExStack) ->
     throw_first_issue(Ctx);
 resolve(Method, Reason, Stack) ->
@@ -142,9 +153,6 @@ format_stack_value(B) when is_binary(B) -> B;
 format_stack_value(I) when is_integer(I) -> integer_to_binary(I);
 format_stack_value(A) when is_atom(A) -> atom_to_binary(A);
 format_stack_value(L) when is_list(L) -> list_to_binary(L).
-
-first_issue(#ctx{issues = []}) -> undefined;
-first_issue(#ctx{issues = Issues}) -> lists:last(Issues).
 
 issue_as_reason(#ctx{}, undefined) -> undefined;
 issue_as_reason(#ctx{mode = decoding}, {generic_codec_error, Reason, Stack}) ->

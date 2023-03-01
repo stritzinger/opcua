@@ -43,13 +43,14 @@
 -export([del_references/2]).
 -export([add_descriptor/4]).
 -export([del_descriptor/2]).
+-export([add_subtype/3]).
+-export([del_subtype/3]).
 
 %% API functions for shared reference
 -export([node/2]).
 -export([references/3]).
 -export([data_type/2]).
 -export([type_descriptor/3]).
--export([schema/2]).
 -export([namespace_uri/2]).
 -export([namespace_id/2]).
 -export([namespaces/1]).
@@ -94,11 +95,15 @@
 new() ->
     new([]).
 
--spec new(spaces()) -> opcua_space:state().
+-spec new(spaces() | opcua_space:state()) -> opcua_space:state().
+new({?MODULE, Parent}) ->
+    new(Parent);
 new(Parent) when is_list(Parent) ->
     {?MODULE, [init() | Parent]}.
 
--spec new(space(), spaces()) -> opcua_space:state().
+-spec new(space(), spaces() | opcua_space:state()) -> opcua_space:state().
+new(Space, {?MODULE, Parent}) ->
+    new(Space, Parent);
 new(Space, Parent) when is_list(Parent) ->
     {?MODULE, [init(Space) | Parent]}.
 
@@ -118,8 +123,6 @@ init(Space) ->
         [{read_concurrency, true}, {keypos, 2}]),
     DescToTypeTable = ets:new(opcua_space_encoding_types,
         [{read_concurrency, true}, {keypos, 1}]),
-    DataTypesTable = ets:new(opcua_space_datatypes,
-        [{read_concurrency, true}]),
     NamespaceIdsTable = ets:new(opcua_space_namespace_ids,
         [{read_concurrency, true}, {keypos, 2}]),
     NamespaceUrisTable = ets:new(opcua_space_namespace_uris,
@@ -130,11 +133,10 @@ init(Space) ->
     RefSubKey = key(Space, ref_subtypes),
     TypeToDescKey = key(Space, type2desc),
     DescToTypeKey = key(Space, desc2type),
-    DataTypesKey = key(Space, datatypes),
     NamespaceIdsKey = key(Space, namespace_ids),
     NamespaceUrisKey = key(Space, namespace_uris),
     Keys = [NodesKey, ReferencesKey, RefSubKey, TypeToDescKey,
-            DescToTypeKey, DataTypesKey, NamespaceIdsKey, NamespaceUrisKey],
+            DescToTypeKey, NamespaceIdsKey, NamespaceUrisKey],
 
     spawn_cleanup_proc(self(), Keys),
 
@@ -143,7 +145,6 @@ init(Space) ->
     persistent_term:put(RefSubKey, RefSubTable),
     persistent_term:put(TypeToDescKey, TypeToDescTable),
     persistent_term:put(DescToTypeKey, DescToTypeTable),
-    persistent_term:put(DataTypesKey, DataTypesTable),
     persistent_term:put(NamespaceIdsKey, NamespaceIdsTable),
     persistent_term:put(NamespaceUrisKey, NamespaceUrisTable),
 
@@ -158,17 +159,15 @@ terminate(Space) ->
     RefSubKey = key(Space, ref_subtypes),
     TypeToDescKey = key(Space, type2desc),
     DescToTypeKey = key(Space, desc2type),
-    DataTypesKey = key(Space, datatypes),
     NamespaceIdsKey = key(Space, namespace_ids),
     NamespaceUrisKey = key(Space, namespace_uris),
     Keys = [NodesKey, ReferencesKey, RefSubKey, TypeToDescKey, DescToTypeKey,
-            DataTypesKey, NamespaceIdsKey, NamespaceUrisKey],
+            NamespaceIdsKey, NamespaceUrisKey],
     ets:delete(persistent_term:get(NodesKey)),
     ets:delete(persistent_term:get(ReferencesKey)),
     ets:delete(persistent_term:get(RefSubKey)),
     ets:delete(persistent_term:get(TypeToDescKey)),
     ets:delete(persistent_term:get(DescToTypeKey)),
-    ets:delete(persistent_term:get(DataTypesKey)),
     ets:delete(persistent_term:get(NamespaceIdsKey)),
     ets:delete(persistent_term:get(NamespaceUrisKey)),
     cleanup_persistent_terms(Keys),
@@ -223,7 +222,6 @@ add_references([Space | _] = Spaces, [Ref | Rest]) ->
     RefTable = table(Space, references),
     mark_reference(RefTable, Source, Type, forward, Target, true),
     mark_reference(RefTable, Target, Type, inverse, Source, true),
-    update_reference_cache(Spaces, added, Source, Type, Target),
     add_references(Spaces, Rest);
 add_references(Space, Refs) ->
     add_references([Space], Refs).
@@ -240,7 +238,6 @@ del_references([Space | _] = Spaces, [Ref | Rest]) ->
     RefTable = table(Space, references),
     mark_reference(RefTable, Source, Type, forward, Target, deleted),
     mark_reference(RefTable, Target, Type, inverse, Source, deleted),
-    update_reference_cache(Spaces, deleted, Source, Type, Target),
     del_references(Spaces, Rest);
 del_references(Space, Refs) ->
     del_references([Space], Refs).
@@ -252,7 +249,9 @@ add_descriptor([Space | _], DescriptorSpec, TypeSpec, Encoding) ->
     Term = {opcua_node:id(DescriptorSpec), {opcua_node:id(TypeSpec), Encoding}},
     ets:insert(table(Space, type2desc), Term),
     ets:insert(table(Space, desc2type), Term),
-    ok.
+    ok;
+add_descriptor(Space, DescriptorSpec, TypeSpec, Encoding) ->
+    add_descriptor([Space], DescriptorSpec, TypeSpec, Encoding).
 
 % @doc Removes a type encoding descriptor.
 -spec del_descriptor(space() | spaces(), opcua:node_spec()) -> ok.
@@ -264,7 +263,25 @@ del_descriptor([Space | _] = Spaces, DescriptorSpec) ->
             ets:insert(table(Space, type2desc), {deleted, Key}),
             ets:insert(table(Space, desc2type), {DescId, deleted}),
             ok
-    end.
+    end;
+del_descriptor(Space, DescriptorSpec) ->
+    del_descriptor([Space], DescriptorSpec).
+
+% @doc Add a subtype index entry
+-spec add_subtype(space() | spaces(), opcua:node_spec(), opcua:node_spec()) -> ok.
+add_subtype([Space | _], Type, SubType) ->
+    SubTable = table(Space, ref_subtypes),
+    mark_subtype(SubTable, opcua_node:id(Type), opcua_node:id(SubType), true);
+add_subtype(Space, Type, SubType) ->
+    add_subtype([Space], Type, SubType).
+
+% @doc Delete a subtype index entry
+-spec del_subtype(space() | spaces(), opcua:node_spec(), opcua:node_spec()) -> ok.
+del_subtype([Space | _], Type, SubType) ->
+    SubTable = table(Space, ref_subtypes),
+    mark_subtype(SubTable, opcua_node:id(Type), opcua_node:id(SubType), false);
+del_subtype(Space, Type, SubType) ->
+    del_subtype([Space], Type, SubType).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -309,14 +326,6 @@ type_descriptor(Space, DataTypeNodeSpec, Encoding) ->
     NodeId = opcua_node:id(DataTypeNodeSpec),
     get_type_descriptor([Space], NodeId, Encoding).
 
--spec schema(space() | spaces(), opcua:node_spec()) -> term() | undefined.
-schema([_Space | _Rest] = Spaces, NodeSpec) ->
-    NodeId = opcua_node:id(NodeSpec),
-    get_schema(Spaces, NodeId);
-schema(Space, NodeSpec) ->
-    NodeId = opcua_node:id(NodeSpec),
-    get_schema([Space], NodeId).
-
 -spec namespace_uri(space() | spaces(), non_neg_integer()) -> binary() | undefined.
 namespace_uri([_Space | _Rest] = Spaces, Id) when is_integer(Id), Id >= 0 ->
     get_namespace_uri(Spaces, Id);
@@ -344,6 +353,8 @@ is_subtype(Space, SubTypeSpec, SuperTypeSpec) ->
 
 %%% STORAGE API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+fold({?MODULE, Space}, Fun, Acc) ->
+    fold(Space, Fun, Acc);
 fold([Space | _], Fun, Acc) ->
     fold(Space, Fun, Acc);
 fold(Space, Fun, Acc) ->
@@ -352,7 +363,6 @@ fold(Space, Fun, Acc) ->
         {references, ref},
         {ref_subtypes, ref_subtypes},
         {desc2type, encoding},
-        {datatypes, datatype},
         {namespace_ids, namespace}],
     fold(Space, TableSpecs, Fun, Acc).
 
@@ -370,9 +380,6 @@ store(Space, {ref_subtypes, Term}) ->
 store(Space, {encoding, Term}) ->
     ets:insert(table(Space, type2desc), Term),
     ets:insert(table(Space, desc2type), Term),
-    ok;
-store(Space, {datatype, Term}) ->
-    ets:insert(table(Space, datatypes), Term),
     ok;
 store(Space, {namespace, Term}) ->
     ets:insert(table(Space, namespace_uris), Term),
@@ -447,13 +454,6 @@ expand_ref(deleted, Source, Type, Target, Acc, Del) ->
     Del2 = Del#{Ref => true},
     {Acc, Del2}.
 
-update_reference_cache(Spaces, added, Source, ?NNID(?REF_HAS_SUBTYPE), Target) ->
-    add_subtype(Spaces, Source, Target);
-update_reference_cache(Spaces, deleted, Source, ?NNID(?REF_HAS_SUBTYPE), Target) ->
-    del_subtype(Spaces, Source, Target);
-update_reference_cache(_Spaces, _Action, _Source, _Type, _Target) ->
-    ok.
-
 check_is_subtype(_Spaces, Type, Type) -> true;
 check_is_subtype([], _SubType, _SuperType) -> false;
 check_is_subtype([Space | Rest], SubType, SuperType) ->
@@ -462,28 +462,6 @@ check_is_subtype([Space | Rest], SubType, SuperType) ->
         [{SuperType, #{SubType := Result}}] -> Result;
         _ -> check_is_subtype(Rest, SubType, SuperType)
     end.
-
-add_subtype([Space | _] = Spaces, Type, SubType) ->
-    SubTable = table(Space, ref_subtypes),
-    mark_subtype(SubTable, Type, SubType, true),
-    SuperTypes = references(Spaces, Type, #{
-        type => ?NNID(?REF_HAS_SUBTYPE),
-        direction => inverse
-    }),
-    lists:map(fun(#opcua_reference{source_id = SuperType}) ->
-        add_subtype(Spaces, SuperType, SubType)
-    end, SuperTypes).
-
-del_subtype([Space | _] = Spaces, Type, SubType) ->
-    SubTable = table(Space, ref_subtypes),
-    mark_subtype(SubTable, Type, SubType, false),
-    SuperTypes = references(Spaces, Type, #{
-        type => ?NNID(?REF_HAS_SUBTYPE),
-        direction => inverse
-    }),
-    lists:map(fun(#opcua_reference{source_id = SuperType}) ->
-        del_subtype(Spaces, SuperType, SubType)
-    end, SuperTypes).
 
 mark_reference(RefTable, Source, Type, Direction, Target, Mark) ->
     Key = {Source, Type, Direction},
@@ -535,14 +513,6 @@ get_type_descriptor([Space | Rest], NodeId, Encoding) ->
         [{deleted, _}] -> undefined;
         [{Result, _}] -> Result;
         [] -> get_type_descriptor(Rest, NodeId, Encoding)
-    end.
-
-get_schema([], _NodeId) -> undefined;
-get_schema([Space | Rest], NodeId) ->
-    TypeTable = table(Space, datatypes),
-    case ets:lookup(TypeTable, NodeId) of
-        [{_, Result}] -> Result;
-        [] -> get_schema(Rest, NodeId)
     end.
 
 get_namespace_uri([], _Id) -> undefined;

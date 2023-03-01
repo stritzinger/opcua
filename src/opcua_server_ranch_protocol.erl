@@ -96,12 +96,12 @@ init(Parent, Ref, Socket, Transport, Opts) ->
     SockNameRes = Transport:sockname(Socket),
     UACPRes = opcua_server_uacp:init(ProtoOpts),
     {ok, Keychain} = opcua_keychain_ets:new(ParentKeychain),
-    try
+    State = try
         ResolvedIdent = resolve_identity(Keychain, Ident),
         case {PeerNameRes, SockNameRes, UACPRes} of
             {{ok, PeerName}, {ok, {SockAddr, _} = SockName}, {ok, Proto}} ->
                 Endpoint = opcua_util:parse_endpoint({SockAddr, 4840}),
-                State = #state{
+                #state{
                     parent = Parent,
                     ref = Ref,
                     transport = Transport,
@@ -110,8 +110,7 @@ init(Parent, Ref, Socket, Transport, Opts) ->
                         ResolvedIdent, Endpoint, PeerName, SockName),
                     proto = Proto,
                     linger_timeout = LingerTimeout
-                },
-                loop(State);
+                };
             {{error, Reason}, _, _} ->
                 handle_error(undefined, socket_error, Reason,
                     'A socket error occurred when retrieving the peer name.');
@@ -126,7 +125,8 @@ init(Parent, Ref, Socket, Transport, Opts) ->
         throw:ErrorReason ->
             handle_error(undefined, config_error, ErrorReason,
                     'An error occured due to invalid configuration,')
-    end.
+    end,
+    loop(State).
 
 resolve_identity(Keychain, undefined) ->
     case opcua_keychain:lookup(Keychain, alias, server) of

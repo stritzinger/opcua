@@ -14,6 +14,7 @@
 -export([date_time/0]).
 -export([nonce/0]).
 -export([date_time_to_rfc3339/1]).
+-export([iso_to_datetime/1]).
 -export([bin_to_hex/1]).
 -export([guid_to_hex/1]).
 -export([bin_to_hex/2]).
@@ -68,6 +69,12 @@ date_time_to_rfc3339(DateTime) ->
     Diff = erlang:convert_time_unit(Seconds1 - Seconds2, second, nanosecond),
     calendar:system_time_to_rfc3339(DateTime*100 - Diff, [{unit, nanosecond}]).
 
+iso_to_datetime(Bin) ->
+    DateTime = iso8601:parse(Bin),
+    Seconds1 = calendar:datetime_to_gregorian_seconds(DateTime),
+    Seconds2 = calendar:datetime_to_gregorian_seconds({{1601,1,1}, {0,0,0}}),
+    erlang:convert_time_unit(Seconds1 - Seconds2, second, nanosecond).
+
 guid_to_hex(<<D1:4/binary, D2:2/binary, D3:2/binary, D41:2/binary, D42:6/binary>>) ->
     lists:concat([bin_to_hex(D1), "-", bin_to_hex(D2), "-", bin_to_hex(D3),
               "-", bin_to_hex(D41), "-", bin_to_hex(D42)]).
@@ -118,19 +125,19 @@ get_int(Key, Attributes, Default) ->
         StringInt   -> list_to_integer(StringInt)
     end.
 
-%% converts CamelCase strings to snake_case atoms
+%% converts CamelCase strings to snake_case binary
 convert_name(Name) when is_binary(Name) ->
     convert_name(binary_to_list(Name));
-convert_name([FirstLetter|Rest]) ->
-    list_to_atom(
-      string:lowercase([FirstLetter]) ++
-        lists:flatten(
-          lists:map(fun(Char) ->
+convert_name([FirstLetter | Rest]) ->
+    %FIXME: This is potentially unsafe as we could fill up the atom table...
+    binary_to_atom(iolist_to_binary(
+      [string:lowercase([FirstLetter]),
+        lists:map(fun(Char) ->
               case string:uppercase([Char]) of
-                  [Char]  -> "_" ++ string:lowercase([Char]);
+                  [Char]  -> ["_", string:lowercase([Char])];
                   _     -> Char
               end
-          end, Rest))).
+          end, Rest)])).
 
 parse_range(undefined) -> undefined;
 parse_range(<<>>) -> undefined;

@@ -159,12 +159,16 @@ static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir,
 static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
     ?LOG_DEBUG("Reading node ~s attribute ~w...",
                [opcua_node:format(Node), Attr]),
+    %TODO: All this should be moved to opcua_node at some point
     Result = try {opcua_node:attribute_type(Attr, Node),
-                  opcua_node:attribute(Attr, Node)} of
-        {_AttrType, undefined} ->
+                  opcua_node:attribute_value(Attr, Node),
+                  opcua_node:attribute_rank(Attr, Node)} of
+        {_AttrType, undefined, _} ->
             #opcua_data_value{status = bad_attribute_id_invalid};
-        {AttrType, AttrValue} ->
-            try opcua_codec:pack_variant(opcua_server_space, AttrType, AttrValue) of
+        {AttrType, AttrValue, ValueRank} ->
+            %TODO: Maybe the value rank should be a parameter, and not only relying
+            %      on the value being a list.
+            try opcua_codec:pack_variant(opcua_server_space, AttrType, ValueRank, AttrValue) of
                 Value -> #opcua_data_value{value = Value}
             catch
                 _:Reason ->
@@ -199,7 +203,7 @@ post_process_refs(NodeId, Refs) ->
 post_process_refs(_NodeId, [], Acc) ->
     lists:reverse(Acc);
 post_process_refs(NodeId, [Ref | Refs], Acc) ->
-    %TODO: Add support for symetric references
+    %TODO: Add support for symmetric references
     %TODO: Add support for field mask
     %TODO: Add support for class mask
     {IsForward, TargetId, RefId} = case Ref of
@@ -231,7 +235,7 @@ post_process_refs(NodeId, [Ref | Refs], Acc) ->
             },
             Fields = [node_id, browse_name, display_name, node_class],
             Ref2 = lists:foldl(fun(Key, Map) ->
-                    Map#{Key => opcua_node:attribute(Key, TargetNode)}
+                    Map#{Key => opcua_node:attribute_value(Key, TargetNode)}
             end, BaseObj, Fields),
             post_process_refs(NodeId, Refs, [Ref2 | Acc])
     end.

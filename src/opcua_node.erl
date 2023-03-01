@@ -15,8 +15,9 @@
 -export([parse/1]).
 -export([class/1]).
 -export([from_attributes/1]).
--export([attribute/2]).
+-export([attribute_value/2]).
 -export([attribute_type/2]).
+-export([attribute_rank/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -141,6 +142,15 @@ format(Sep, Items) ->
     iolist_to_binary(lists:join(Sep, [format(I) || I <- Items])).
 
 %TODO: Add support for URI namespaces (nsu=)
+parse(<<"svr=", Rest/binary>>) ->
+    [SVRBin, Rest2] = binary:split(Rest, <<";">>),
+    case string:to_integer(SVRBin) of
+        {SVR, <<>>} ->
+            NID = parse(Rest2),
+            #opcua_expanded_node_id{server_index = SVR, node_id = NID};
+        _ ->
+            erlang:error(badarg)
+    end;
 parse(<<"i=", Rest/binary>>) ->
     case string:to_integer(Rest) of
         {Id, <<>>} ->
@@ -207,77 +217,129 @@ class(#opcua_node{node_class = #opcua_data_type{}})      -> data_type;
 class(#opcua_node{node_class = #opcua_view{}})           -> view.
 
 %% Generic Nodes attributes
-attribute(node_id, #opcua_node{node_id = NodeId}) ->
-    NodeId;
-attribute(node_class, Node) ->
+attribute_value(node_id, #opcua_node{node_id = NodeId}) ->
+   NodeId;
+attribute_value(node_class, Node) ->
     class(Node);
-attribute(browse_name, #opcua_node{node_id = ?NID_NS(NS), browse_name = V})
+attribute_value(browse_name, #opcua_node{node_id = ?NID_NS(NS), browse_name = V})
   when V =:= undefined; is_binary(V) ->
     %TODO: Properties shouldn't use the node namespace for the browse name
     #opcua_qualified_name{ns = NS, name = V};
-attribute(display_name, #opcua_node{display_name = undefined, browse_name = V})
+attribute_value(display_name, #opcua_node{display_name = undefined, browse_name = V})
   when V =:= undefined; is_binary(V) ->
     #opcua_localized_text{text = V};
-attribute(display_name, #opcua_node{display_name = V})
+attribute_value(display_name, #opcua_node{display_name = V})
   when V =:= undefined; is_binary(V) ->
     #opcua_localized_text{text = V};
-attribute(description, #opcua_node{description = V})
+attribute_value(description, #opcua_node{description = V})
   when V =:= undefined; is_binary(V) ->
     #opcua_localized_text{text = V};
-attribute(write_mask, #opcua_node{write_mask = V}) -> V;
-attribute(user_write_mask, #opcua_node{user_write_mask = V}) -> V;
-% attribute(role_permissions, #opcua_node{role_permissions = V}) -> V;
-% attribute(user_role_permissions, #opcua_node{user_role_permissions = V}) -> V;
-% attribute(access_restrictions, #opcua_node{access_restrictions = V}) -> V;
-% %% Object Node Class Attributes
-% attribute(event_notifier, #opcua_node{node_class = #opcua_object{event_notifier = V}}) -> V;
-%% Variable Node Class Attributes
-attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
-  when T =:= string; T =:= byte_string; T =:= xml -> undefined;
-attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
-  when T =:= node_id -> ?UNDEF_NODE_ID;
-attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
-  when T =:= expanded_node_id -> ?UNDEF_EXT_NODE_ID;
-attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
-  when T =:= localized_text -> ?UNDEF_LOCALIZED_TEXT;
-attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
-  when T =:= qualified_name -> ?UNDEF_QUALIFIED_NAME;
-attribute(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
-  when T =:= extension_object -> ?UNDEF_EXT_OBJ;
-attribute(value, #opcua_node{node_class = #opcua_variable{value = V}})
+attribute_value(write_mask, #opcua_node{write_mask = V})
   when V =/= undefined -> V;
-% attribute(value_rank, #opcua_node{node_class = #opcua_variable{value_rank = V}}) -> V;
-% attribute(array_dimensions, #opcua_node{node_class = #opcua_variable{array_dimensions = V}}) -> V;
-% attribute(access_level, #opcua_node{node_class = #opcua_variable{access_level = V}}) -> V;
-% attribute(user_access_level, #opcua_node{node_class = #opcua_variable{user_access_level = V}}) -> V;
-% attribute(minimum_sampling_interval, #opcua_node{node_class = #opcua_variable{minimum_sampling_interval = V}}) -> V;
-% attribute(historizing, #opcua_node{node_class = #opcua_variable{historizing = V}}) -> V;
-% attribute(access_level_ex, #opcua_node{node_class = #opcua_variable{access_level_ex = V}}) -> V;
-% %% Method Node Class Attributes
-% attribute(executable, #opcua_node{node_class = #opcua_method{executable = V}}) -> V;
-% attribute(user_executable, #opcua_node{node_class = #opcua_method{user_executable = V}}) -> V;
-% %% Object Type Node Class Attributes
-% attribute(is_abstract, #opcua_node{node_class = #opcua_object_type{is_abstract = V}}) -> V;
-% %% Variable Type Node Class Attributes
-% attribute(value, #opcua_node{node_class = #opcua_variable_type{value = V}}) -> V;
-% attribute(data_type, #opcua_node{node_class = #opcua_variable_type{data_type = V}}) -> V;
-% attribute(value_rank, #opcua_node{node_class = #opcua_variable_type{value_rank = V}}) -> V;
-% attribute(array_dimensions, #opcua_node{node_class = #opcua_variable_type{array_dimensions = V}}) -> V;
-% attribute(is_abstract, #opcua_node{node_class = #opcua_variable_type{is_abstract = V}}) -> V;
-% %% Data Type Node Class Attributes
-% attribute(is_abstract, #opcua_node{node_class = #opcua_data_type{is_abstract = V}}) -> V;
-% attribute(data_type_definition, #opcua_node{node_class = #opcua_data_type{data_type_definition = V}}) -> V;
-% %% Reference Type Node Class Attributes
-% attribute(is_abstract, #opcua_node{node_class = #opcua_reference_type{is_abstract = V}}) -> V;
-% attribute(symmetric, #opcua_node{node_class = #opcua_reference_type{symmetric = V}}) -> V;
-% attribute(inverse_name, #opcua_node{node_class = #opcua_reference_type{inverse_name = V}}) -> V;
-% %% View Node Class Attributes
-% attribute(contains_no_loops, #opcua_node{node_class = #opcua_view{contains_no_loops = V}}) -> V;
-% attribute(event_notifier, #opcua_node{node_class = #opcua_view{event_notifier = V}}) -> V;
-attribute(_Attr, #opcua_node{}) -> error(bad_attribute_id_invalid).
+attribute_value(user_write_mask, #opcua_node{user_write_mask = V})
+  when V =/= undefined -> V;
+attribute_value(role_permissions, #opcua_node{role_permissions = V})
+  when V =/= undefined -> V;
+attribute_value(user_role_permissions, #opcua_node{user_role_permissions = V})
+  when V =/= undefined -> V;
+attribute_value(access_restrictions, #opcua_node{access_restrictions = V})
+  when V =/= undefined -> V;
+
+%% Object Node Class Attributes
+attribute_value(event_notifier, #opcua_node{node_class = #opcua_object{event_notifier = V}})
+  when V =/= undefined -> V;
+
+%% Variable Node Class Attributes
+attribute_value(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= string; T =:= byte_string; T =:= xml -> undefined;
+attribute_value(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= node_id -> ?UNDEF_NODE_ID;
+attribute_value(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= expanded_node_id -> ?UNDEF_EXT_NODE_ID;
+attribute_value(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= localized_text -> ?UNDEF_LOCALIZED_TEXT;
+attribute_value(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= qualified_name -> ?UNDEF_QUALIFIED_NAME;
+attribute_value(value, #opcua_node{node_class = #opcua_variable{data_type = T, value = undefined}})
+  when T =:= extension_object -> ?UNDEF_EXT_OBJ;
+attribute_value(value, #opcua_node{node_class = #opcua_variable{value = V}}) ->
+  V;
+attribute_value(data_type, #opcua_node{node_class = #opcua_variable{data_type = V}})
+  when V =/= undefined -> V;
+attribute_value(value_rank, #opcua_node{node_class = #opcua_variable{value_rank = V}})
+  when V =/= undefined -> V;
+attribute_value(array_dimensions, #opcua_node{node_class = #opcua_variable{array_dimensions = V}})
+  when is_list(V) -> V;
+attribute_value(access_level, #opcua_node{node_class = #opcua_variable{access_level = V}})
+  when V =/= undefined -> V;
+attribute_value(user_access_level, #opcua_node{node_class = #opcua_variable{user_access_level = V}})
+  when V =/= undefined -> V;
+attribute_value(minimum_sampling_interval, #opcua_node{node_class = #opcua_variable{minimum_sampling_interval = V}})
+  when V =/= undefined -> V;
+attribute_value(historizing, #opcua_node{node_class = #opcua_variable{historizing = V}})
+  when V =/= undefined -> V;
+attribute_value(access_level_ex, #opcua_node{node_class = #opcua_variable{access_level_ex = V}})
+  when V =/= undefined -> V;
+
+%% Method Node Class Attributes
+attribute_value(executable, #opcua_node{node_class = #opcua_method{executable = V}})
+  when V =/= undefined -> V;
+attribute_value(user_executable, #opcua_node{node_class = #opcua_method{user_executable = V}})
+  when V =/= undefined -> V;
+
+%% Object Type Node Class Attributes
+attribute_value(is_abstract, #opcua_node{node_class = #opcua_object_type{is_abstract = V}})
+  when V =/= undefined -> V;
+
+%% Variable Type Node Class Attributes
+attribute_value(value, #opcua_node{node_class = #opcua_variable_type{value = V}}) ->
+    V;
+attribute_value(data_type, #opcua_node{node_class = #opcua_variable_type{data_type = V}})
+  when V =/= undefined -> V;
+attribute_value(value_rank, #opcua_node{node_class = #opcua_variable_type{value_rank = V}})
+  when V =/= undefined -> V;
+attribute_value(array_dimensions, #opcua_node{node_class = #opcua_variable_type{array_dimensions = V}})
+  when V =/= undefined -> V;
+attribute_value(is_abstract, #opcua_node{node_class = #opcua_variable_type{is_abstract = V}})
+  when V =/= undefined -> V;
+
+%% Data Type Node Class Attributes
+attribute_value(is_abstract, #opcua_node{node_class = #opcua_data_type{is_abstract = V}})
+  when V =/= undefined -> V;
+attribute_value(data_type_definition, #opcua_node{node_class = #opcua_data_type{data_type_definition = Schema}}) ->
+    schema_to_type_definition(Schema);
+
+%% Reference Type Node Class Attributes
+attribute_value(is_abstract, #opcua_node{node_class = #opcua_reference_type{is_abstract = V}})
+  when V =/= undefined -> V;
+attribute_value(symmetric, #opcua_node{node_class = #opcua_reference_type{symmetric = V}})
+  when V =/= undefined -> V;
+attribute_value(inverse_name, #opcua_node{node_class = #opcua_reference_type{inverse_name = V}})
+  when V =:= undefined; is_binary(V) ->
+    #opcua_localized_text{text = V};
+
+%% View Node Class Attributes
+attribute_value(contains_no_loops, #opcua_node{node_class = #opcua_view{contains_no_loops = V}})
+  when V =/= undefined -> V;
+attribute_value(event_notifier, #opcua_node{node_class = #opcua_view{event_notifier = V}})
+  when V =/= undefined -> V;
+attribute_value(_Attr, #opcua_node{}) ->
+    error(bad_attribute_id_invalid).
 
 attribute_type(value, #opcua_node{node_class = #opcua_variable{data_type = T}}) -> T;
+attribute_type(data_type_definition, #opcua_node{node_class = #opcua_data_type{data_type_definition = Schema}}) ->
+    case Schema of
+        #opcua_enum{} -> ?NNID(100);
+        #opcua_option_set{} -> ?NNID(100);
+        #opcua_union{} -> ?NNID(99);
+        #opcua_structure{} -> ?NNID(99);
+        _ -> ?NNID(97)
+    end;
 attribute_type(Name, _Node) -> opcua_nodeset:attribute_type(Name).
+
+attribute_rank(value, #opcua_node{node_class = #opcua_variable{value_rank = V}}) -> V;
+attribute_rank(value, #opcua_node{node_class = #opcua_variable_type{value_rank = V}}) -> V;
+attribute_rank(_, #opcua_node{}) -> -1.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -366,3 +428,65 @@ node_class_from_attributes(view, Attribs) ->
         contains_no_loops =  if_defined(ContainsNoLoops),
         event_notifier =  if_defined(EventNotifier)
     }.
+
+schema_to_type_definition(undefined) -> undefined;
+schema_to_type_definition(#opcua_builtin{}) -> undefined;
+schema_to_type_definition(#opcua_enum{fields = Fields}) ->
+    #{fields => enum_fields_definition(Fields)};
+schema_to_type_definition(#opcua_option_set{fields = Fields}) ->
+    %TODO: We assume the option set type definition is the same as enums,
+    %      it is not clear from the spec though, needs more investigation...
+    #{fields => enum_fields_definition(Fields)};
+schema_to_type_definition(#opcua_structure{base_type_id = BaseTypeId,
+                                           default_encoding_id = DefaultEncId,
+                                           with_options = WithOpts,
+                                           allow_subtypes = AllowSubTypes,
+                                           fields = Fields}) ->
+    StructType = case {WithOpts, AllowSubTypes} of
+        {false, false} -> structure;
+        {true, false} -> structure_with_optional_fields;
+        {false, true} -> structure_with_subtyped_values
+    end,
+    #{default_encoding_id => DefaultEncId,
+      base_data_type => BaseTypeId,
+      structure_type => StructType,
+      fields => struct_fields_definition(Fields)};
+schema_to_type_definition(#opcua_union{base_type_id = BaseTypeId,
+                                       default_encoding_id = DefaultEncId,
+                                       allow_subtypes = AllowSubTypes,
+                                       fields = Fields}) ->
+    StructType = case AllowSubTypes of
+        false -> union;
+        true -> union_with_subtyped_values
+    end,
+    #{default_encoding_id => DefaultEncId,
+      base_data_type => BaseTypeId,
+      structure_type => StructType,
+      fields => struct_fields_definition(Fields)}.
+
+enum_fields_definition(Fields) ->
+    [#{name => Name,
+       display_name => case DisplayName of
+                undefined -> Name;
+                V -> V
+            end,
+       description => #opcua_localized_text{text = Description},
+       value => Value
+
+    } || #opcua_field{name = Name, display_name = DisplayName,
+                      description = Description, value = Value} <- Fields].
+
+struct_fields_definition(Fields) ->
+    [#{name => Name,
+       description => #opcua_localized_text{text = Description},
+       data_type => DataType,
+       value_rank => ValueRank,
+       array_dimensions => case ValueRank of
+                V when is_integer(V), V > 0 -> [0 || _ <- lists:seq(1, V)];
+                _ -> []
+            end,
+       max_string_length => 0,
+       is_optional => IsOpt
+    } || #opcua_field{name = Name, description = Description,
+                      node_id = DataType, value_rank = ValueRank,
+                      is_optional = IsOpt} <- Fields].

@@ -65,14 +65,16 @@
 -define(TRANSPORT_PROFILE_BINARY,
         <<"http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary">>).
 
--define(NID_HAS_COMPONENT,              ?NNID(47)).
--define(NID_HAS_PROPERTY,               ?NNID(46)).
--define(NID_ORGANIZES,                  ?NNID(35)).
--define(NID_HAS_NOTIFIER,               ?NNID(48)).
--define(NID_HAS_SUBTYPE,                ?NNID(45)).
--define(NID_HAS_TYPE_DEFINITION,        ?NNID(40)).
--define(NID_HAS_ENCODING,               ?NNID(38)).
--define(NID_HAS_DESCRIPTION,            ?NNID(39)).
+-define(NID_HAS_CHILD,                  ?NNID(?REF_HAS_CHILD)).
+-define(NID_ORGANIZES,                  ?NNID(?REF_ORGANIZES)).
+-define(NID_HAS_ENCODING,               ?NNID(?REF_HAS_ENCODING)).
+-define(NID_HAS_DESCRIPTION,            ?NNID(?REF_HAS_DESCRIPTION)).
+-define(NID_HAS_TYPE_DEFINITION,        ?NNID(?REF_HAS_TYPE_DEFINITION)).
+-define(NID_HAS_SUBTYPE,                ?NNID(?REF_HAS_SUBTYPE)).
+-define(NID_HAS_PROPERTY,               ?NNID(?REF_HAS_PROPERTY)).
+-define(NID_HAS_COMPONENT,              ?NNID(?REF_HAS_COMPONENT)).
+-define(NID_HAS_NOTIFIER,               ?NNID(?REF_HAS_NOTIFIER)).
+
 -define(NID_DATA_TYPE_ENCODING_TYPE,    ?NNID(76)).
 -define(NID_SERVICE_FAULT,              ?NNID(395)).
 -define(NID_GET_ENDPOINTS_REQ,          ?NNID(426)).
@@ -119,12 +121,26 @@
 
 -record(opcua_structure, {
     node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
+    % Used for decoding XML
+    name                        :: binary(),
+    % Used to generate proper OPCUA type definition from the schema
+    base_type_id = ?UNDEF_NODE_ID :: opcua:node_id(),
+    % Used to generate proper OPCUA type definition from the schema
+    default_encoding_id = ?UNDEF_NODE_ID :: opcua:node_id(),
     with_options = false        :: boolean(),
+    allow_subtypes = false      :: boolean(),
     fields = []                 :: opcua:fields()
 }).
 
 -record(opcua_union, {
     node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
+    % Used for decoding XML
+    name                        :: binary(),
+    % Used to generate proper OPCUA type definition from the schema
+    base_type_id = ?UNDEF_NODE_ID :: opcua:node_id(),
+    % Used to generate proper OPCUA type definition from the schema
+    default_encoding_id = ?UNDEF_NODE_ID :: opcua:node_id(),
+    allow_subtypes = false      :: boolean(),
     fields = []                 :: opcua:fields()
 }).
 
@@ -135,7 +151,7 @@
 
 -record(opcua_option_set, {
     node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
-    mask_type = ?UNDEF_NODE_ID  :: opcua:node_id(),
+    mask_type = uint32          :: opcua:builtin_type(),
     fields = []                 :: opcua:fields()
 }).
 
@@ -145,11 +161,26 @@
 }).
 
 -record(opcua_field, {
-    name                        :: atom(),
-    node_id = ?UNDEF_EXT_NODE_ID :: opcua:node_id(),
+    %WARNING: When adding remotly-defined data types we are converting
+    %         binaries to atoms, this is potentially unsafe.
+    tag                         :: atom(),
+    % Used for decoding XML
+    name                        :: binary(),
+    % Used to generate proper OPCUA type definition from the schema
+    display_name                :: undefined | binary(),
+    % Used to generate proper OPCUA type definition from the schema
+    description                 :: undefined | binary(),
+    node_id                     :: undefined | opcua:node_id(),
     value_rank = -1             :: opcua:value_rank(),
+    % If the struct or union is allowing subtypes, this means the value can
+    % be any subtype of the  field type.
     is_optional = false         :: boolean(),
-    value                       :: integer()
+    % For structure and union, if the field is optional,
+    % the value is the bit index of the optional field.
+    % FIXME: We should remove the need for the value to have the pre-calculated
+    %        index for optional fields, as this informaation is available during
+    %        encoding/decoding.
+    value                       :: undefined | integer()
 }).
 
 

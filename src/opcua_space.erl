@@ -6,7 +6,6 @@
 
 %% TODO %%
 %%
-%% - Move the is_subtype logic to opcua_space so the backend is only handling storage
 %% - Add data type definition generate schemas dynamically
 %% - If not data type definition is found use EnumStrings, EnumValues
 %%   or OptionSetValues and OptionSetLength to deduce a proper schema,
@@ -45,6 +44,14 @@
 -callback del_descriptor(State, TypeDescriptorSpec) -> ok
     when State :: term(), TypeDescriptorSpec :: opcua:stream_encoding().
 
+-callback add_subtype(State, Type, SubType) -> ok
+    when State :: term(), Type :: opcua:node_spec(),
+         SubType :: opcua:node_spec().
+
+-callback del_subtype(State, Type, SubType) -> ok
+    when State :: term(), Type :: opcua:node_spec(),
+         SubType :: opcua:node_spec().
+
 -callback node(State, NodeSpec) -> Result
     when State :: term(), NodeSpec :: opcua:node_spec(),
          Result :: undefined | opcua:node_rec().
@@ -64,10 +71,6 @@
          Encoding :: opcua:stream_encoding(),
          Result :: undefined | TypeDescriptorId,
          TypeDescriptorId :: opcua:node_id().
-
--callback schema(State, TypeSpec) -> Result
-    when State :: term(), TypeSpec :: opcua:node_spec(),
-         Result :: undefined | opcua:codec_schema().
 
 -callback namespace_uri(State, NamespaceId) -> undefined | NamespaceUri
     when State :: term(), NamespaceId :: non_neg_integer(),
@@ -129,6 +132,8 @@ add_namespace(#uacp_connection{space = Space}, Id, Uri) ->
 add_namespace({Mod, Sub}, Id, Uri) ->
     Mod:add_namespace(Sub, Id, Uri);
 add_namespace(Mod, Id, Uri) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
     Mod:add_namespace(Id, Uri).
 
 % @doc Adds given nodes to the given database.
@@ -139,9 +144,10 @@ add_nodes(#uacp_connection{space = Space} = State, Nodes) ->
 add_nodes({Mod, Sub} = State, Nodes) ->
     Mod:add_nodes(Sub, Nodes),
     nodes_added(State, Nodes);
-add_nodes(Mod = State, Nodes) ->
-    Mod:add_nodes(Nodes),
-    nodes_added(State, Nodes).
+add_nodes(Mod, Nodes) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
+    Mod:add_nodes(Nodes).
 
 % @doc Removes the nodes with given node identifier from the given database.
 % Depending on the backend, may only be allowed from the owning process.
@@ -151,8 +157,9 @@ del_nodes(#uacp_connection{space = Space} = State, NodeIds) ->
 del_nodes({Mod, Sub} = State, NodeIds) ->
     nodes_deleted(State, NodeIds),
     Mod:del_nodes(Sub, NodeIds);
-del_nodes(Mod = State, NodeIds) ->
-    nodes_deleted(State, NodeIds),
+del_nodes(Mod, NodeIds) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
     Mod:del_nodes(NodeIds).
 
 % @doc Adds given references to the given database.
@@ -163,9 +170,10 @@ add_references(#uacp_connection{space = Space} = State, References) ->
 add_references({Mod, Sub} = State, References) ->
     Mod:add_references(Sub, References),
     references_added(State, References);
-add_references(Mod = State, References) ->
-    Mod:add_references(References),
-    references_added(State, References).
+add_references(Mod, References) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
+    Mod:add_references(References).
 
 % @doc Removes given references from given database.
 % Depending on the backend, may only be allowed from the owning process.
@@ -175,8 +183,9 @@ del_references(#uacp_connection{space = Space} = State, References) ->
 del_references({Mod, Sub} = State, References) ->
     references_deleted(State, References),
     Mod:del_references(Sub, References);
-del_references(Mod = State, References) ->
-    references_deleted(State, References),
+del_references(Mod, References) ->
+    % When delegating to a module with its own state,
+    % we are delegating the side-effects too.
     Mod:del_references(References).
 
 
@@ -223,12 +232,11 @@ type_descriptor(Mod, NodeSpec, Encoding) ->
     Mod:type_descriptor(NodeSpec, Encoding).
 
 % @doc Retrieves a data schema from a data type.
-schema(#uacp_connection{space = Space}, NodeSpec) ->
-    schema(Space, NodeSpec);
-schema({Mod, Sub}, NodeSpec) ->
-    Mod:schema(Sub, NodeSpec);
-schema(Mod, NodeSpec) ->
-    Mod:schema(NodeSpec).
+schema(Space, NodeSpec) ->
+    case node(Space, NodeSpec) of
+        #opcua_node{node_class = #opcua_data_type{data_type_definition = Schema}} -> Schema;
+        _ -> undefined
+    end.
 
 % @doc Retrieves a namespace URI from its identifier.
 namespace_uri(#uacp_connection{space = Space}, Id) ->
@@ -285,7 +293,7 @@ nodes_deleted(Space, [NodeId | Rest]) ->
 node_deleted(Space, DescId, #opcua_node{node_id = DescId, browse_name = Name})
   when Name =:= <<"Default Binary">>; Name =:= <<"Default XML">>;
        Name =:= <<"Default JSON">> ->
-    del_descriptor(Space, DescId);
+    backend_del_descriptor(Space, DescId);
 node_deleted(_Space, _NodeId, _Node) ->
     ok.
 
@@ -303,6 +311,11 @@ reference_added(Space, #opcua_reference{
         source_id = DescId,
         target_id = ?NID_DATA_TYPE_ENCODING_TYPE}) ->
     maybe_add_descriptor(Space, DescId);
+reference_added(Space, #opcua_reference{
+        type_id = ?NID_HAS_SUBTYPE,
+        source_id = Type,
+        target_id = SubType}) ->
+    add_subtype(Space, Type, SubType);
 reference_added(_Space, #opcua_reference{}) ->
     ok.
 
@@ -314,12 +327,17 @@ references_deleted(Space, [Ref | Rest]) ->
 reference_deleted(Space, #opcua_reference{
         type_id = ?NID_HAS_ENCODING,
         target_id = DescId}) ->
-    del_descriptor(Space, DescId);
+    backend_del_descriptor(Space, DescId);
 reference_deleted(Space, #opcua_reference{
         type_id = ?NID_HAS_TYPE_DEFINITION,
         source_id = DescId,
         target_id = ?NID_DATA_TYPE_ENCODING_TYPE}) ->
-    del_descriptor(Space, DescId);
+    backend_del_descriptor(Space, DescId);
+reference_deleted(Space, #opcua_reference{
+        type_id = ?NID_HAS_SUBTYPE,
+        source_id = Type,
+        target_id = SubType}) ->
+    del_subtype(Space, Type, SubType);
 reference_deleted(_Space, #opcua_reference{}) ->
     ok.
 
@@ -337,7 +355,7 @@ maybe_add_descriptor(Space, DescId,
                   [#opcua_reference{type_id = ?NID_HAS_ENCODING,
                                     source_id = TypeId,
                                     target_id = DescId}]) ->
-    add_descriptor(Space, DescId, TypeId, descriptor_encoding(Name));
+    backend_add_descriptor(Space, DescId, TypeId, descriptor_encoding(Name));
 maybe_add_descriptor(_Space, _DescId, _Node, _TypeDefRefs, _HasEncRefs) ->
     ok.
 
@@ -346,15 +364,46 @@ descriptor_encoding(<<"Default XML">>) -> xml;
 descriptor_encoding(<<"Default JSON">>) -> json;
 descriptor_encoding(_) -> unknown.
 
+add_subtype(Space, Type, SubType) ->
+    backend_add_subtype(Space, Type, SubType),
+    SuperTypes = references(Space, Type, #{
+        type => ?NID_HAS_SUBTYPE,
+        direction => inverse
+    }),
+    lists:map(fun(#opcua_reference{source_id = SuperType}) ->
+        add_subtype(Space, SuperType, SubType)
+    end, SuperTypes).
+
+del_subtype(Space, Type, SubType) ->
+    backend_del_subtype(Space, Type, SubType),
+    SuperTypes = references(Space, Type, #{
+        type => ?NNID(?REF_HAS_SUBTYPE),
+        direction => inverse
+    }),
+    lists:map(fun(#opcua_reference{source_id = SuperType}) ->
+        del_subtype(Space, SuperType, SubType)
+    end, SuperTypes).
+
 
 %-- BACKEND INTERFACE FUNCTIONS ------------------------------------------------
 
-add_descriptor(#uacp_connection{space = Space}, DescSpec, TypeSpec, Encoding) ->
-    add_descriptor(Space, DescSpec, TypeSpec, Encoding);
-add_descriptor({Mod, Sub}, DescSpec, TypeSpec, Encoding) ->
+backend_add_descriptor(#uacp_connection{space = Space},
+                       DescSpec, TypeSpec, Encoding) ->
+    backend_add_descriptor(Space, DescSpec, TypeSpec, Encoding);
+backend_add_descriptor({Mod, Sub}, DescSpec, TypeSpec, Encoding) ->
     Mod:add_descriptor(Sub, DescSpec, TypeSpec, Encoding).
 
-del_descriptor(#uacp_connection{space = Space}, DescSpec) ->
-    del_descriptor(Space, DescSpec);
-del_descriptor({Mod, Sub}, DescSpec) ->
+backend_del_descriptor(#uacp_connection{space = Space}, DescSpec) ->
+    backend_del_descriptor(Space, DescSpec);
+backend_del_descriptor({Mod, Sub}, DescSpec) ->
     Mod:del_descriptor(Sub, DescSpec).
+
+backend_add_subtype(#uacp_connection{space = Space}, Type, SubType) ->
+    backend_add_subtype(Space, Type, SubType);
+backend_add_subtype({Mod, Sub}, Type, SubType) ->
+    Mod:add_subtype(Sub, Type, SubType).
+
+backend_del_subtype(#uacp_connection{space = Space}, Type, SubType) ->
+    backend_del_subtype(Space, Type, SubType);
+backend_del_subtype({Mod, Sub}, Type, SubType) ->
+    Mod:del_subtype(Sub, Type, SubType).

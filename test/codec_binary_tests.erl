@@ -5,11 +5,55 @@
 -include("opcua.hrl").
 -include("opcua_internal.hrl").
 
+-define(BASIC_TYPE_SAMPLE, [
+    {boolean,           true},
+    {boolean,           false},
+    {sbyte,             0},
+    {sbyte,             -100},
+    {sbyte,             100},
+    {byte,              0},
+    {byte,              100},
+    {int16,             0},
+    {int16,             -32000},
+    {int16,             32000},
+    {uint16,            0},
+    {uint16,            65000},
+    {int32,             0},
+    {int32,             -2000000000},
+    {int32,             2000000000},
+    {uint32,            0},
+    {uint32,            4000000000},
+    {int64,             0},
+    {int64,             -9000000000000000000},
+    {int64,             9000000000000000000},
+    {uint64,            0},
+    {uint64,            18000000000000000000},
+    {float,             0.0},
+    {float,             1.4738499956371046e23},
+    {double,            0.0},
+    {double,            1.4738499956371046e23},
+    {string,            <<"">>},
+    {string,            <<"foobar">>},
+    {date_time,         opcua_util:date_time()},
+    {guid,              <<123,109,172,75,52,131,69,56,129,255,252,68,90,101,232,130>>},
+    {byte_string,       <<1,2,3,4,5,6>>},
+    {node_id,           ?NNID(123)},
+    {node_id,           ?NNID(14, 123)},
+    {node_id,           #opcua_node_id{type = string, ns = 42, value = <<"foobar">>}},
+    {expanded_node_id,  ?XID(?NNID(123))},
+    {expanded_node_id,  ?XID(12, ?NNID(14, 123))},
+    {status_code,       bad_internal_error},
+    {qualified_name,    #opcua_qualified_name{}},
+    {qualified_name,    #opcua_qualified_name{ns = 42, name = <<"foo">>}}
+]).
+
 t_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
      [
+      fun basic_types_encoding/0,
+      fun variant_encoding/0,
       fun open_secure_channel_request/0,
       fun open_secure_channel_response/0,
       fun create_session_request/0,
@@ -56,6 +100,25 @@ assert_codec(NodeId, ToBeEncoded, EncodedComp) ->
     {DecodedComp, EmptyBin1} = opcua_codec_binary:decode(NodeId, BinEncodedComp),
     ?assertEqual(<<>>, EmptyBin1),
     ?assertEqual(ToBeEncoded, DecodedComp).
+
+assert_codec(NodeId, ToBeEncoded) ->
+    {Encoded, _} = opcua_codec_binary:encode(NodeId, ToBeEncoded),
+    {Decoded, EmptyBin} = opcua_codec_binary:decode(NodeId, Encoded),
+    ?assertEqual(<<>>, EmptyBin),
+    ?assertEqual(ToBeEncoded, Decoded).
+
+basic_types_encoding() ->
+    lists:foreach(fun({T, V}) -> assert_codec(T, V) end, ?BASIC_TYPE_SAMPLE),
+    ok.
+
+variant_encoding() ->
+    lists:foreach(fun({T, V}) ->
+        assert_codec(variant, #opcua_variant{type = T, value = V}),
+        assert_codec(variant, #opcua_variant{type = T, value = []}),
+        assert_codec(variant, #opcua_variant{type = T, value = [V]}),
+        assert_codec(variant, #opcua_variant{type = T, value = [V, V]})
+    end, ?BASIC_TYPE_SAMPLE),
+    ok.
 
 open_secure_channel_request() ->
     NodeId = #opcua_node_id{value = 444},

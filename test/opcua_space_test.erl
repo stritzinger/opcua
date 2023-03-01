@@ -11,6 +11,7 @@
 -import(opcua_space, [del_references/2]).
 -import(opcua_space, [data_type/2]).
 -import(opcua_space, [type_descriptor/3]).
+-import(opcua_space, [references/3]).
 
 
 %%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -24,6 +25,13 @@
     type_id = opcua_node:id(TYPE),
     source_id = opcua_node:id(SOURCE),
     target_id = opcua_node:id(TARGET)
+}).
+
+% Can be used in pattern-matching, but do not resolve node specs
+-define(MREF(TYPE, SOURCE, TARGET), #opcua_reference{
+    type_id = ?NNID(TYPE),
+    source_id = ?NNID(SOURCE),
+    target_id = ?NNID(TARGET)
 }).
 
 
@@ -76,4 +84,371 @@ type_descriptor_test() ->
     ?assertMatch(undefined, type_descriptor(Space, 100, json)),
 
     opcua_space_backend:terminate(Space),
+    ok.
+
+reference_subtypes_test() ->
+    A = opcua_space_backend:new(a, []),
+    B = opcua_space_backend:new(b, A),
+    C = opcua_space_backend:new(c, B),
+
+    % The reference type hierarchy used in this test:
+    %
+    %               10011
+    %      / 1001 <
+    %     /         10012
+    % 100
+    %     \         10021
+    %      \ 1002 <
+    %               10022
+    %
+    % Each layers contains a reference from node 1 to another node with each of
+    % the possible reference types.
+    %
+    % This test will be defining and modifying this type hierarchy and test
+    % the references returned are the expected ones.
+
+    add_references(A, [?REF(100, 1, 2), ?REF(1001, 1, 2), ?REF(1002, 1, 2),
+                       ?REF(10011, 1, 2), ?REF(10012, 1, 2),
+                       ?REF(10021, 1, 2), ?REF(10022, 1, 2)]),
+    add_references(B, [?REF(100, 1, 3), ?REF(1001, 1, 3), ?REF(1002, 1, 3),
+                       ?REF(10011, 1, 3), ?REF(10012, 1, 3),
+                       ?REF(10021, 1, 3), ?REF(10022, 1, 3)]),
+    add_references(C, [?REF(100, 1, 4), ?REF(1001, 1, 4), ?REF(1002, 1, 4),
+                       ?REF(10011, 1, 4), ?REF(10012, 1, 4),
+                       ?REF(10021, 1, 4), ?REF(10022, 1, 4)]),
+
+    % All references types of space A
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(1001, 1, 2), ?MREF(1002, 1, 2),
+                  ?MREF(10011, 1, 2), ?MREF(10012, 1, 2),
+                  ?MREF(10021, 1, 2), ?MREF(10022, 1, 2)],
+                 lists:sort(references(A, 1, #{direction => forward}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1, #{direction => inverse}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2, #{direction => forward}))),
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(1001, 1, 2), ?MREF(1002, 1, 2),
+                  ?MREF(10011, 1, 2), ?MREF(10012, 1, 2),
+                  ?MREF(10021, 1, 2), ?MREF(10022, 1, 2)],
+                 lists:sort(references(A, 2, #{direction => inverse}))),
+
+    % Only root reference type of space A (no reference hierarchy defined)
+    ?assertMatch([?MREF(100, 1, 2)],
+                 lists:sort(references(A, 1,
+                    #{direction => forward, type => 100}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1,
+                    #{direction => inverse, type => 100}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2,
+                    #{direction => forward, type => 100}))),
+    ?assertMatch([?MREF(100, 1, 2)],
+                 lists:sort(references(A, 2,
+                    #{direction => inverse, type => 100}))),
+
+    % Root reference type and subtypes of space A (no reference hierarchy defined)
+    ?assertMatch([?MREF(100, 1, 2)],
+                 lists:sort(references(A, 1,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1,
+                    #{direction => inverse, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(100, 1, 2)],
+                 lists:sort(references(A, 2,
+                    #{direction => inverse, type => 100,
+                      include_subtypes => true}))),
+
+    % Only Half-way reference type of space A (no reference hierarchy defined)
+    ?assertMatch([?MREF(1001, 1, 2)],
+                 lists:sort(references(A, 1,
+                    #{direction => forward, type => 1001}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1,
+                    #{direction => inverse, type => 1001}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2,
+                    #{direction => forward, type => 1001}))),
+    ?assertMatch([?MREF(1001, 1, 2)],
+                 lists:sort(references(A, 2,
+                    #{direction => inverse, type => 1001}))),
+
+    % Half-way reference type and subtypes of space A (no reference hierarchy defined)
+    ?assertMatch([?MREF(1001, 1, 2)],
+                 lists:sort(references(A, 1,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1,
+                    #{direction => inverse, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1001, 1, 2)],
+                 lists:sort(references(A, 2,
+                    #{direction => inverse, type => 1001,
+                      include_subtypes => true}))),
+
+    % Defining part of the reference type hierarchy
+
+    add_references(A, [?REF(has_subtype, 100, 1001),
+                       ?REF(has_subtype, 1001, 10011),
+                       ?REF(has_subtype, 1001, 10012)]),
+
+    % Only root reference type of space A
+    ?assertMatch([?MREF(100, 1, 2)],
+                 lists:sort(references(A, 1,
+                    #{direction => forward, type => 100}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1,
+                    #{direction => inverse, type => 100}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2,
+                    #{direction => forward, type => 100}))),
+    ?assertMatch([?MREF(100, 1, 2)],
+                 lists:sort(references(A, 2,
+                    #{direction => inverse, type => 100}))),
+
+    % Root reference type and subtypes of space A
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(1001, 1, 2),
+                  ?MREF(10011, 1, 2), ?MREF(10012, 1, 2)],
+                 lists:sort(references(A, 1,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1,
+                    #{direction => inverse, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(1001, 1, 2),
+                  ?MREF(10011, 1, 2), ?MREF(10012, 1, 2)],
+                 lists:sort(references(A, 2,
+                    #{direction => inverse, type => 100,
+                      include_subtypes => true}))),
+
+    % Only half-way reference type of space A
+    ?assertMatch([?MREF(1001, 1, 2)],
+                 lists:sort(references(A, 1,
+                    #{direction => forward, type => 1001}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1,
+                    #{direction => inverse, type => 1001}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2,
+                    #{direction => forward, type => 1001}))),
+    ?assertMatch([?MREF(1001, 1, 2)],
+                 lists:sort(references(A, 2,
+                    #{direction => inverse, type => 1001}))),
+
+    % Half-way reference type and subtypes of space A
+    ?assertMatch([?MREF(1001, 1, 2), ?MREF(10011, 1, 2), ?MREF(10012, 1, 2)],
+                 lists:sort(references(A, 1,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 1,
+                    #{direction => inverse, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(A, 2,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1001, 1, 2), ?MREF(10011, 1, 2), ?MREF(10012, 1, 2)],
+                 lists:sort(references(A, 2,
+                    #{direction => inverse, type => 1001,
+                      include_subtypes => true}))),
+
+    % Only root reference type of space B/A
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(100, 1, 3)],
+                 lists:sort(references(B, 1,
+                    #{direction => forward, type => 100}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 1,
+                    #{direction => inverse, type => 100}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 2,
+                    #{direction => forward, type => 100}))),
+    ?assertMatch([?MREF(100, 1, 2)],
+                 lists:sort(references(B, 2,
+                    #{direction => inverse, type => 100}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 3,
+                    #{direction => forward, type => 100}))),
+    ?assertMatch([?MREF(100, 1, 3)],
+                 lists:sort(references(B, 3,
+                    #{direction => inverse, type => 100}))),
+
+    % Root reference type and subtypes of space B/A
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(100, 1, 3),
+                  ?MREF(1001, 1, 2), ?MREF(1001, 1, 3),
+                  ?MREF(10011, 1, 2), ?MREF(10011, 1, 3),
+                  ?MREF(10012, 1, 2), ?MREF(10012, 1, 3)],
+                 lists:sort(references(B, 1,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 1,
+                    #{direction => inverse, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 2,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(1001, 1, 2),
+                  ?MREF(10011, 1, 2), ?MREF(10012, 1, 2)],
+                 lists:sort(references(B, 2,
+                    #{direction => inverse, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 3,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(100, 1, 3), ?MREF(1001, 1, 3),
+                  ?MREF(10011, 1, 3), ?MREF(10012, 1, 3)],
+                 lists:sort(references(B, 3,
+                    #{direction => inverse, type => 100,
+                      include_subtypes => true}))),
+
+    % Only half-way reference type of space A
+    ?assertMatch([?MREF(1001, 1, 2), ?MREF(1001, 1, 3)],
+                 lists:sort(references(B, 1,
+                    #{direction => forward, type => 1001}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 1,
+                    #{direction => inverse, type => 1001}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 2,
+                    #{direction => forward, type => 1001}))),
+    ?assertMatch([?MREF(1001, 1, 2)],
+                 lists:sort(references(B, 2,
+                    #{direction => inverse, type => 1001}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 3,
+                    #{direction => forward, type => 1001}))),
+    ?assertMatch([?MREF(1001, 1, 3)],
+                 lists:sort(references(B, 3,
+                    #{direction => inverse, type => 1001}))),
+
+    % Half-way reference type and subtypes of space A
+    ?assertMatch([?MREF(1001, 1, 2), ?MREF(1001, 1, 3),
+                  ?MREF(10011, 1, 2), ?MREF(10011, 1, 3),
+                  ?MREF(10012, 1, 2), ?MREF(10012, 1, 3)],
+                 lists:sort(references(B, 1,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 1,
+                    #{direction => inverse, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 2,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1001, 1, 2), ?MREF(10011, 1, 2), ?MREF(10012, 1, 2)],
+                 lists:sort(references(B, 2,
+                    #{direction => inverse, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([],
+                 lists:sort(references(B, 3,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1001, 1, 3), ?MREF(10011, 1, 3), ?MREF(10012, 1, 3)],
+                 lists:sort(references(B, 3,
+                    #{direction => inverse, type => 1001,
+                      include_subtypes => true}))),
+
+    % Defining more of the reference type hierarchy in the sub-space B/A,
+    % deleting some defined in the super-space.
+
+    add_references(B, [?REF(has_subtype, 100, 1002),
+                       ?REF(has_subtype, 1002, 10021)]),
+    del_references(B, [?REF(has_subtype, 1001, 10012)]),
+
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(100, 1, 3),
+                  ?MREF(1001, 1, 2), ?MREF(1001, 1, 3),
+                  ?MREF(1002, 1, 2), ?MREF(1002, 1, 3),
+                  ?MREF(10011, 1, 2), ?MREF(10011, 1, 3),
+                  ?MREF(10021, 1, 2), ?MREF(10021, 1, 3)],
+                 lists:sort(references(B, 1,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1001, 1, 2), ?MREF(1001, 1, 3),
+                  ?MREF(10011, 1, 2), ?MREF(10011, 1, 3)],
+                 lists:sort(references(B, 1,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1002, 1, 2), ?MREF(1002, 1, 3),
+                  ?MREF(10021, 1, 2), ?MREF(10021, 1, 3)],
+                 lists:sort(references(B, 1,
+                    #{direction => forward, type => 1002,
+                      include_subtypes => true}))),
+
+
+    % Defining more of the reference type hierarchy in the sub-space C/B/A,
+    % deleting some defined in the super-spaces.
+
+    add_references(C, [?REF(has_subtype, 1002, 10022),
+                       ?REF(has_subtype, 1001, 10012)]),
+    del_references(C, [?REF(has_subtype, 1001, 10011),
+                       ?REF(has_subtype, 1002, 10021)]),
+
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(100, 1, 3), ?MREF(100, 1, 4),
+                  ?MREF(1001, 1, 2), ?MREF(1001, 1, 3), ?MREF(1001, 1, 4),
+                  ?MREF(1002, 1, 2), ?MREF(1002, 1, 3), ?MREF(1002, 1, 4),
+                  ?MREF(10012, 1, 2), ?MREF(10012, 1, 3), ?MREF(10012, 1, 4),
+                  ?MREF(10022, 1, 2), ?MREF(10022, 1, 3), ?MREF(10022, 1, 4)],
+                 lists:sort(references(C, 1,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1001, 1, 2), ?MREF(1001, 1, 3), ?MREF(1001, 1, 4),
+                  ?MREF(10012, 1, 2), ?MREF(10012, 1, 3), ?MREF(10012, 1, 4)],
+                 lists:sort(references(C, 1,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1002, 1, 2), ?MREF(1002, 1, 3), ?MREF(1002, 1, 4),
+                  ?MREF(10022, 1, 2), ?MREF(10022, 1, 3), ?MREF(10022, 1, 4)],
+                 lists:sort(references(C, 1,
+                    #{direction => forward, type => 1002,
+                      include_subtypes => true}))),
+
+    % Adding back all the removed reference types
+
+    add_references(C, [?REF(has_subtype, 1001, 10011),
+                       ?REF(has_subtype, 1002, 10021)]),
+
+    ?assertMatch([?MREF(100, 1, 2), ?MREF(100, 1, 3), ?MREF(100, 1, 4),
+                  ?MREF(1001, 1, 2), ?MREF(1001, 1, 3), ?MREF(1001, 1, 4),
+                  ?MREF(1002, 1, 2), ?MREF(1002, 1, 3), ?MREF(1002, 1, 4),
+                  ?MREF(10011, 1, 2), ?MREF(10011, 1, 3), ?MREF(10011, 1, 4),
+                  ?MREF(10012, 1, 2), ?MREF(10012, 1, 3), ?MREF(10012, 1, 4),
+                  ?MREF(10021, 1, 2), ?MREF(10021, 1, 3), ?MREF(10021, 1, 4),
+                  ?MREF(10022, 1, 2), ?MREF(10022, 1, 3), ?MREF(10022, 1, 4)],
+                 lists:sort(references(C, 1,
+                    #{direction => forward, type => 100,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1001, 1, 2), ?MREF(1001, 1, 3), ?MREF(1001, 1, 4),
+                  ?MREF(10011, 1, 2), ?MREF(10011, 1, 3), ?MREF(10011, 1, 4),
+                  ?MREF(10012, 1, 2), ?MREF(10012, 1, 3), ?MREF(10012, 1, 4)],
+                 lists:sort(references(C, 1,
+                    #{direction => forward, type => 1001,
+                      include_subtypes => true}))),
+    ?assertMatch([?MREF(1002, 1, 2), ?MREF(1002, 1, 3), ?MREF(1002, 1, 4),
+                  ?MREF(10021, 1, 2), ?MREF(10021, 1, 3), ?MREF(10021, 1, 4),
+                  ?MREF(10022, 1, 2), ?MREF(10022, 1, 3), ?MREF(10022, 1, 4)],
+                 lists:sort(references(C, 1,
+                    #{direction => forward, type => 1002,
+                      include_subtypes => true}))),
+
+    opcua_space_backend:terminate(C),
+    opcua_space_backend:terminate(B),
+    opcua_space_backend:terminate(A),
     ok.

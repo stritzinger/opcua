@@ -43,6 +43,8 @@ decode(Spec, Data, Opts) ->
 encode(Spec, Data, Opts) ->
     Ctx = opcua_codec_context:new(encoding, Opts),
     try encode_type(Ctx, Spec, Data) of
+        {Result, Rest, #ctx{issues = []} = Ctx2} ->
+            opcua_codec_context:finalize(Ctx2, Result, Rest);
         {Result, Rest, Ctx2} ->
             opcua_codec_context:finalize(Ctx2, Result, Rest)
     catch
@@ -111,10 +113,10 @@ decode_schema(Ctx, #opcua_union{fields = Fields}, Data) ->
     resolve_union_value(?POPF(Ctx2, switch), SwitchValue, Fields, Data2);
 decode_schema(Ctx, #opcua_enum{} = Schema, Data) ->
     {Value, Data2, Ctx2} = decode_builtin(?PUSHF(Ctx, value), int32, Data),
-    {opcua_codec:resolve_enum(Schema, Value), Data2, ?POPF(Ctx2, value)};
-decode_schema(Ctx, #opcua_option_set{mask_type = MaskNodeId} = Schema, Data) ->
-    {Value, Data2, Ctx2} = decode_type(?PUSHF(Ctx, value), MaskNodeId, Data),
-    {opcua_codec:resolve_option_set(Schema, Value), Data2, ?POPF(Ctx2, value)};
+    {opcua_codec:unpack_enum(Schema, Value), Data2, ?POPF(Ctx2, value)};
+decode_schema(Ctx, #opcua_option_set{mask_type = MaskType} = Schema, Data) ->
+    {Value, Data2, Ctx2} = decode_type(?PUSHF(Ctx, value), MaskType, Data),
+    {opcua_codec:unpack_option_set(Schema, Value), Data2, ?POPF(Ctx2, value)};
 decode_schema(Ctx, #opcua_builtin{builtin_node_id = BuiltinNodeId}, Data) ->
     decode_type(Ctx, BuiltinNodeId, Data).
 
@@ -124,10 +126,10 @@ decode_fields(Ctx, Fields, Data) ->
 decode_fields(Ctx, [], Data, Acc) ->
     {Acc, Data, Ctx};
 decode_fields(Ctx, [Field | Fields], Data, Acc) ->
-    Name = Field#opcua_field.name,
-    {Value, Data2, Ctx2} = decode_field(?PUSHF(Ctx, Name), Field, Data),
-    Acc2 = maps:put(Name, Value, Acc),
-    decode_fields(?POPF(Ctx2, Name), Fields, Data2, Acc2).
+    Tag = Field#opcua_field.tag,
+    {Value, Data2, Ctx2} = decode_field(?PUSHF(Ctx, Tag), Field, Data),
+    Acc2 = maps:put(Tag, Value, Acc),
+    decode_fields(?POPF(Ctx2, Tag), Fields, Data2, Acc2).
 
 decode_field(Ctx, #opcua_field{node_id = NodeId, value_rank = -1}, Data) ->
     decode_type(Ctx, NodeId, Data);
@@ -206,7 +208,7 @@ decode_extension_object(Ctx, 16#02, TypeId, T) ->
 decode_extension_object(Ctx, _, _, _) ->
     opcua_codec_context:issue(Ctx, bad_extension_object).
 
-decode_variant(Ctx, <<0:6, Bin/binary>>) ->
+decode_variant(Ctx, <<0:8, Bin/binary>>) ->
     {undefined, Bin, Ctx};
 decode_variant(Ctx, <<ArrayFlag:1/bits, DimFlag:1/bits, TypeId:6/little-unsigned-integer, Bin/binary>>) ->
     decode_variant(Ctx, TypeId, DimFlag, ArrayFlag, Bin);
@@ -344,29 +346,21 @@ encode_schema(Ctx, #opcua_structure{with_options = false, fields = Fields}, Data
     encode_fields(Ctx, Fields, Data);
 encode_schema(Ctx, #opcua_structure{with_options = true, fields = Fields}, Data) ->
     encode_masked_fields(Ctx, Fields, Data);
-encode_schema(Ctx, #opcua_union{fields = Fields}, UnionMap) ->
-    [Name] = maps:keys(UnionMap),
-    [Field] = [Field || Field = #opcua_field{name = FieldName} <- Fields,
-                        FieldName == Name],
+encode_schema(Ctx, #opcua_union{fields = Fields}, Data) ->
+    [Tag] = maps:keys(Data),
+    [Field] = [Field || Field = #opcua_field{tag = FieldTag} <- Fields,
+                        FieldTag == Tag],
     {SwitchValue, _, Ctx2} = encode_builtin(?PUSHF(Ctx, switch), uint32,
                                             Field#opcua_field.value),
     {EncodedValue, _, Ctx3} = encode_field(?POPF(Ctx2, switch), Field,
-                                           maps:get(Name, UnionMap)),
+                                           maps:get(Tag, Data)),
     {[SwitchValue, EncodedValue], undefined, Ctx3};
-encode_schema(Ctx, #opcua_enum{fields = Fields}, Name) ->
-    [Field] = [Field || Field = #opcua_field{name=FieldName} <- Fields,
-                        FieldName==Name],
-    {Value, Data2, Ctx2} = encode_builtin(?PUSHF(Ctx, value), int32,
-                                          Field#opcua_field.value),
+encode_schema(Ctx, #opcua_enum{} = Schema, Data) ->
+    EnumValue = opcua_codec:pack_enum(Schema, Data),
+    {Value, Data2, Ctx2} = encode_builtin(?PUSHF(Ctx, value), int32, EnumValue),
     {Value, Data2, ?POPF(Ctx2, value)};
-encode_schema(Ctx, #opcua_option_set{mask_type = MaskNodeId,
-                                     fields = Fields}, OptionSet) ->
-    ChosenFields = [Field || Field = #opcua_field{name = Name} <- Fields,
-                             lists:member(Name, OptionSet)],
-    Int = lists:foldl(fun(X, Acc) ->
-        Acc bxor (1 bsl X#opcua_field.value)
-    end, 0, ChosenFields),
-    encode_type(Ctx, MaskNodeId, Int);
+encode_schema(Ctx, #opcua_option_set{mask_type = MaskType} = Schema, Data) ->
+    encode_type(Ctx, MaskType, opcua_codec:pack_option_set(Schema, Data));
 encode_schema(Ctx, #opcua_builtin{builtin_node_id = BuiltinNodeId}, Data) ->
     encode_type(Ctx, BuiltinNodeId, Data).
 
@@ -379,19 +373,19 @@ encode_masked_fields(Ctx, [], Data, Mask, Acc) ->
                         [1 bsl (N-1) || N <- Mask]),
     {BinMask1, _, Ctx2} = encode_builtin(?PUSHF(Ctx, mask), uint32, Mask1),
     {iolist_to_binary([BinMask1, BinFields1]), Data, ?POPF(Ctx2, mask)};
-encode_masked_fields(Ctx, [Field = #opcua_field{is_optional = false, name = Name}
+encode_masked_fields(Ctx, [Field = #opcua_field{is_optional = false, tag = Tag}
                            | Fields], Data, Mask, Acc) ->
-    case maps:take(Name, Data) of
+    case maps:take(Tag, Data) of
         error ->
-            opcua_codec_context:issue(?PUSHF(Ctx, Name), missing_required_field);
+            opcua_codec_context:issue(?PUSHF(Ctx, Tag), missing_required_field);
         {Value, Data2} ->
             {EncodedField, _, Ctx2} = encode_field(Ctx, Field, Value),
             encode_masked_fields(Ctx2, Fields, Data2, Mask,
                                  [EncodedField | Acc])
     end;
-encode_masked_fields(Ctx, [Field = #opcua_field{is_optional = true, name = Name}
+encode_masked_fields(Ctx, [Field = #opcua_field{is_optional = true, tag = Tag}
                            | Fields], Data, Mask, Acc) ->
-    case maps:take(Name, Data) of
+    case maps:take(Tag, Data) of
         {Value, Data2} ->
             {EncodedField, _, Ctx2} = encode_field(Ctx, Field, Value),
             encode_masked_fields(Ctx2, Fields, Data2,
@@ -406,23 +400,23 @@ encode_fields(Ctx, Fields, Data) ->
 
 encode_fields(Ctx, [], _Data, Acc) ->
     {iolist_to_binary(lists:reverse(Acc)), undefined, Ctx};
-encode_fields(Ctx, [#opcua_field{name = Name} = Field | Fields], Data, Acc) ->
-    case maps:take(Name, Data) of
+encode_fields(Ctx, [#opcua_field{tag = Tag} = Field | Fields], Data, Acc) ->
+    case maps:take(Tag, Data) of
         error ->
-            opcua_codec_context:issue(?PUSHF(Ctx, Name), missing_required_field);
+            opcua_codec_context:issue(?PUSHF(Ctx, Tag), missing_required_field);
         {Value, Data2} ->
             {FieldValue, _, Ctx2} = encode_field(Ctx, Field, Value),
             encode_fields(Ctx2, Fields, Data2, [FieldValue|Acc])
     end.
 
-encode_field(Ctx, #opcua_field{name = Name, node_id = NodeId, value_rank = -1}, Data) ->
-    {Result, Data2, Ctx2} = encode_type(?PUSHF(Ctx, Name), NodeId, Data),
-    {Result, Data2, ?POPF(Ctx2, Name)};
-encode_field(Ctx, #opcua_field{name = Name, node_id = NodeId, value_rank = N}, Array)
+encode_field(Ctx, #opcua_field{tag = Tag, node_id = NodeId, value_rank = -1}, Data) ->
+    {Result, Data2, Ctx2} = encode_type(?PUSHF(Ctx, Tag), NodeId, Data),
+    {Result, Data2, ?POPF(Ctx2, Tag)};
+encode_field(Ctx, #opcua_field{tag = Tag, node_id = NodeId, value_rank = N}, Array)
   when N >= 1, is_list(Array) ->
-    {Dims, Ctx2} = resolve_dims(?PUSHF(Ctx, Name), Array, []),
+    {Dims, Ctx2} = resolve_dims(?PUSHF(Ctx, Tag), Array, []),
     {Array2, Ctx3} = encode_array(Ctx2, NodeId, Array, []),
-    {[Dims, Array2], undefined, ?POPF(Ctx3, Name)}.
+    {[Dims, Array2], undefined, ?POPF(Ctx3, Tag)}.
 
 resolve_dims(Ctx, List, Acc) when is_list(List) ->
     {EncDim, _, Ctx2} = encode_type(Ctx, int32, length(List)),
@@ -470,13 +464,12 @@ encode_extension_object(#ctx{space = Space} = Ctx,
 encode_extension_object(Ctx, #opcua_extension_object{encoding = EncInfo}) ->
     opcua_codec_context:issue_encoding_not_supported(Ctx, EncInfo).
 
-
+encode_variant(Ctx, undefined) ->
+    {<<0:8>>, undefined, Ctx};
 encode_variant(Ctx, #opcua_variant{type = Type, value = MultiArray})
   when is_list(MultiArray) ->
     TypeId = opcua_codec:builtin_type_id(Type),
     case pack_array(Ctx, Type, MultiArray) of
-        {0, _, _, Ctx2} ->
-            {<<0:2, TypeId:6>>, undefined, Ctx2};
         {Length, Value, [Length], Ctx2} ->
             {LengthData, _, Ctx3}  = encode_builtin(Ctx2, int32, Length),
             {[<<1:1, 0:1, TypeId:6>>, LengthData, Value], undefined, Ctx3};
