@@ -117,7 +117,7 @@
 
 -type add_ref_options() :: #{
     % Add the reverse reference automatically, possibly changing the reference
-    % type if the reference is not symetric (contains/contained_in).
+    % type if the reference is not symmetric (contains/contained_in).
     % If not specified, no inverse reference will be added.
     bidirectional => boolean()
 }.
@@ -812,7 +812,7 @@ unpack_attribute_value(_Space, _, variant, undefined) -> undefined;
 unpack_attribute_value(_Space, _, variant, #opcua_variant{} = Value) -> Value;
 unpack_attribute_value(_Space, _, Type, #opcua_variant{type = Type, value = Value}) -> Value;
 unpack_attribute_value(Space, _, #opcua_node_id{} = Type, #opcua_variant{value = Value}) ->
-    opcua_codec:resolve(Space, Type, Value);
+    opcua_codec:unpack_type(Space, Type, Value);
 unpack_attribute_value(_Space, Key, Type, Value) ->
     ?LOG_ERROR("Unexpected attribute ~s value with expected type ~p: ~p",
                [Key, Type, Value]),

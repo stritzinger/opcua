@@ -7,6 +7,7 @@
 -define(NNID(Num), #opcua_node_id{ns = 0, type = numeric, value = Num}).
 -define(NNID(NS, Num), #opcua_node_id{ns = NS, type = numeric, value = Num}).
 -define(XID(NID), #opcua_expanded_node_id{node_id = NID}).
+-define(XID(IDX, NID), #opcua_expanded_node_id{server_index = IDX, node_id = NID}).
 
 -define(UNDEF_NODE_ID, #opcua_node_id{ns = 0, type = numeric, value = 0}).
 -define(UNDEF_QUALIFIED_NAME, #opcua_qualified_name{ns = 0, name = undefined}).
@@ -80,7 +81,7 @@
 }).
 
 -record(opcua_variant, {
-    type                        :: opcua:builtin_type(),
+    type                        :: undefined | opcua:builtin_type(),
     value                       :: term()
 }).
 
@@ -104,13 +105,13 @@
     display_name                :: opcua:optional(binary()),
     description                 :: opcua:optional(binary()),
     %TODO: create a type for write mask option set
-    write_mask = []             :: opcua:optional(list(atom())),
-    user_write_mask = []        :: opcua:optional(list(atom())),
+    write_mask = []             :: [atom()],
+    user_write_mask = []        :: [atom()],
     %FIXME: Role permision typing is broken
     role_permissions            :: opcua:optional(opcua:role_permission()),
     user_role_permissions       :: opcua:optional(opcua:role_permissions()),
     %TODO: create a type for access restriction option set
-    access_restrictions = []    :: opcua:optional(list(atom()))
+    access_restrictions = []    :: [atom()]
 }).
 
 -record(opcua_object, {
@@ -118,15 +119,18 @@
 }).
 
 -record(opcua_variable, {
-    value                       :: undefined | opcua:variant(),
+    value                       :: term(),
     data_type                   :: opcua:builtin_type() | opcua:node_id(),
-    value_rank                  :: undefined | non_neg_integer(),
-    array_dimensions            :: opcua:optional([non_neg_integer()]),
-    access_level                :: opcua:optional(byte()),
-    user_access_level           :: opcua:optional(byte()),
+    value_rank = -1             :: opcua:value_rank(),
+    array_dimensions = []       :: [non_neg_integer()],
+    %TODO: create a type for access level option set
+    access_level = []           :: [atom()],
+    %TODO: create a type for access level option set
+    user_access_level = []      :: [atom()],
     minimum_sampling_interval   :: undefined | float(),
-    historizing                 :: undefined | boolean(),
-    access_level_ex             :: undefined | opcua:uint32()
+    historizing = false         :: boolean(),
+    %TODO: create a type for access level extended option set
+    access_level_ex = []        :: [atom()]
 }).
 
 -record(opcua_method, {
@@ -141,26 +145,26 @@
 }).
 
 -record(opcua_object_type, {
-    is_abstract                 :: boolean()
+    is_abstract = false         :: boolean()
 }).
 
 -record(opcua_variable_type, {
-    value                       :: undefined | opcua:variant(),
-    data_type                   :: opcua:optional(opcua:node_id()),
-    value_rank                  :: opcua:optional(integer()),
-    array_dimensions            :: opcua:optional([non_neg_integer()]),
-    is_abstract                 :: boolean()
+    value                       :: term(),
+    data_type                   :: opcua:builtin_type() | opcua:node_id(),
+    value_rank = -1             :: opcua:value_rank(),
+    array_dimensions = []       :: [non_neg_integer()],
+    is_abstract = false         :: boolean()
 }).
 
 -record(opcua_data_type, {
-    is_abstract                 :: boolean(),
+    is_abstract = false         :: boolean(),
     data_type_definition        :: term()
 }).
 
 -record(opcua_reference_type, {
-    is_abstract                 :: boolean(),
-    symmetric                   :: boolean(),
-    inverse_name                :: opcua:localized_text()
+    is_abstract = false         :: boolean(),
+    symmetric = false           :: boolean(),
+    inverse_name                :: opcua:optional(binary())
 }).
 
 -record(opcua_view, {

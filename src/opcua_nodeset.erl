@@ -27,7 +27,6 @@
 -export([is_status/1]).
 -export([data_type/1]).
 -export([type_descriptor/2]).
--export([schema/1]).
 -export([namespace_uri/1]).
 -export([namespace_id/1]).
 -export([namespaces/0]).
@@ -75,7 +74,7 @@ attribute_type(write_mask) -> ?NNID(347);
 attribute_type(user_write_mask) -> ?NNID(347);
 attribute_type(is_abstract) -> boolean;
 attribute_type(symmetric) -> boolean;
-attribute_type(inverse_name) -> boolean;
+attribute_type(inverse_name) -> localized_text;
 attribute_type(contains_no_loops) -> boolean;
 attribute_type(event_notifier) -> byte_string;
 attribute_type(value) -> variant;
@@ -127,9 +126,6 @@ data_type(TypeDescriptorNodeSpec) ->
 type_descriptor(DataTypeNodeSpec, Encoding) ->
     opcua_space_backend:type_descriptor(?MODULE, DataTypeNodeSpec, Encoding).
 
-schema(NodeSpec) ->
-    opcua_space_backend:schema(?MODULE, NodeSpec).
-
 namespace_uri(Id) ->
     opcua_space_backend:namespace_uri(?MODULE, Id).
 
@@ -166,12 +162,7 @@ init(BaseDir) ->
     ?LOG_INFO("Loading OPCUA status code mapping..."),
     load_status(BaseDir),
     ?LOG_INFO("Loading OPCUA address space..."),
-    %FIXME: use real space persistence instead of this temporary backward compatible hack
-    load_namespaces(BaseDir),
-    load_nodes(BaseDir),
-    load_references(BaseDir),
-    load_datatypes(BaseDir),
-    load_encodings(BaseDir),
+    load_nodesets(BaseDir),
     {ok, #state{}}.
 
 handle_call(Req, From, State) ->
@@ -202,20 +193,10 @@ load_attributes(BaseDir) ->
 load_status(BaseDir) ->
     load_all_terms(BaseDir, "status", fun store_status/1).
 
-load_namespaces(BaseDir) ->
-    load_all_terms(BaseDir, "namespaces", fun store_namespace/1).
-
-load_nodes(BaseDir) ->
-    load_all_terms(BaseDir, "nodes", fun store_node/1).
-
-load_references(BaseDir) ->
-    load_all_terms(BaseDir, "references", fun store_reference/1).
-
-load_datatypes(BaseDir) ->
-    load_all_terms(BaseDir, "datatypes", fun store_datatype/1).
-
-load_encodings(BaseDir) ->
-    load_all_terms(BaseDir, "encodings", fun store_encoding/1).
+load_nodesets(BaseDir) ->
+    load_all_terms(BaseDir, "space", fun(Term) ->
+        opcua_space_backend:store(?MODULE, Term)
+    end).
 
 load_all_terms(BaseDir, Tag, Fun) ->
     Pattern = filename:join(BaseDir, "**/*." ++ Tag ++ ".bterm"),
@@ -246,32 +227,4 @@ store_status({Code, Name, Desc} = Spec)
   when is_integer(Code), is_atom(Name), is_binary(Desc) ->
     persistent_term:put({?MODULE, status, Code}, Spec),
     persistent_term:put({?MODULE, status, Name}, Spec),
-    ok.
-
-store_datatype({Keys, DataType}) ->
-    %FIXME: Temporary backward compatible hack
-    KeyValuePairs = [{datatype, {Key, DataType}} || Key <- Keys],
-    lists:foreach(fun(Item) ->
-        opcua_space_backend:store(?MODULE, Item)
-    end, KeyValuePairs),
-    ok.
-
-store_namespace({_Id, _Uri} = Spec) ->
-    %FIXME: Temporary backward compatible hack
-    opcua_space_backend:store(?MODULE, {namespace, Spec}),
-    ok.
-
-store_encoding({DescId, {TypeId, Encoding}}) ->
-    %FIXME: Temporary backward compatible hack
-    opcua_space_backend:store(?MODULE, {encoding, {DescId, {TypeId, Encoding}}}),
-    ok.
-
-store_node(#opcua_node{} = Node) ->
-    %FIXME: Temporary backward compatible hack
-    opcua_space:add_nodes({opcua_space_backend, [?MODULE]}, [Node]),
-    ok.
-
-store_reference(#opcua_reference{} = Reference) ->
-    %FIXME: Temporary backward compatible hack
-    opcua_space:add_references({opcua_space_backend, [?MODULE]}, [Reference]),
     ok.

@@ -18,75 +18,103 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([pack_variant/3]).
+-export([pack_variant/4]).
+-export([pack_enum/2]).
+-export([pack_option_set/2]).
+-export([unpack_type/3]).
+-export([unpack_enum/2]).
+-export([unpack_option_set/2]).
 -export([builtin_type_name/1]).
 -export([builtin_type_id/1]).
-
-%% Schema resolver
--export([resolve/3]).
--export([resolve_enum/2]).
--export([resolve_option_set/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec pack_variant(opcua_space:state(), opcua:node_spec(), term()) -> opcua:variant().
-pack_variant(_Space, #opcua_node_id{ns = 0, type = numeric, value = Num}, Value)
+%TODO: Add suport for generic value ranks. Maybe we should get the demensions too.
+-spec pack_variant(opcua_space:state(), opcua:node_spec(), opcua:value_rank(), term()) -> opcua:variant().
+pack_variant(_Space, _Type, _ValueRank, undefined) ->
+    #opcua_variant{};
+pack_variant(_Space, #opcua_node_id{ns = 0, type = numeric, value = Num}, 1, Value)
+  when ?IS_BUILTIN_TYPE_ID(Num), is_list(Value) ->
+    #opcua_variant{type = builtin_type_name(Num), value = Value};
+pack_variant(_Space, #opcua_node_id{ns = 0, type = numeric, value = Num}, -1, Value)
   when ?IS_BUILTIN_TYPE_ID(Num) ->
     #opcua_variant{type = builtin_type_name(Num), value = Value};
-pack_variant(_Space, #opcua_node_id{ns = 0, type = string, value = Name}, Value)
+pack_variant(_Space, #opcua_node_id{ns = 0, type = string, value = Name}, 1, Value)
+  when ?IS_BUILTIN_TYPE_NAME(Name), is_list(Value) ->
+    #opcua_variant{type = Name, value = Value};
+pack_variant(_Space, #opcua_node_id{ns = 0, type = string, value = Name}, -1, Value)
   when ?IS_BUILTIN_TYPE_NAME(Name) ->
     #opcua_variant{type = Name, value = Value};
-pack_variant(Space, #opcua_node_id{} = NodeId, Value) ->
+pack_variant(Space, #opcua_node_id{} = NodeId, 1, Values)
+  when is_list(Values) ->
     case opcua_space:schema(Space, NodeId) of
         undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
-        #opcua_enum{fields = Fields} ->
-            %TODO: Remove code duplication with opcua_codec_binary
-            [Idx] = [I || #opcua_field{name = N, value = I} <- Fields, Value =:= N],
-            #opcua_variant{type = int32, value = Idx};
-        #opcua_option_set{fields = Fields} ->
-            %TODO: Remove code duplication with opcua_codec_binary
-            %TODO: Add support for variable option set size
-            ChosenFields = [Field || Field = #opcua_field{name = Name} <- Fields,
-                            lists:member(Name, Value)],
-            Int = lists:foldl(fun(X, Acc) ->
-                    Acc bxor (1 bsl X#opcua_field.value)
-            end, 0, ChosenFields),
-            #opcua_variant{type = uint32, value = Int};
+        #opcua_enum{} = Schema ->
+            Data = [pack_enum(Schema, V) || V <- Values],
+            #opcua_variant{type = int32, value = Data};
+        #opcua_option_set{mask_type = TypeId} = Schema ->
+            Data = [pack_option_set(Schema, V) || V <- Values],
+            #opcua_variant{type = TypeId, value = Data};
+        _Other ->
+            Data = [#opcua_extension_object{type_id = NodeId,
+                                            encoding = byte_string, body = V}
+                    || V <- Values],
+            #opcua_variant{type = extension_object, value = Data}
+    end;
+pack_variant(Space, #opcua_node_id{} = NodeId, -1, Value) ->
+    case opcua_space:schema(Space, NodeId) of
+        undefined -> throw({bad_encoding_error, {schema_not_found, NodeId}});
+        #opcua_enum{} = Schema ->
+            #opcua_variant{type = int32, value = pack_enum(Schema, Value)};
+        #opcua_option_set{mask_type = TypeId} = Schema ->
+            Int = pack_option_set(Schema, Value),
+            #opcua_variant{type = TypeId, value = Int};
         _Other ->
             ExtObj = #opcua_extension_object{type_id = NodeId, encoding = byte_string, body = Value},
             #opcua_variant{type = extension_object, value = ExtObj}
     end;
-pack_variant(Space, NodeSpec, Value) ->
-    pack_variant(Space, opcua_node:id(NodeSpec), Value).
+pack_variant(_Space, #opcua_node_id{}, _ValueRank, _Value) ->
+    throw(bad_encoding_error);
+pack_variant(Space, NodeSpec, ValueRank, Value) ->
+    pack_variant(Space, opcua_node:id(NodeSpec), ValueRank, Value).
 
--spec resolve(opcua_space:state(), opcua:node_spec(), integer()) -> term().
-resolve(Space, TypeId, Value) ->
+pack_enum(#opcua_enum{fields = Fields}, Value) ->
+    [Result] = [I || #opcua_field{tag = T, value = I} <- Fields, Value =:= T],
+    Result.
+
+pack_option_set(#opcua_option_set{fields = Fields}, Value) ->
+    Bits = [V || #opcua_field{tag = T, value = V} <- Fields,
+                 lists:member(T, Value)],
+    lists:foldl(fun(BitIdx, Acc) -> Acc bxor (1 bsl BitIdx) end, 0, Bits).
+
+-spec unpack_type(opcua_space:state(), opcua:node_spec(), integer()) -> term().
+unpack_type(Space, TypeId, Value) ->
     case opcua_space:schema(Space, TypeId) of
         undefined -> throw({schema_not_found, TypeId});
-        #opcua_enum{} = Schema -> resolve_enum(Schema, Value);
-        #opcua_option_set{} = Schema -> resolve_option_set(Schema, Value);
-        #opcua_structure{} -> resolve_structure(Space, TypeId, Value);
+        #opcua_enum{} = Schema -> unpack_enum(Schema, Value);
+        #opcua_option_set{} = Schema -> unpack_option_set(Schema, Value);
+        #opcua_structure{} -> unpack_structure(Space, TypeId, Value);
         _Schema -> throw(not_implemented)
     end.
 
-resolve_structure(Space, RootType, #opcua_extension_object{type_id = SubType, body = Data}) ->
+unpack_structure(Space, RootType, #opcua_extension_object{type_id = SubType, body = Data}) ->
     case opcua_space:is_subtype(Space, SubType, RootType) of
         false -> throw({invalid_subtype, SubType, RootType});
         true -> Data
     end.
 
-resolve_enum(#opcua_enum{node_id = TypeId, fields = Fields}, Value) ->
+unpack_enum(#opcua_enum{node_id = TypeId, fields = Fields}, Value) ->
     case [F || F = #opcua_field{value = V} <- Fields, Value =:= V] of
-        [Field] -> Field#opcua_field.name;
+        [Field] -> Field#opcua_field.tag;
         [] -> throw({bad_enum_value, TypeId, Value})
     end.
 
-resolve_option_set(#opcua_option_set{fields = Fields}, Value) ->
+unpack_option_set(#opcua_option_set{fields = Fields}, Value) ->
     FieldNames = lists:foldl(fun(X, Acc) ->
         case (Value bsr X#opcua_field.value) rem 2 of
             0  -> Acc;
-            1  -> [X#opcua_field.name | Acc]
+            1  -> [X#opcua_field.tag | Acc]
         end
      end, [], Fields),
     lists:reverse(FieldNames).
@@ -121,7 +149,9 @@ builtin_type_name(27) -> byte_string;
 builtin_type_name(28) -> byte_string;
 builtin_type_name(29) -> byte_string;
 builtin_type_name(30) -> byte_string;
-builtin_type_name(31) -> byte_string.
+builtin_type_name(31) -> byte_string;
+builtin_type_name(#opcua_node_id{type = numeric, value = TypeNum}) ->
+    builtin_type_name(TypeNum).
 
 builtin_type_id(boolean)            -> 1;
 builtin_type_id(sbyte)              -> 2;

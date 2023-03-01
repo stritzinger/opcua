@@ -72,10 +72,6 @@
          Result :: undefined | TypeDescriptorId,
          TypeDescriptorId :: opcua:node_id().
 
--callback schema(State, TypeSpec) -> Result
-    when State :: term(), TypeSpec :: opcua:node_spec(),
-         Result :: undefined | opcua:codec_schema().
-
 -callback namespace_uri(State, NamespaceId) -> undefined | NamespaceUri
     when State :: term(), NamespaceId :: non_neg_integer(),
          NamespaceUri :: binary().
@@ -236,12 +232,11 @@ type_descriptor(Mod, NodeSpec, Encoding) ->
     Mod:type_descriptor(NodeSpec, Encoding).
 
 % @doc Retrieves a data schema from a data type.
-schema(#uacp_connection{space = Space}, NodeSpec) ->
-    schema(Space, NodeSpec);
-schema({Mod, Sub}, NodeSpec) ->
-    Mod:schema(Sub, NodeSpec);
-schema(Mod, NodeSpec) ->
-    Mod:schema(NodeSpec).
+schema(Space, NodeSpec) ->
+    case node(Space, NodeSpec) of
+        #opcua_node{node_class = #opcua_data_type{data_type_definition = Schema}} -> Schema;
+        _ -> undefined
+    end.
 
 % @doc Retrieves a namespace URI from its identifier.
 namespace_uri(#uacp_connection{space = Space}, Id) ->

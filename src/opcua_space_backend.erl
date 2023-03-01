@@ -51,7 +51,6 @@
 -export([references/3]).
 -export([data_type/2]).
 -export([type_descriptor/3]).
--export([schema/2]).
 -export([namespace_uri/2]).
 -export([namespace_id/2]).
 -export([namespaces/1]).
@@ -124,8 +123,6 @@ init(Space) ->
         [{read_concurrency, true}, {keypos, 2}]),
     DescToTypeTable = ets:new(opcua_space_encoding_types,
         [{read_concurrency, true}, {keypos, 1}]),
-    DataTypesTable = ets:new(opcua_space_datatypes,
-        [{read_concurrency, true}]),
     NamespaceIdsTable = ets:new(opcua_space_namespace_ids,
         [{read_concurrency, true}, {keypos, 2}]),
     NamespaceUrisTable = ets:new(opcua_space_namespace_uris,
@@ -136,11 +133,10 @@ init(Space) ->
     RefSubKey = key(Space, ref_subtypes),
     TypeToDescKey = key(Space, type2desc),
     DescToTypeKey = key(Space, desc2type),
-    DataTypesKey = key(Space, datatypes),
     NamespaceIdsKey = key(Space, namespace_ids),
     NamespaceUrisKey = key(Space, namespace_uris),
     Keys = [NodesKey, ReferencesKey, RefSubKey, TypeToDescKey,
-            DescToTypeKey, DataTypesKey, NamespaceIdsKey, NamespaceUrisKey],
+            DescToTypeKey, NamespaceIdsKey, NamespaceUrisKey],
 
     spawn_cleanup_proc(self(), Keys),
 
@@ -149,7 +145,6 @@ init(Space) ->
     persistent_term:put(RefSubKey, RefSubTable),
     persistent_term:put(TypeToDescKey, TypeToDescTable),
     persistent_term:put(DescToTypeKey, DescToTypeTable),
-    persistent_term:put(DataTypesKey, DataTypesTable),
     persistent_term:put(NamespaceIdsKey, NamespaceIdsTable),
     persistent_term:put(NamespaceUrisKey, NamespaceUrisTable),
 
@@ -164,17 +159,15 @@ terminate(Space) ->
     RefSubKey = key(Space, ref_subtypes),
     TypeToDescKey = key(Space, type2desc),
     DescToTypeKey = key(Space, desc2type),
-    DataTypesKey = key(Space, datatypes),
     NamespaceIdsKey = key(Space, namespace_ids),
     NamespaceUrisKey = key(Space, namespace_uris),
     Keys = [NodesKey, ReferencesKey, RefSubKey, TypeToDescKey, DescToTypeKey,
-            DataTypesKey, NamespaceIdsKey, NamespaceUrisKey],
+            NamespaceIdsKey, NamespaceUrisKey],
     ets:delete(persistent_term:get(NodesKey)),
     ets:delete(persistent_term:get(ReferencesKey)),
     ets:delete(persistent_term:get(RefSubKey)),
     ets:delete(persistent_term:get(TypeToDescKey)),
     ets:delete(persistent_term:get(DescToTypeKey)),
-    ets:delete(persistent_term:get(DataTypesKey)),
     ets:delete(persistent_term:get(NamespaceIdsKey)),
     ets:delete(persistent_term:get(NamespaceUrisKey)),
     cleanup_persistent_terms(Keys),
@@ -333,14 +326,6 @@ type_descriptor(Space, DataTypeNodeSpec, Encoding) ->
     NodeId = opcua_node:id(DataTypeNodeSpec),
     get_type_descriptor([Space], NodeId, Encoding).
 
--spec schema(space() | spaces(), opcua:node_spec()) -> term() | undefined.
-schema([_Space | _Rest] = Spaces, NodeSpec) ->
-    NodeId = opcua_node:id(NodeSpec),
-    get_schema(Spaces, NodeId);
-schema(Space, NodeSpec) ->
-    NodeId = opcua_node:id(NodeSpec),
-    get_schema([Space], NodeId).
-
 -spec namespace_uri(space() | spaces(), non_neg_integer()) -> binary() | undefined.
 namespace_uri([_Space | _Rest] = Spaces, Id) when is_integer(Id), Id >= 0 ->
     get_namespace_uri(Spaces, Id);
@@ -368,6 +353,8 @@ is_subtype(Space, SubTypeSpec, SuperTypeSpec) ->
 
 %%% STORAGE API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+fold({?MODULE, Space}, Fun, Acc) ->
+    fold(Space, Fun, Acc);
 fold([Space | _], Fun, Acc) ->
     fold(Space, Fun, Acc);
 fold(Space, Fun, Acc) ->
@@ -376,7 +363,6 @@ fold(Space, Fun, Acc) ->
         {references, ref},
         {ref_subtypes, ref_subtypes},
         {desc2type, encoding},
-        {datatypes, datatype},
         {namespace_ids, namespace}],
     fold(Space, TableSpecs, Fun, Acc).
 
@@ -394,9 +380,6 @@ store(Space, {ref_subtypes, Term}) ->
 store(Space, {encoding, Term}) ->
     ets:insert(table(Space, type2desc), Term),
     ets:insert(table(Space, desc2type), Term),
-    ok;
-store(Space, {datatype, Term}) ->
-    ets:insert(table(Space, datatypes), Term),
     ok;
 store(Space, {namespace, Term}) ->
     ets:insert(table(Space, namespace_uris), Term),
@@ -530,14 +513,6 @@ get_type_descriptor([Space | Rest], NodeId, Encoding) ->
         [{deleted, _}] -> undefined;
         [{Result, _}] -> Result;
         [] -> get_type_descriptor(Rest, NodeId, Encoding)
-    end.
-
-get_schema([], _NodeId) -> undefined;
-get_schema([Space | Rest], NodeId) ->
-    TypeTable = table(Space, datatypes),
-    case ets:lookup(TypeTable, NodeId) of
-        [{_, Result}] -> Result;
-        [] -> get_schema(Rest, NodeId)
     end.
 
 get_namespace_uri([], _Id) -> undefined;
