@@ -86,6 +86,34 @@ type_descriptor_test() ->
     opcua_space_backend:terminate(Space),
     ok.
 
+reference_subtypes_link_test() ->
+    % Test then createing and breaking a link of subtype has the expected effect
+    % 100 -2-> 101 -3-> 102 -1-> 103
+    S = opcua_space_backend:new(),
+    add_references(S, [?REF(has_subtype, 102, 103),
+                       ?REF(has_subtype, 100, 101)]),
+    ?assertEqual(true, opcua_space:is_subtype(S, 103, 102)),
+    ?assertEqual(false, opcua_space:is_subtype(S, 103, 101)),
+    ?assertEqual(false, opcua_space:is_subtype(S, 103, 100)),
+    ?assertEqual(false, opcua_space:is_subtype(S, 102, 101)),
+    ?assertEqual(false, opcua_space:is_subtype(S, 102, 100)),
+    ?assertEqual(true, opcua_space:is_subtype(S, 101, 100)),
+    add_references(S, [?REF(has_subtype, 101, 102)]),
+    ?assertEqual(true, opcua_space:is_subtype(S, 103, 102)),
+    ?assertEqual(true, opcua_space:is_subtype(S, 103, 101)),
+    ?assertEqual(true, opcua_space:is_subtype(S, 103, 100)),
+    ?assertEqual(true, opcua_space:is_subtype(S, 102, 101)),
+    ?assertEqual(true, opcua_space:is_subtype(S, 102, 100)),
+    ?assertEqual(true, opcua_space:is_subtype(S, 101, 100)),
+    del_references(S, [?REF(has_subtype, 101, 102)]),
+    ?assertEqual(true, opcua_space:is_subtype(S, 103, 102)),
+    ?assertEqual(false, opcua_space:is_subtype(S, 103, 101)),
+    ?assertEqual(false, opcua_space:is_subtype(S, 103, 100)),
+    ?assertEqual(false, opcua_space:is_subtype(S, 102, 101)),
+    ?assertEqual(false, opcua_space:is_subtype(S, 102, 100)),
+    ?assertEqual(true, opcua_space:is_subtype(S, 101, 100)),
+    ok.
+
 reference_subtypes_test() ->
     A = opcua_space_backend:new(a, []),
     B = opcua_space_backend:new(b, A),

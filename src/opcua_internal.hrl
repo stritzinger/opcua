@@ -119,44 +119,37 @@
     inner_diagnostic_info       :: undefined | term()
 }).
 
+%-- Codec Schema Records -------------------------------------------------------
+
 -record(opcua_structure, {
-    node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
-    % Used for decoding XML
-    name                        :: binary(),
-    % Used to generate proper OPCUA type definition from the schema
-    base_type_id = ?UNDEF_NODE_ID :: opcua:node_id(),
-    % Used to generate proper OPCUA type definition from the schema
-    default_encoding_id = ?UNDEF_NODE_ID :: opcua:node_id(),
+    node_id                     :: opcua:node_id(),
+    name                        :: undefined | binary(), % Used for decoding XML
     with_options = false        :: boolean(),
     allow_subtypes = false      :: boolean(),
     fields = []                 :: opcua:fields()
 }).
 
+% Structured type.
 -record(opcua_union, {
-    node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
-    % Used for decoding XML
-    name                        :: binary(),
-    % Used to generate proper OPCUA type definition from the schema
-    base_type_id = ?UNDEF_NODE_ID :: opcua:node_id(),
-    % Used to generate proper OPCUA type definition from the schema
-    default_encoding_id = ?UNDEF_NODE_ID :: opcua:node_id(),
+    node_id                     :: opcua:node_id(),
+    name                        :: undefined | binary(), % Used for decoding XML
     allow_subtypes = false      :: boolean(),
     fields = []                 :: opcua:fields()
 }).
 
 -record(opcua_enum, {
-    node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
+    node_id                     :: opcua:node_id(),
     fields = []                 :: opcua:fields()
 }).
 
 -record(opcua_option_set, {
-    node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
+    node_id                     :: opcua:node_id(),
     mask_type = uint32          :: opcua:builtin_type(),
     fields = []                 :: opcua:fields()
 }).
 
 -record(opcua_builtin, {
-    node_id = ?UNDEF_NODE_ID    :: opcua:node_id(),
+    node_id                     :: opcua:node_id(),
     builtin_node_id = ?UNDEF_NODE_ID :: opcua:node_id()
 }).
 
@@ -164,12 +157,7 @@
     %WARNING: When adding remotly-defined data types we are converting
     %         binaries to atoms, this is potentially unsafe.
     tag                         :: atom(),
-    % Used for decoding XML
-    name                        :: binary(),
-    % Used to generate proper OPCUA type definition from the schema
-    display_name                :: undefined | binary(),
-    % Used to generate proper OPCUA type definition from the schema
-    description                 :: undefined | binary(),
+    name                        :: undefined | binary(), % Used for decoding XML
     node_id                     :: undefined | opcua:node_id(),
     value_rank = -1             :: opcua:value_rank(),
     % If the struct or union is allowing subtypes, this means the value can

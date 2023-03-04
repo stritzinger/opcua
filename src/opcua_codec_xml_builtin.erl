@@ -11,7 +11,6 @@
 
 %% API Functions
 -export([decode/2]).
--export([tag_name/2]).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -150,51 +149,3 @@ decode(expanded_node_id, [{<<"Identifier">>, _, [Bin]}]) ->
     end;
 decode(_Type, _Data) ->
     throw({bad_decoding_error, _Type, _Data}).
-
-tag_name(ValueRank, #opcua_node_id{} = NodeId) ->
-    tag_name(ValueRank, opcua_codec:builtin_type_name(NodeId));
-tag_name(-1, boolean) -> <<"Boolean">>;
-tag_name(1, boolean) -> <<"ListOfBoolean">>;
-tag_name(-1, sbyte) -> <<"SByte">>;
-tag_name(1, sbyte) -> <<"ListOfSByte">>;
-tag_name(-1, byte) -> <<"Byte">>;
-tag_name(1, byte) -> <<"ListOfByte">>;
-tag_name(-1, int16) -> <<"Int16">>;
-tag_name(1, int16) -> <<"ListOfInt16">>;
-tag_name(-1, uint16) -> <<"UInt16">>;
-tag_name(1, uint16) -> <<"ListOfUInt16">>;
-tag_name(-1, int32) -> <<"Int32">>;
-tag_name(1, int32) -> <<"ListOfInt32">>;
-tag_name(-1, uint32) -> <<"UInt32">>;
-tag_name(1, uint32) -> <<"ListOfUInt32">>;
-tag_name(-1, int64) -> <<"Int64">>;
-tag_name(1, int64) -> <<"ListOfInt64">>;
-tag_name(-1, uint64) -> <<"UInt64">>;
-tag_name(1, uint64) -> <<"ListOfUInt64">>;
-tag_name(-1, float) -> <<"Float">>;
-tag_name(1, float) -> <<"ListOfFloat">>;
-tag_name(-1, double) -> <<"Double">>;
-tag_name(1, double) -> <<"ListOfDouble">>;
-tag_name(-1, string) -> <<"String">>;
-tag_name(1, string) -> <<"ListOfString">>;
-tag_name(-1, date_time) -> <<"DateTime">>;
-tag_name(1, date_time) -> <<"ListOfDateTime">>;
-tag_name(-1, guid) -> <<"String">>;
-tag_name(1, guid) -> <<"ListOfString">>;
-tag_name(-1, byte_string) -> <<"ByteString">>;
-tag_name(1, byte_string) -> <<"ListOfByteString">>;
-tag_name(_, xml) -> throw(bad_not_implemented);
-tag_name(_, node_id) -> throw(bad_not_implemented);
-tag_name(_, expanded_node_id) -> throw(bad_not_implemented);
-tag_name(-1, status_code) -> <<"Code">>;
-tag_name(1, status_code) -> <<"ListOfCode">>;
-tag_name(_, qualified_name) -> throw(bad_not_implemented);
-tag_name(-1, localized_text) -> <<"LocalizedText">>;
-tag_name(1, localized_text) -> <<"ListOfLocalizedText">>;
-tag_name(-1, extension_object) -> <<"ExtensionObject">>;
-tag_name(1, extension_object) -> <<"ListOfExtensionObject">>;
-tag_name(-1, data_value) -> <<"DataValue">>;
-tag_name(1, data_value) -> <<"ListOfDataValue">>;
-tag_name(_, variant) -> throw(bad_not_implemented);
-tag_name(_, diagnostic_info) -> throw(bad_not_implemented).
-

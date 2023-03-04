@@ -89,13 +89,13 @@ pack_option_set(#opcua_option_set{fields = Fields}, Value) ->
     lists:foldl(fun(BitIdx, Acc) -> Acc bxor (1 bsl BitIdx) end, 0, Bits).
 
 -spec unpack_type(opcua_space:state(), opcua:node_spec(), integer()) -> term().
+unpack_type(Space, TypeId, #opcua_extension_object{} = Value) ->
+    unpack_structure(Space, TypeId, Value);
 unpack_type(Space, TypeId, Value) ->
     case opcua_space:schema(Space, TypeId) of
         undefined -> throw({schema_not_found, TypeId});
         #opcua_enum{} = Schema -> unpack_enum(Schema, Value);
-        #opcua_option_set{} = Schema -> unpack_option_set(Schema, Value);
-        #opcua_structure{} -> unpack_structure(Space, TypeId, Value);
-        _Schema -> throw(not_implemented)
+        #opcua_option_set{} = Schema -> unpack_option_set(Schema, Value)
     end.
 
 unpack_structure(Space, RootType, #opcua_extension_object{type_id = SubType, body = Data}) ->
@@ -144,12 +144,6 @@ builtin_type_name(22) -> extension_object;
 builtin_type_name(23) -> data_value;
 builtin_type_name(24) -> variant;
 builtin_type_name(25) -> diagnostic_info;
-builtin_type_name(26) -> byte_string;
-builtin_type_name(27) -> byte_string;
-builtin_type_name(28) -> byte_string;
-builtin_type_name(29) -> byte_string;
-builtin_type_name(30) -> byte_string;
-builtin_type_name(31) -> byte_string;
 builtin_type_name(#opcua_node_id{type = numeric, value = TypeNum}) ->
     builtin_type_name(TypeNum).
 

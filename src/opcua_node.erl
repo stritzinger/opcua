@@ -53,6 +53,7 @@ id({NS, Name}) when is_integer(NS), is_binary(Name), NS >= 0 ->
     #opcua_node_id{type = string, ns = NS, value = Name}.
 
 -spec spec(opcua:node_id() | opcua:node_ref()) -> opcua:node_spec().
+spec(undefined) -> undefined;
 spec(?UNDEF_NODE_ID) -> undefined;
 spec(#opcua_node{node_id = NodeId}) -> spec(NodeId);
 % Common base nodes
@@ -92,6 +93,8 @@ spec(#opcua_node_id{} = NodeId) ->
 format(List)
   when is_list(List) ->
     format(",", List);
+format(undefined) ->
+    undefined;
 format(Builtin)
   when is_atom(Builtin) ->
     Builtin;
@@ -306,8 +309,8 @@ attribute_value(is_abstract, #opcua_node{node_class = #opcua_variable_type{is_ab
 %% Data Type Node Class Attributes
 attribute_value(is_abstract, #opcua_node{node_class = #opcua_data_type{is_abstract = V}})
   when V =/= undefined -> V;
-attribute_value(data_type_definition, #opcua_node{node_class = #opcua_data_type{data_type_definition = Schema}}) ->
-    schema_to_type_definition(Schema);
+attribute_value(data_type_definition, #opcua_node{node_class = #opcua_data_type{data_type_definition = V}})
+  when V =/= undefined -> V;
 
 %% Reference Type Node Class Attributes
 attribute_value(is_abstract, #opcua_node{node_class = #opcua_reference_type{is_abstract = V}})
@@ -327,14 +330,14 @@ attribute_value(_Attr, #opcua_node{}) ->
     error(bad_attribute_id_invalid).
 
 attribute_type(value, #opcua_node{node_class = #opcua_variable{data_type = T}}) -> T;
-attribute_type(data_type_definition, #opcua_node{node_class = #opcua_data_type{data_type_definition = Schema}}) ->
-    case Schema of
-        #opcua_enum{} -> ?NNID(100);
-        #opcua_option_set{} -> ?NNID(100);
-        #opcua_union{} -> ?NNID(99);
-        #opcua_structure{} -> ?NNID(99);
-        _ -> ?NNID(97)
-    end;
+attribute_type(data_type_definition, #opcua_node{node_class =
+        #opcua_data_type{data_type_definition = #{structure_type := _, fields := _}}}) ->
+    ?NNID(99);
+attribute_type(data_type_definition, #opcua_node{node_class =
+        #opcua_data_type{data_type_definition = #{fields := _}}}) ->
+    ?NNID(100);
+attribute_type(data_type_definition, #opcua_node{node_class = #opcua_data_type{}}) ->
+    ?NNID(97);
 attribute_type(Name, _Node) -> opcua_nodeset:attribute_type(Name).
 
 attribute_rank(value, #opcua_node{node_class = #opcua_variable{value_rank = V}}) -> V;
@@ -414,11 +417,11 @@ node_class_from_attributes(reference_type, Attribs) ->
     };
 node_class_from_attributes(data_type, Attribs) ->
     #{is_abstract := IsAbstract,
-      data_type_definition := DataTypeDef
+      data_type_definition := DataTypeDefinition
     } = Attribs,
     #opcua_data_type{
         is_abstract =  if_defined(IsAbstract),
-        data_type_definition =  if_defined(DataTypeDef)
+        data_type_definition = DataTypeDefinition
     };
 node_class_from_attributes(view, Attribs) ->
     #{contains_no_loops := ContainsNoLoops,
@@ -428,65 +431,3 @@ node_class_from_attributes(view, Attribs) ->
         contains_no_loops =  if_defined(ContainsNoLoops),
         event_notifier =  if_defined(EventNotifier)
     }.
-
-schema_to_type_definition(undefined) -> undefined;
-schema_to_type_definition(#opcua_builtin{}) -> undefined;
-schema_to_type_definition(#opcua_enum{fields = Fields}) ->
-    #{fields => enum_fields_definition(Fields)};
-schema_to_type_definition(#opcua_option_set{fields = Fields}) ->
-    %TODO: We assume the option set type definition is the same as enums,
-    %      it is not clear from the spec though, needs more investigation...
-    #{fields => enum_fields_definition(Fields)};
-schema_to_type_definition(#opcua_structure{base_type_id = BaseTypeId,
-                                           default_encoding_id = DefaultEncId,
-                                           with_options = WithOpts,
-                                           allow_subtypes = AllowSubTypes,
-                                           fields = Fields}) ->
-    StructType = case {WithOpts, AllowSubTypes} of
-        {false, false} -> structure;
-        {true, false} -> structure_with_optional_fields;
-        {false, true} -> structure_with_subtyped_values
-    end,
-    #{default_encoding_id => DefaultEncId,
-      base_data_type => BaseTypeId,
-      structure_type => StructType,
-      fields => struct_fields_definition(Fields)};
-schema_to_type_definition(#opcua_union{base_type_id = BaseTypeId,
-                                       default_encoding_id = DefaultEncId,
-                                       allow_subtypes = AllowSubTypes,
-                                       fields = Fields}) ->
-    StructType = case AllowSubTypes of
-        false -> union;
-        true -> union_with_subtyped_values
-    end,
-    #{default_encoding_id => DefaultEncId,
-      base_data_type => BaseTypeId,
-      structure_type => StructType,
-      fields => struct_fields_definition(Fields)}.
-
-enum_fields_definition(Fields) ->
-    [#{name => Name,
-       display_name => case DisplayName of
-                undefined -> Name;
-                V -> V
-            end,
-       description => #opcua_localized_text{text = Description},
-       value => Value
-
-    } || #opcua_field{name = Name, display_name = DisplayName,
-                      description = Description, value = Value} <- Fields].
-
-struct_fields_definition(Fields) ->
-    [#{name => Name,
-       description => #opcua_localized_text{text = Description},
-       data_type => DataType,
-       value_rank => ValueRank,
-       array_dimensions => case ValueRank of
-                V when is_integer(V), V > 0 -> [0 || _ <- lists:seq(1, V)];
-                _ -> []
-            end,
-       max_string_length => 0,
-       is_optional => IsOpt
-    } || #opcua_field{name = Name, description = Description,
-                      node_id = DataType, value_rank = ValueRank,
-                      is_optional = IsOpt} <- Fields].

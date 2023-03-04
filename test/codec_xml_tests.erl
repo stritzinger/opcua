@@ -7,6 +7,8 @@
 
 -define(assertDecode(T, O, I),
     ?assertEqual(O, opcua_codec_xml:decode(T, I))).
+-define(assertDecodeValue(T, O, I),
+    ?assertEqual(O, opcua_codec_xml:decode_value(T, I))).
 
 t_test_() ->
     {setup,
@@ -14,6 +16,8 @@ t_test_() ->
      fun cleanup/1,
      [
         fun decode_numbers/0,
+        fun decode_number_values/0,
+        fun decode_number_value_lists/0,
         fun decode_localized_text/0,
         fun decode_node_id/0,
         fun decode_expanded_node_id/0
@@ -32,7 +36,28 @@ decode_numbers() ->
     ?assertDecode(byte, 0, [<<"0">>]),
     ?assertDecode(sbyte, -10, [<<"-10">>]),
     ?assertDecode(uint16, 60000, [<<"60000">>]),
+    %TODO: Write more test for all the types of numbers
+    ok.
 
+decode_number_values() ->
+    ?assertDecodeValue(byte, 0, [{<<"Byte">>, #{}, [<<"0">>]}]),
+    ?assertDecodeValue(undefined, 42, [{<<"Byte">>, #{}, [<<"42">>]}]),
+    ?assertDecodeValue(int32, -1000, [{<<"Int32">>, #{}, [<<"-1000">>]}]),
+    ?assertDecodeValue(undefined, 10000, [{<<"Int32">>, #{}, [<<"10000">>]}]),
+    %TODO: Write more test for all the types of numbers
+    ok.
+
+decode_number_value_lists() ->
+    ?assertDecodeValue(undefined, [], [{<<"ListOfByte">>, #{}, []}]),
+    ?assertDecodeValue(byte, [], [{<<"ListOfByte">>, #{}, []}]),
+    ?assertDecodeValue(undefined, [0, 42],
+                       [{<<"ListOfByte">>, #{}, [
+                            {<<"Byte">>, #{}, [<<"0">>]},
+                            {<<"Byte">>, #{}, [<<"42">>]}]}]),
+    ?assertDecodeValue(byte, [0, 42],
+                       [{<<"ListOfByte">>, #{}, [
+                            {<<"Byte">>, #{}, [<<"0">>]},
+                            {<<"Byte">>, #{}, [<<"42">>]}]}]),
     %TODO: Write more test for all the types of numbers
     ok.
 
