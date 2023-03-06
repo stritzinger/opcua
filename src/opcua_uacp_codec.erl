@@ -224,7 +224,8 @@ filter_decode_issues(Id, Obj, Issues) ->
 filter_decode_issues(Id, Obj, [], []) ->
     {ok, Id, Obj};
 filter_decode_issues(Id, Obj, [], Acc) ->
-    {schema_not_found, Id, Obj, Acc};
+    % Remove duplicated schema identifiers
+    {schema_not_found, Id, Obj, sets:to_list(sets:from_list(Acc))};
 filter_decode_issues(_Id, _Obj, [{generic_codec_error, Reason, Details} | _Rest], _Acc) ->
     throw({bad_decoding_error, {Reason, Details}});
 filter_decode_issues(_Id, _Obj, [{encoding_not_supported, Reason, Details} | _Rest], _Acc) ->

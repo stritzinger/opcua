@@ -21,6 +21,11 @@
 
 -behavior(opcua_space).
 
+%TODO: Before implementing a different backend, we should probably think about
+%      moving all the type spec to type identifier conversion to the caller to
+%      simplify even more the API.
+%TODO: Optimize the format of the data stored and restored by fold/3 and store/2
+
 
 %%% INCLUDES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -45,12 +50,15 @@
 -export([del_descriptor/2]).
 -export([add_subtype/3]).
 -export([del_subtype/3]).
+-export([add_schema/2]).
+-export([del_schema/2]).
 
 %% API functions for shared reference
 -export([node/2]).
 -export([references/3]).
 -export([data_type/2]).
 -export([type_descriptor/3]).
+-export([schema/2]).
 -export([namespace_uri/2]).
 -export([namespace_id/2]).
 -export([namespaces/1]).
@@ -123,6 +131,8 @@ init(Space) ->
         [{read_concurrency, true}, {keypos, 2}]),
     DescToTypeTable = ets:new(opcua_space_encoding_types,
         [{read_concurrency, true}, {keypos, 1}]),
+    SchemaTable = ets:new(opcua_space_encoding_schemas,
+        [{read_concurrency, true}, {keypos, 1}]),
     NamespaceIdsTable = ets:new(opcua_space_namespace_ids,
         [{read_concurrency, true}, {keypos, 2}]),
     NamespaceUrisTable = ets:new(opcua_space_namespace_uris,
@@ -133,10 +143,11 @@ init(Space) ->
     RefSubKey = key(Space, ref_subtypes),
     TypeToDescKey = key(Space, type2desc),
     DescToTypeKey = key(Space, desc2type),
+    SchemasKey = key(Space, schemas),
     NamespaceIdsKey = key(Space, namespace_ids),
     NamespaceUrisKey = key(Space, namespace_uris),
     Keys = [NodesKey, ReferencesKey, RefSubKey, TypeToDescKey,
-            DescToTypeKey, NamespaceIdsKey, NamespaceUrisKey],
+            DescToTypeKey, SchemasKey, NamespaceIdsKey, NamespaceUrisKey],
 
     spawn_cleanup_proc(self(), Keys),
 
@@ -145,6 +156,7 @@ init(Space) ->
     persistent_term:put(RefSubKey, RefSubTable),
     persistent_term:put(TypeToDescKey, TypeToDescTable),
     persistent_term:put(DescToTypeKey, DescToTypeTable),
+    persistent_term:put(SchemasKey, SchemaTable),
     persistent_term:put(NamespaceIdsKey, NamespaceIdsTable),
     persistent_term:put(NamespaceUrisKey, NamespaceUrisTable),
 
@@ -159,15 +171,17 @@ terminate(Space) ->
     RefSubKey = key(Space, ref_subtypes),
     TypeToDescKey = key(Space, type2desc),
     DescToTypeKey = key(Space, desc2type),
+    SchemasKey = key(Space, schemas),
     NamespaceIdsKey = key(Space, namespace_ids),
     NamespaceUrisKey = key(Space, namespace_uris),
     Keys = [NodesKey, ReferencesKey, RefSubKey, TypeToDescKey, DescToTypeKey,
-            NamespaceIdsKey, NamespaceUrisKey],
+            SchemasKey, NamespaceIdsKey, NamespaceUrisKey],
     ets:delete(persistent_term:get(NodesKey)),
     ets:delete(persistent_term:get(ReferencesKey)),
     ets:delete(persistent_term:get(RefSubKey)),
     ets:delete(persistent_term:get(TypeToDescKey)),
     ets:delete(persistent_term:get(DescToTypeKey)),
+    ets:delete(persistent_term:get(SchemasKey)),
     ets:delete(persistent_term:get(NamespaceIdsKey)),
     ets:delete(persistent_term:get(NamespaceUrisKey)),
     cleanup_persistent_terms(Keys),
@@ -283,8 +297,31 @@ del_subtype([Space | _], Type, SubType) ->
 del_subtype(Space, Type, SubType) ->
     del_subtype([Space], Type, SubType).
 
+% @doc Add a schema
+-spec add_schema(space() | spaces(), opcua:codec_schema()) -> ok.
+add_schema([Space | _], Schema) ->
+    ets:insert(table(Space, schemas), {schema_id(Schema), Schema}),
+    ok;
+add_schema(Space, Schema) ->
+    add_schema([Space], Schema).
+
+% @doc Delete a schema
+-spec del_schema(space() | spaces(), opcua:node_spec()) -> ok.
+del_schema([Space | _], TypeSpec) ->
+    TypeId = opcua_node:id(TypeSpec),
+    ets:insert(table(Space, schemas), {TypeId, deleted}),
+    ok;
+del_schema(Space, TypeSpec) ->
+    del_schema([Space], TypeSpec).
+
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+schema_id(#opcua_structure{node_id = NodeId}) -> NodeId;
+schema_id(#opcua_union{node_id = NodeId}) -> NodeId;
+schema_id(#opcua_enum{node_id = NodeId}) -> NodeId;
+schema_id(#opcua_option_set{node_id = NodeId}) -> NodeId;
+schema_id(#opcua_builtin{node_id = NodeId}) -> NodeId.
 
 -spec node(space() | spaces(), opcua:node_spec()) ->
     opcua:node_rec() | undefined.
@@ -326,6 +363,15 @@ type_descriptor(Space, DataTypeNodeSpec, Encoding) ->
     NodeId = opcua_node:id(DataTypeNodeSpec),
     get_type_descriptor([Space], NodeId, Encoding).
 
+-spec schema(space() | spaces(), opcua:node_spec()) ->
+    opcua:codec_schema() | undefined.
+schema([_Space | _Rest] = Spaces, TypeSpec) ->
+    TypeId = opcua_node:id(TypeSpec),
+    get_schema(Spaces, TypeId);
+schema(Space, TypeSpec) ->
+    TypeId = opcua_node:id(TypeSpec),
+    get_schema([Space], TypeId).
+
 -spec namespace_uri(space() | spaces(), non_neg_integer()) -> binary() | undefined.
 namespace_uri([_Space | _Rest] = Spaces, Id) when is_integer(Id), Id >= 0 ->
     get_namespace_uri(Spaces, Id);
@@ -363,6 +409,7 @@ fold(Space, Fun, Acc) ->
         {references, ref},
         {ref_subtypes, ref_subtypes},
         {desc2type, encoding},
+        {schemas, schema},
         {namespace_ids, namespace}],
     fold(Space, TableSpecs, Fun, Acc).
 
@@ -380,6 +427,9 @@ store(Space, {ref_subtypes, Term}) ->
 store(Space, {encoding, Term}) ->
     ets:insert(table(Space, type2desc), Term),
     ets:insert(table(Space, desc2type), Term),
+    ok;
+store(Space, {schema, Term}) ->
+    ets:insert(table(Space, schemas), Term),
     ok;
 store(Space, {namespace, Term}) ->
     ets:insert(table(Space, namespace_uris), Term),
@@ -513,6 +563,15 @@ get_type_descriptor([Space | Rest], NodeId, Encoding) ->
         [{deleted, _}] -> undefined;
         [{Result, _}] -> Result;
         [] -> get_type_descriptor(Rest, NodeId, Encoding)
+    end.
+
+get_schema([], _TypeId) -> undefined;
+get_schema([Space | Rest], TypeId) ->
+    SchemaTable = table(Space, schemas),
+    case ets:lookup(SchemaTable, TypeId) of
+        [{_, deleted}] -> undefined;
+        [{_, Schema}] -> Schema;
+        [] -> get_schema(Rest, TypeId)
     end.
 
 get_namespace_uri([], _Id) -> undefined;

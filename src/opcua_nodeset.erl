@@ -27,6 +27,7 @@
 -export([is_status/1]).
 -export([data_type/1]).
 -export([type_descriptor/2]).
+-export([schema/1]).
 -export([namespace_uri/1]).
 -export([namespace_id/1]).
 -export([namespaces/0]).
@@ -125,6 +126,9 @@ data_type(TypeDescriptorNodeSpec) ->
 
 type_descriptor(DataTypeNodeSpec, Encoding) ->
     opcua_space_backend:type_descriptor(?MODULE, DataTypeNodeSpec, Encoding).
+
+schema(TypeSpec) ->
+    opcua_space_backend:schema(?MODULE, TypeSpec).
 
 namespace_uri(Id) ->
     opcua_space_backend:namespace_uri(?MODULE, Id).

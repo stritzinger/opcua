@@ -3,7 +3,6 @@
 -behaviour(gen_statem).
 % Inspired by: https://gist.github.com/ferd/c86f6b407cf220812f9d893a659da3b8
 
-
 % When adding a state handler, remember to always add a timeout by calling
 % enter_timeouts or event_timeouts so the state machine keep consuming data
 % from the protocol. When adding a completly new state, remember to update
@@ -19,10 +18,10 @@
 -export([read/2, read/3, read/4]).
 -export([write/2, write/3, write/4, write/5]).
 -export([get/2, get/3]).
--export([add_nodes/3]).
--export([add_references/3]).
--export([del_nodes/3]).
--export([del_references/3]).
+-export([put/3]).
+-export([del/3]).
+-export([put_refs/3]).
+-export([del_refs/3]).
 
 %% Startup functions
 -export([start_link/1]).
@@ -104,9 +103,14 @@
 }.
 
 -type get_options() :: #{
+    % If the client should try to generate a type definition schema for the
+    % node if its class is data_type. This requires extra round-tripes to
+    % retrieve the parent type and maybe some properties like EnumeValues
+    % and OptionSetValues. Default to false.
+    resolve_schema => boolean()
 }.
 
--type add_node_options() :: #{
+-type put_options() :: #{
     % The default parent node for the added node. If not specified, the standard
     % node 'objects' will be used as default parent node.
     parent => opcua:node_spec(),
@@ -115,17 +119,17 @@
     ref_type => opcua:node_spec()
 }.
 
--type add_ref_options() :: #{
+-type del_options() :: #{
+    % If the reference having the deleted node as target should be deleted.
+    % If not specified, they will not be deleted.
+    delete_target_references => boolean()
+}.
+
+-type put_ref_options() :: #{
     % Add the reverse reference automatically, possibly changing the reference
     % type if the reference is not symmetric (contains/contained_in).
     % If not specified, no inverse reference will be added.
     bidirectional => boolean()
-}.
-
--type del_node_options() :: #{
-    % If the reference having the deleted node as target should be deleted.
-    % If not specified, they will not be deleted.
-    delete_target_references => boolean()
 }.
 
 -type del_ref_options() :: #{
@@ -288,34 +292,34 @@ get(Pid, NodeSpec, Opts) ->
         [Node] -> Node
     end.
 
--spec add_nodes(pid(), [NodeDef], Opts) -> [Node | Error]
+-spec put(pid(), [NodeDef], Opts) -> [Node | Error]
   when NodeDef :: Node | {ParentSpec, Node} | {ParentSpec, RefTypeSpec, Node},
        ParentSpec :: opcua:node_spec(), RefTypeSpec :: opcua:node_spec(),
        Node :: opcua:node_rec(), Error :: opcua:error(),
-       Opts :: add_node_options().
-add_nodes(_Pid, _NodeDefs, _Opts) ->
+       Opts :: put_options().
+put(_Pid, _NodeDefs, _Opts) ->
     erlang:error(not_implemented).
 
--spec add_references(pid(), [RefDef], Opts) -> [Status]
+-spec del(pid(), [NodeSpec], Opts) -> [Status]
+  when NodeSpec :: opcua:node_spec(), Opts :: del_options(),
+       Status :: opcua:status().
+del(_Pid, _NodeSpecs, _Opts) ->
+    erlang:error(not_implemented).
+
+-spec put_refs(pid(), [RefDef], Opts) -> [Status]
   when RefDef :: {SourceSpec, RefTypeSpec, TargetSpec} | opcua:node_ref(),
        SourceSpec :: opcua:node_spec(), RefTypeSpec :: opcua:node_spec(),
-       TargetSpec :: opcua:node_spec(), Opts :: add_ref_options(),
+       TargetSpec :: opcua:node_spec(), Opts :: put_ref_options(),
        Status :: opcua:status().
-add_references(_Pid, _RefDefs, _Opts) ->
+put_refs(_Pid, _RefDefs, _Opts) ->
     erlang:error(not_implemented).
 
--spec del_nodes(pid(), [NodeSpec], Opts) -> [Status]
-  when NodeSpec :: opcua:node_spec(), Opts :: del_node_options(),
-       Status :: opcua:status().
-del_nodes(_Pid, _NodeSpecs, _Opts) ->
-    erlang:error(not_implemented).
-
--spec del_references(pid(), [RefDef], Opts) -> [Status]
+-spec del_refs(pid(), [RefDef], Opts) -> [Status]
   when RefDef :: {SourceSpec, RefTypeSpec, TargetSpec} | opcua:node_ref(),
        SourceSpec :: opcua:node_spec(), RefTypeSpec :: opcua:node_spec(),
        TargetSpec :: opcua:node_spec(), Opts :: del_ref_options(),
        Status :: opcua:status().
-del_references(_Pid, _RefDefs, _Opts) ->
+del_refs(_Pid, _RefDefs, _Opts) ->
     erlang:error(not_implemented).
 
 
@@ -527,10 +531,10 @@ do_write(Data, WriteSpec, Opts, Params, ContFun) ->
                                   fun contfun_unpack_write/4)
     end.
 
-do_get(Data, NodeIds, _Opts, Params, ContFun) ->
+do_get(Data, NodeIds, Opts, Params, ContFun) ->
     Attribs = [{{A, undefined}, #{}} || A <- opcua_nodeset:attributes()],
     ReadSpec = [{NID, Attribs} || NID <- NodeIds],
-    UnpackParams = {Params, ContFun},
+    UnpackParams = {Params, ContFun, Opts},
     do_read(Data, ReadSpec, #{}, UnpackParams, fun contfun_unpack_get/4).
 
 schedule_continuation(#data{continuations = ContMap} = Data, Key, Params, ContFun) ->
@@ -558,18 +562,27 @@ do_continue(Data, Key, Outcome, Result) ->
 do_abort_all(#data{continuations = ContMap} = Data, Reason) ->
     do_continue(Data, [{K, error, Reason} || K <- maps:keys(ContMap)]).
 
+contfun_unpack_read(Data, error, Reason,
+                    {_ReadSpec, SubParams, SubContFun}) ->
+    SubContFun(Data, error, Reason, SubParams);
 contfun_unpack_read(#data{conn = Conn} = Data, ok, Results,
                     {ReadSpec, SubParams, SubContFun}) ->
     UnpackedResult = unpack_read_result(Conn, ReadSpec, Results),
     SubContFun(Data, ok, UnpackedResult, SubParams).
 
-contfun_unpack_write(Data, ok, Results, {WriteSpec, SubParams, SubContFun}) ->
+contfun_unpack_write(Data, error, Reason,
+                     {_WriteSpec, SubParams, SubContFun}) ->
+    SubContFun(Data, error, Reason, SubParams);
+contfun_unpack_write(Data, ok, Results,
+                     {WriteSpec, SubParams, SubContFun}) ->
     UnpackedResult = unpack_write_result(WriteSpec, Results),
     SubContFun(Data, ok, UnpackedResult, SubParams).
 
-contfun_unpack_get(Data, error, Reason, {Params, ContFun}) ->
+contfun_unpack_get(Data, error, Reason,
+                   {Params, ContFun, _Opts}) ->
     ContFun(Data, error, Reason, Params);
-contfun_unpack_get(Data, ok, Result, {Params, ContFun}) ->
+contfun_unpack_get(Data, ok, Result,
+                   {Params, ContFun, _Opts}) ->
     Nodes = [opcua_node:from_attributes(A) || A <- Result],
     ContFun(Data, ok, Nodes, Params).
 

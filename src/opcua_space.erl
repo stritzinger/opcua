@@ -14,7 +14,8 @@
 %% - Properly update the node version when modifying a data type references.
 %%   We probably wnat this to be optional so it is not done when the space
 %%   is used as a cache for the server space in the client.
-
+%% - Schema generation is sub-optimal and generation code is triggered
+%%   multiple times when adding all the relwevent nodes and references.
 
 %%% BEHAVIOUR opcua_database DEFINITION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -44,13 +45,19 @@
 -callback del_descriptor(State, TypeDescriptorSpec) -> ok
     when State :: term(), TypeDescriptorSpec :: opcua:stream_encoding().
 
--callback add_subtype(State, Type, SubType) -> ok
-    when State :: term(), Type :: opcua:node_spec(),
-         SubType :: opcua:node_spec().
+-callback add_subtype(State, TypeSpec, SubTypeSpec) -> ok
+    when State :: term(), TypeSpec :: opcua:node_spec(),
+         SubTypeSpec :: opcua:node_spec().
 
--callback del_subtype(State, Type, SubType) -> ok
-    when State :: term(), Type :: opcua:node_spec(),
-         SubType :: opcua:node_spec().
+-callback del_subtype(State, TypeSpec, SubTypeSpec) -> ok
+    when State :: term(), TypeSpec :: opcua:node_spec(),
+         SubTypeSpec  :: opcua:node_spec().
+
+-callback add_schema(State, Schema) -> ok
+    when State :: term(), Schema :: opcua:codec_schema().
+
+-callback del_schema(State, TypeSpec) -> ok
+    when State :: term(), TypeSpec :: opcua:node_spec().
 
 -callback node(State, NodeSpec) -> Result
     when State :: term(), NodeSpec :: opcua:node_spec(),
@@ -71,6 +78,10 @@
          Encoding :: opcua:stream_encoding(),
          Result :: undefined | TypeDescriptorId,
          TypeDescriptorId :: opcua:node_id().
+
+-callback schema(State, TypeSpec) -> Result
+    when State :: term(), TypeSpec :: opcua:node_spec(),
+         Result :: undefined | opcua:codec_schema().
 
 -callback namespace_uri(State, NamespaceId) -> undefined | NamespaceUri
     when State :: term(), NamespaceId :: non_neg_integer(),
@@ -232,11 +243,12 @@ type_descriptor(Mod, NodeSpec, Encoding) ->
     Mod:type_descriptor(NodeSpec, Encoding).
 
 % @doc Retrieves a data schema from a data type.
-schema(Space, NodeSpec) ->
-    case node(Space, NodeSpec) of
-        #opcua_node{node_class = #opcua_data_type{data_type_definition = Schema}} -> Schema;
-        _ -> undefined
-    end.
+schema(#uacp_connection{space = Space}, TypeSpec) ->
+    schema(Space, TypeSpec);
+schema({Mod, Sub}, TypeSpec) ->
+    Mod:schema(Sub, TypeSpec);
+schema(Mod, TypeSpec) ->
+    Mod:schema(TypeSpec).
 
 % @doc Retrieves a namespace URI from its identifier.
 namespace_uri(#uacp_connection{space = Space}, Id) ->
@@ -278,6 +290,17 @@ nodes_added(Space, [Node | Rest]) ->
     node_added(Space, Node),
     nodes_added(Space, Rest).
 
+node_added(Space, #opcua_node{node_id = NodeId,
+                    node_class = #opcua_data_type{is_abstract = false}}) ->
+    maybe_add_schema(Space, NodeId);
+node_added(Space, #opcua_node{node_id = NodeId, browse_name = <<"EnumValues">>,
+                              node_class = #opcua_object{}}) ->
+    HasPropOpts = #{direction => inverse, type => has_property},
+    case references(Space, NodeId, HasPropOpts) of
+        [#opcua_reference{source_id = NodeId}] ->
+            maybe_add_schema(Space, NodeId);
+        _ -> ok
+    end;
 node_added(Space, #opcua_node{node_id = DescId, browse_name = Name})
   when Name =:= <<"Default Binary">>; Name =:= <<"Default XML">>;
        Name =:= <<"Default JSON">> ->
@@ -290,6 +313,9 @@ nodes_deleted(Space, [NodeId | Rest]) ->
     node_deleted(Space, NodeId, node(Space, NodeId)),
     nodes_deleted(Space, Rest).
 
+node_deleted(Space, NodeId, #opcua_node{node_id = NodeId,
+        node_class = #opcua_data_type{is_abstract = false}}) ->
+    backend_del_schema(Space, NodeId);
 node_deleted(Space, DescId, #opcua_node{node_id = DescId, browse_name = Name})
   when Name =:= <<"Default Binary">>; Name =:= <<"Default XML">>;
        Name =:= <<"Default JSON">> ->
@@ -304,8 +330,9 @@ references_added(Space, [Ref | Rest]) ->
 
 reference_added(Space, #opcua_reference{
         type_id = ?NID_HAS_ENCODING,
-        target_id = DescId}) ->
-    maybe_add_descriptor(Space, DescId);
+        source_id = _SourceId,
+        target_id = TargetId}) ->
+    maybe_add_descriptor(Space, TargetId);
 reference_added(Space, #opcua_reference{
         type_id = ?NID_HAS_TYPE_DEFINITION,
         source_id = DescId,
@@ -313,9 +340,17 @@ reference_added(Space, #opcua_reference{
     maybe_add_descriptor(Space, DescId);
 reference_added(Space, #opcua_reference{
         type_id = ?NID_HAS_SUBTYPE,
-        source_id = Type,
-        target_id = SubType}) ->
-    add_subtype(Space, Type, SubType);
+        source_id = SourceId,
+        target_id = TargetId}) ->
+    add_subtype(Space, SourceId, TargetId),
+    maybe_add_schema(Space, TargetId);
+reference_added(Space, #opcua_reference{
+        type_id = ?NID_HAS_PROPERTY,
+        source_id = SourceId,
+        target_id = _TargetId}) ->
+    %FIXME: This is ineficient, adding any property will always trigger this,
+    %       and this is only used for detecting EnumValues objects.
+    maybe_add_schema(Space, SourceId);
 reference_added(_Space, #opcua_reference{}) ->
     ok.
 
@@ -364,26 +399,207 @@ descriptor_encoding(<<"Default XML">>) -> xml;
 descriptor_encoding(<<"Default JSON">>) -> json;
 descriptor_encoding(_) -> unknown.
 
+maybe_add_schema(Space, TypeId) ->
+    % We generate a schema from:
+    %  - Data type node's identifier
+    %  - Data type node's definition
+    %  - Data type node's browse name
+    %  - Data type node's root-type identifier (builtin type)
+    %  - Data type node's property named EnumValues
+    case node(Space, TypeId) of
+        #opcua_node{browse_name = Name,
+                    node_class = #opcua_data_type{
+                        is_abstract = false,
+                        data_type_definition = TypeDef}} ->
+            HasPropOpts = #{type => has_property, direction => forward},
+            PropRefs = references(Space, TypeId, HasPropOpts),
+            EnumValues = lists:foldl(fun
+                (#opcua_reference{type_id = ?NID_HAS_PROPERTY,
+                                  source_id = S, target_id = T}, Result)
+                  when S =:= TypeId ->
+                    case node(Space, T) of
+                        #opcua_node{browse_name = <<"EnumValues">>,
+                                    node_class = #opcua_variable{value = Value}} ->
+                            Value;
+                        _ ->
+                            Result
+                    end;
+                (_, Result) -> Result
+            end, undefined, PropRefs),
+            RootTypeId = lookup_root_type(Space, TypeId),
+            case generate_schema(TypeId, Name, TypeDef, RootTypeId, EnumValues) of
+                undefined -> ok;
+                Schema -> backend_add_schema(Space, Schema)
+            end;
+        _ ->
+            ok
+    end.
+
+% Gives the root builtin type (plus enumeration and union) or undefined.
+lookup_root_type(_Space, ?NNID(12756) = TypeId) -> TypeId;
+lookup_root_type(_Space, ?NNID(29) = TypeId) -> TypeId;
+lookup_root_type(_Space, ?NNID(Id) = TypeId)
+  when ?IS_BUILTIN_TYPE_ID(Id) -> TypeId;
+lookup_root_type(Space, TypeId) ->
+    HasSubTypeOpts = #{direction => inverse, type => has_subtype},
+    case references(Space, TypeId, HasSubTypeOpts) of
+        [#opcua_reference{source_id = SuperTypeId}] ->
+            lookup_root_type(Space, SuperTypeId);
+        _ -> undefined
+    end.
+
 add_subtype(Space, Type, SubType) ->
     backend_add_subtype(Space, Type, SubType),
+    SubTypes = references(Space, SubType, #{
+        type => ?NID_HAS_SUBTYPE,
+        direction => forward
+    }),
+    lists:map(fun
+        (#opcua_reference{target_id = T}) ->
+            add_subtype(Space, Type, T)
+    end, SubTypes),
     SuperTypes = references(Space, Type, #{
         type => ?NID_HAS_SUBTYPE,
         direction => inverse
     }),
-    lists:map(fun(#opcua_reference{source_id = SuperType}) ->
-        add_subtype(Space, SuperType, SubType)
+    lists:map(fun
+        (#opcua_reference{source_id = S}) ->
+            add_subtype(Space, S, SubType)
     end, SuperTypes).
 
 del_subtype(Space, Type, SubType) ->
     backend_del_subtype(Space, Type, SubType),
+    SubTypes = references(Space, SubType, #{
+        type => ?NNID(?REF_HAS_SUBTYPE),
+        direction => forward
+    }),
+    lists:map(fun(#opcua_reference{target_id = T}) ->
+        del_subtype(Space, Type, T)
+    end, SubTypes),
     SuperTypes = references(Space, Type, #{
         type => ?NNID(?REF_HAS_SUBTYPE),
         direction => inverse
     }),
-    lists:map(fun(#opcua_reference{source_id = SuperType}) ->
-        del_subtype(Space, SuperType, SubType)
+    lists:map(fun(#opcua_reference{source_id = S}) ->
+        del_subtype(Space, S, SubType)
     end, SuperTypes).
 
+generate_schema(TypeId, _, undefined, TypeId, _EnumValues) ->
+    % Builtin types
+    #opcua_builtin{node_id = TypeId, builtin_node_id = TypeId};
+generate_schema(TypeId, Name, #{structure_type := T, fields := Fields},
+                ?NNID(22), _EnumValues)
+  when T =:= structure;
+       T =:= structure_with_optional_fields;
+       T =:= structure_with_subtyped_values ->
+    % Structure
+    WithOpts = T =:= structure_with_optional_fields,
+    AllowSubTypes = T =:= structure_with_subtyped_values,
+    #opcua_structure{
+        node_id = TypeId,
+        name = Name,
+        with_options = WithOpts,
+        allow_subtypes = AllowSubTypes,
+        fields = fields_from_struct_typedef(Fields, WithOpts or AllowSubTypes)
+    };
+generate_schema(TypeId, Name, #{structure_type := T, fields := Fields}, ?NNID(12756), _)
+  when T =:= union; T =:= union_with_subtyped_values ->
+    % Union
+    AllowSubTypes = T =:= union_with_subtyped_values,
+    #opcua_union{
+        node_id = TypeId,
+        name = Name,
+        allow_subtypes = AllowSubTypes,
+        fields = fields_from_struct_typedef(Fields, AllowSubTypes)
+    };
+generate_schema(TypeId, _, undefined, ?NNID(29), EnumValues)
+  when is_list(EnumValues) ->
+    % Enum without data type definition but with enum values property
+    %TODO: We could generate the missing data type definition...
+    #opcua_enum{
+        node_id = TypeId,
+        fields = fields_from_enum_values(EnumValues)
+    };
+generate_schema(TypeId, _, #{fields := Fields}, ?NNID(29), _) ->
+    % Enum with data type definition and optional enum values property
+    #opcua_enum{
+        node_id = TypeId,
+        fields = fields_from_enum_typedef(Fields)
+    };
+generate_schema(TypeId, _, #{fields := Fields}, RootTypeId, _)
+  when RootTypeId =:= ?NNID(3); RootTypeId =:= ?NNID(5); RootTypeId =:= ?NNID(7) ->
+    % OptionSet with data type definition
+    #opcua_option_set{
+        node_id = TypeId,
+        mask_type = opcua_codec:builtin_type_name(RootTypeId),
+        fields = fields_from_enum_typedef(Fields)
+    };
+generate_schema(TypeId, _, undefined, ?NNID(Id) = RootTypeId, _)
+  when ?IS_BUILTIN_TYPE_ID(Id) ->
+    % Subtype of some builtin types
+    #opcua_builtin{node_id = TypeId, builtin_node_id = RootTypeId};
+generate_schema(_TypeId, _Name, _TypeDef, _RootTypeId, _EnumValues) ->
+    % logger:warning("XXXXX ~s - Failed to generate ~s schema from ~p and ~p",
+    %                [opcua_node:format(opcua_node:spec(TypeId)),
+    %                 opcua_node:format(opcua_node:spec(RootTypeId)),
+    %                 TypeDef, EnumValues]),
+    undefined.
+
+fields_from_enum_values(EnumValues) ->
+    fields_from_enum_values(EnumValues, []).
+
+fields_from_enum_values([], Acc) -> lists:reverse(Acc);
+fields_from_enum_values([Info | Rest], Acc) ->
+    #{value := V, display_name := #opcua_localized_text{text = N}} = Info,
+    Field = #opcua_field{
+        tag = opcua_util:convert_name(N),
+        name = N,
+        value = V
+    },
+    fields_from_enum_values(Rest, [Field | Acc]).
+
+fields_from_enum_typedef(FieldDefs) ->
+    fields_from_enum_typedef(FieldDefs, []).
+
+fields_from_enum_typedef([], Acc) -> lists:reverse(Acc);
+fields_from_enum_typedef([FieldDef | Rest], Acc) ->
+    #{value := V, name := N} = FieldDef,
+    Field = #opcua_field{
+        tag = opcua_util:convert_name(N),
+        name = N,
+        value = V
+    },
+    fields_from_enum_typedef(Rest, [Field | Acc]).
+
+% Set the value of optional field to the bit index.
+% TODO: This is a hack, and it should be removed at some point.
+fields_from_struct_typedef(FieldDefs, WithOpts) ->
+    fields_from_struct_typedef(FieldDefs, WithOpts, 1, []).
+
+fields_from_struct_typedef([], _WithOpts, _BitIdx, Acc) -> lists:reverse(Acc);
+fields_from_struct_typedef([#{is_optional := true} = FieldDef | Rest],
+                           true, BitIdx, Acc) ->
+    #{data_type := T, name := N, value_rank := R} = FieldDef,
+    Field = #opcua_field{
+        tag = opcua_util:convert_name(N),
+        name = N,
+        node_id = T,
+        value_rank = R,
+        is_optional = true,
+        value = BitIdx
+    },
+    fields_from_struct_typedef(Rest, true, BitIdx + 1, [Field | Acc]);
+fields_from_struct_typedef([#{is_optional := false} = FieldDef | Rest],
+                           WithOpts, BitIdx, Acc) ->
+    #{data_type := T, name := N, value_rank := R} = FieldDef,
+    Field = #opcua_field{
+        tag = opcua_util:convert_name(N),
+        name = N,
+        node_id = T,
+        value_rank = R,
+        is_optional = false
+    },
+    fields_from_struct_typedef(Rest, WithOpts, BitIdx, [Field | Acc]).
 
 %-- BACKEND INTERFACE FUNCTIONS ------------------------------------------------
 
@@ -407,3 +623,13 @@ backend_del_subtype(#uacp_connection{space = Space}, Type, SubType) ->
     backend_del_subtype(Space, Type, SubType);
 backend_del_subtype({Mod, Sub}, Type, SubType) ->
     Mod:del_subtype(Sub, Type, SubType).
+
+backend_add_schema(#uacp_connection{space = Space}, Schema) ->
+    backend_add_schema(Space, Schema);
+backend_add_schema({Mod, Sub}, Schema) ->
+    Mod:add_schema(Sub, Schema).
+
+backend_del_schema(#uacp_connection{space = Space}, TypeSpec) ->
+    backend_del_schema(Space, TypeSpec);
+backend_del_schema({Mod, Sub}, TypeSpec) ->
+    Mod:del_schema(Sub, TypeSpec).
