@@ -22,6 +22,8 @@
 -export([can_produce/2]).
 -export([produce/2]).
 -export([handle_data/3]).
+-export([continue/3]).
+-export([abort/4]).
 -export([terminate/3]).
 
 
@@ -96,9 +98,38 @@ handle_data(Data, Conn, State) ->
         {ok, Msgs, Issues, Conn2, State2} ->
             case handle_issues(State2, Conn2, Msgs, Issues) of
                 {error, _Reason, _State3} = Error -> Error;
+                {deferred, _Action, _Cont, _Conn3, _State3} = Result -> Result;
                 {ok, Results, Msgs2, Conn3, State3} ->
                     handle_responses(State3, Conn3, Msgs2, Results)
             end
+    end.
+
+continue({datatype_cached, PartialMsg, ProtoCont}, Conn, State) ->
+    case handle_proto_continue(ProtoCont, Conn, State) of
+        {ok, _Results, _Conn2, _State2} = Result -> Result;
+        {deferred, _Action, _Cont, _Conn2, _State2} = Result -> Result;
+        {error, Reason, State2} ->
+            ?LOG_ERROR("Failed to resolve missing datatype information: ~p",
+                       [Reason]),
+            session_abort_response(State2, Conn, PartialMsg, missing_typedata)
+    end.
+
+abort(Reason, {datatype_cached, PartialMsg, ProtoCont}, Conn, State) ->
+    ?LOG_ERROR("Failed to resolve missing datatype information", []),
+    {ok, AbortResults, Conn3, State3} =
+        case handle_proto_abort(Reason, ProtoCont, Conn, State) of
+            {ok, _Results, _Conn2, _State2} = Result1 -> Result1;
+            {error, Reason, State2} ->
+                ?LOG_ERROR("Error while aborting action: ~p", [Reason]),
+                {ok, [], Conn, State2}
+        end,
+    case session_abort_response(State3, Conn3, PartialMsg, missing_typedata) of
+        {error, _Reason2, _State4} = Result2 ->
+            % What about the results we got from aborting ?
+            % Does it even make sense for aborting to return a result ?!?
+            Result2;
+        {ok, Results, Conn4, State4} ->
+            {ok, AbortResults ++ Results , Conn4, State4}
     end.
 
 terminate(Reason, Conn, State) ->
@@ -110,6 +141,31 @@ terminate(Reason, Conn, State) ->
 default_options() ->
     #{mode => none, policy => none, auth => anonymous, introspection => true}.
 
+handle_proto_continue(ProtoCont, Conn, State) ->
+    case proto_continue(State, Conn, ProtoCont) of
+        {error, _Reason, _State2} = Error -> Error;
+        {ok, Msgs, Issues, Conn2, State2} ->
+            case handle_issues(State2, Conn2, Msgs, Issues) of
+                {error, _Reason, _State3} = Error -> Error;
+                {deferred, _Action, _Cont, _Conn3, _State3} = Result -> Result;
+                {ok, Results, Msgs2, Conn3, State3} ->
+                    handle_responses(State3, Conn3, Msgs2, Results)
+            end
+    end.
+
+handle_proto_abort(Reason, ProtoCont, Conn, State) ->
+    case proto_abort(State, Conn, ProtoCont, Reason) of
+        % Disabled to make dialyzer happy for now
+        % {error, _Reason, _State2} = Error -> Error;
+        {ok, Msgs, Issues, Conn2, State2} ->
+            case handle_issues(State2, Conn2, Msgs, Issues) of
+                {error, _Reason, _State3} = Error -> Error;
+                {deferred, _Action, _Cont, _Conn3, _State3} = Result -> Result;
+                {ok, Results, Msgs2, Conn3, State3} ->
+                    handle_responses(State3, Conn3, Msgs2, Results)
+            end
+    end.
+
 handle_issues(State, Conn, Msgs, Issues) ->
     handle_issues(State, Conn, [Msgs], Issues, []).
 
@@ -118,6 +174,7 @@ handle_issues(State, Conn, Msgs, [], Results) ->
 handle_issues(State, Conn, Msgs, [Issue | Rest], Results) ->
     case handle_issue(State, Conn, Issue) of
         {error, _Reason, _State} = Error -> Error;
+        {deferred, _Action, _Cont, _Conn3, _State3} = Result -> Result;
         % Disabled to make dialyzer happy for now
         % {ok, Conn2, State2} ->
         %     handle_issues(State2, Conn2, Msgs, Rest, Results);
@@ -129,33 +186,21 @@ handle_issues(State, Conn, Msgs, [Issue | Rest], Results) ->
     end.
 
 handle_issue(#state{sess = undefined} = State, _Conn,
-             {schema_not_found, _PartialMsg, Schemas, _Cont}) ->
-    ?LOG_WARNING("Failed to handle response, schema(s) ~s not found",
-                 [opcua_node:format(Schemas)]),
+             {missing_typedata, _PartialMsg, TypeIds, _ProtoCont}) ->
+    ?LOG_WARNING("Failed to handle response, datatype information not found: ~s",
+                 [opcua_node:format(TypeIds)]),
     {error, bad_decoding_error, State};
 handle_issue(#state{introspection = false} = State, Conn,
-             {schema_not_found, PartialMsg, Schemas, _Cont}) ->
-    ?LOG_WARNING("Failed to handle response, schema(s) ~s not found",
-                 [opcua_node:format(Schemas)]),
-    session_abort_response(State, Conn, PartialMsg, schema_not_found);
+             {missing_typedata, PartialMsg, TypeIds, _ProtoCont}) ->
+    ?LOG_WARNING("Failed to handle response, type information not found: ~s",
+                 [opcua_node:format(TypeIds)]),
+    session_abort_response(State, Conn, PartialMsg, missing_typedata);
 handle_issue(#state{introspection = true} = State, Conn,
-             {schema_not_found, PartialMsg, Schemas, _Cont}) ->
-    ?LOG_WARNING("Failed to handle response, schema(s) ~s not found, trying introspection...",
-                 [opcua_node:format(Schemas)]),
-    case introspect(State, Conn, Schemas) of
-        {error, Reason, State2} ->
-            ?LOG_ERROR("Failed to resolve missing schema: ~p", [Reason]),
-            session_abort_response(State2, Conn, PartialMsg, schema_not_found)
-        % Disabled to make dialyzer happy
-        % {ok, Conn2, State2} ->
-        %     case proto_continue(State2, Conn2, Cont) of
-        %         {ok, Msgs, Issues, Conn3, State3} ->
-        %             {ok, [], Msgs, Issues, Conn3, State3};
-        %         {error, Reason, State3} ->
-        %             ?LOG_ERROR("Failed to resolve missing schema: ~p", [Reason]),
-        %             session_abort_response(State3, Conn2, PartialMsg, schema_not_found)
-        %     end
-    end.
+             {missing_typedata, PartialMsg, TypeIds, ProtoCont}) ->
+    ?LOG_WARNING("Failed to handle response, trying introspection to retrieve type information: ~s",
+                 [opcua_node:format(TypeIds)]),
+    Cont = {datatype_cached, PartialMsg, ProtoCont},
+    {deferred, {cache_datatype, TypeIds}, Cont, Conn, State}.
 
 handle_responses(State, Conn, Msgs, Results) ->
     handle_responses_loop(State, Conn, Msgs, [Results]).
@@ -262,12 +307,6 @@ maybe_consume(Tag, {ok, Result, Requests, Conn, State}) ->
 
 no_result({error, _Reason, _State} = Error) -> Error;
 no_result({ok, Req, Conn, State}) -> {ok, [], Req, Conn, State}.
-
-
-%== Introspection Functions ====================================================
-
-introspect(State, _Conn, _Schemas) ->
-    {error, not_implemented, State}.
 
 
 %== Session Module Abstraction Functions =======================================
@@ -434,11 +473,21 @@ proto_consume_loop(Proto, Channel, Conn, Msg) ->
     ?DUMP("Sending message: ~p", [Msg]),
     opcua_uacp:consume(Msg, Conn, Channel, Proto).
 
-% proto_continue(#state{channel = Channel, proto = Proto} = State, Conn, ContData) ->
-%     case opcua_uacp:continue(ContData, Conn, Channel, Proto) of
-%         {error, Reason, Channel2, Proto2} ->
-%             {error, Reason, State#state{channel = Channel2, proto = Proto2}};
-%         {ok, Messages, Issues, Conn2, Channel2, Proto2} ->
-%             State2 = State#state{channel = Channel2, proto = Proto2},
-%             {ok, Messages, Issues, Conn2, State2}
-%     end.
+proto_continue(#state{channel = Channel, proto = Proto} = State, Conn, ContData) ->
+    case opcua_uacp:continue(ContData, Conn, Channel, Proto) of
+        {error, Reason, Channel2, Proto2} ->
+            {error, Reason, State#state{channel = Channel2, proto = Proto2}};
+        {ok, Messages, Issues, Conn2, Channel2, Proto2} ->
+            State2 = State#state{channel = Channel2, proto = Proto2},
+            {ok, Messages, Issues, Conn2, State2}
+    end.
+
+proto_abort(#state{channel = Channel, proto = Proto} = State, Conn, ContData, Reason) ->
+    case opcua_uacp:abort(Reason, ContData, Conn, Channel, Proto) of
+        % No error use-case yet, disabled to make dialyzer happy
+        % {error, Reason, Channel2, Proto2} ->
+        %     {error, Reason, State#state{channel = Channel2, proto = Proto2}};
+        {ok, Messages, Issues, Conn2, Channel2, Proto2} ->
+            State2 = State#state{channel = Channel2, proto = Proto2},
+            {ok, Messages, Issues, Conn2, State2}
+    end.

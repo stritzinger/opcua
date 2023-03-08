@@ -95,7 +95,7 @@ encode_payload(Space, _MsgType, NodeId, Payload) ->
 
 -spec decode_payload(opcua_space:state(), PayloadType, Data) ->
     {ok, undefined | NodeId, Payload}
-  | {schema_not_found, undefined | NodeId, undefined | Payload, [NodeId]}
+  | {missing_typedata, undefined | NodeId, undefined | Payload, [NodeId]}
   when PayloadType :: hello | acknowledge | error | NodeId,
        Data :: iodata(), NodeId :: opcua:node_id(),
        Payload :: opcua:hello_payload() | opcua:acknowledge_payload()
@@ -179,12 +179,14 @@ encode_object(Space, NodeId, Data) ->
 
 -spec decode_object(opcua_space:state(), iodata()) ->
      {ok, opcua:node_id(), opcua:node_object()}
-   | {schema_not_found, undefined | opcua:node_id(),
+   | {missing_typedata, undefined | opcua:node_id(),
                         undefined | opcua:node_object(),
-                       [] | [opcua:node_id()]}.
+                        [] | [opcua:node_id()]}.
 decode_object(Space, Data) ->
     {TypeDescId, RemData} = decode(Space, node_id, iolist_to_binary(Data)),
     case opcua_space:data_type(Space, TypeDescId) of
+        undefined ->
+            {missing_typedata, undefined, undefined, [TypeDescId]};
         {ObjNodeId, binary} ->
             {Obj, _, Issues} = safe_decode(Space, ObjNodeId, RemData),
             filter_decode_issues(ObjNodeId, Obj, Issues);
@@ -225,15 +227,19 @@ filter_decode_issues(Id, Obj, [], []) ->
     {ok, Id, Obj};
 filter_decode_issues(Id, Obj, [], Acc) ->
     % Remove duplicated schema identifiers
-    {schema_not_found, Id, Obj, sets:to_list(sets:from_list(Acc))};
+    {missing_typedata, Id, Obj, sets:to_list(sets:from_list(Acc))};
 filter_decode_issues(_Id, _Obj, [{generic_codec_error, Reason, Details} | _Rest], _Acc) ->
     throw({bad_decoding_error, {Reason, Details}});
 filter_decode_issues(_Id, _Obj, [{encoding_not_supported, Reason, Details} | _Rest], _Acc) ->
     throw({bad_data_encoding_unsupported, {Reason, Details}});
-filter_decode_issues(Id, Obj, [{schema_not_found, Schema, Details} | Rest], Acc) ->
+filter_decode_issues(Id, Obj, [{descriptor_not_found, NodeId, Details} | Rest], Acc) ->
+    ?LOG_DEBUG("Data type descriptor ~s not found while decoding ~s",
+               [opcua_node:format(NodeId), Details]),
+    filter_decode_issues(Id, Obj, Rest, [NodeId | Acc]);
+filter_decode_issues(Id, Obj, [{schema_not_found, NodeId, Details} | Rest], Acc) ->
     ?LOG_DEBUG("Schema ~s not found while decoding ~s",
-               [opcua_node:format(Schema), Details]),
-    filter_decode_issues(Id, Obj, Rest, [Schema | Acc]).
+               [opcua_node:format(NodeId), Details]),
+    filter_decode_issues(Id, Obj, Rest, [NodeId | Acc]).
 
 decode_chunks(Space, <<MessageHeader:8/binary, Rest/binary>> = Data, Acc) ->
     <<EncMsgType:3/binary,

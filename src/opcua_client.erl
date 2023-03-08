@@ -103,11 +103,11 @@
 }.
 
 -type get_options() :: #{
-    % If the client should try to generate a type definition schema for the
-    % node if its class is data_type. This requires extra round-tripes to
-    % retrieve the parent type and maybe some properties like EnumeValues
-    % and OptionSetValues. Default to false.
-    resolve_schema => boolean()
+    % If the retrieved node should be stored in the client space.
+    % For now, the space is not checked before retieving the remote data,
+    % so it is not really a cache yet, but this could be used to retrieve
+    % remote types manually.
+    cache => boolean()
 }.
 
 -type put_options() :: #{
@@ -196,13 +196,8 @@ browse(Pid, NodeSpec) ->
 -spec browse(pid(), opcua:node_spec() | [browse_spec()], browse_options()) ->
     [ref_desc()] | [[ref_desc()]].
 browse(Pid, BrowseSpec, DefaultOpts) when is_list(BrowseSpec) ->
-    PreparedDefaultOpts = prepare_browse_opts(maps:merge(#{
-        include_subtypes => false,
-        type => undefined,
-        direction => forward
-    }, DefaultOpts)),
-    PreparedSpec = prepare_browse_spec(BrowseSpec, []),
-    Command = {browse, PreparedSpec, PreparedDefaultOpts},
+    {BrowseSpec2, DefaultOpts2} = prepare_browse(BrowseSpec, DefaultOpts),
+    Command = {browse, BrowseSpec2, DefaultOpts2},
     case gen_statem:call(Pid, Command) of
         {ok, Result} ->  Result;
         {error, Reason} ->
@@ -468,12 +463,9 @@ handle_event(timeout, produce, State, Data) ->
     end;
 handle_event(info, {tcp, Sock, Input}, State, #data{socket = Sock} = Data) ->
     ?DUMP("Received Data: ~p", [Input]),
-    case proto_handle_data(Data, Input) of
-        {ok, Responses, Data2} ->
-            Data3 = do_continue(Data2, Responses),
-            {keep_state, Data3, event_timeouts(State, Data3)};
-        {error, Reason, Data2} ->
-            {stop, Reason, do_abort_all(Data2, Reason)}
+    case do_handle_result(proto_handle_data(Data, Input)) of
+        {ok, Data2} -> {keep_state, Data2, event_timeouts(State, Data2)};
+        {error, Reason, Data2} -> {stop, Reason, Data2}
     end;
 handle_event(info, {tcp_passive, Sock}, State, #data{socket = Sock} = Data) ->
     case conn_activate(Data) of
@@ -509,39 +501,63 @@ terminate(Reason, State, Data) ->
 
 %-- INTERNAL ASYNC API FUNCTIONS -----------------------------------------------
 
-do_browse(Data, BrowseSpec, Opts, Params, ContFun) ->
+do_browse(Data, BrowseSpec, Opts, ContParams, ContFun) ->
     case proto_browse(Data, BrowseSpec, Opts) of
         {async, Handle, Data2} ->
-            schedule_continuation(Data2, Handle, Params, ContFun)
+            UnpackParams = {BrowseSpec, ContParams, ContFun},
+            schedule_continuation(Data2, Handle, UnpackParams,
+                                  fun contfun_unpack_browse/4)
     end.
 
-do_read(Data, ReadSpec, Opts, Params, ContFun) ->
+do_read(Data, ReadSpec, Opts, ContParams, ContFun) ->
     case proto_read(Data, ReadSpec, Opts) of
         {async, Handle, Data2} ->
-            UnpackParams = {ReadSpec, Params, ContFun},
+            UnpackParams = {ReadSpec, ContParams, ContFun},
             schedule_continuation(Data2, Handle, UnpackParams,
                                   fun contfun_unpack_read/4)
     end.
 
-do_write(Data, WriteSpec, Opts, Params, ContFun) ->
+do_write(Data, WriteSpec, Opts, ContParams, ContFun) ->
     case proto_write(Data, WriteSpec, Opts) of
         {async, Handle, Data2} ->
-            UnpackParams = {WriteSpec, Params, ContFun},
+            UnpackParams = {WriteSpec, ContParams, ContFun},
             schedule_continuation(Data2, Handle, UnpackParams,
                                   fun contfun_unpack_write/4)
     end.
 
-do_get(Data, NodeIds, Opts, Params, ContFun) ->
+do_get(Data, NodeIds, Opts, ContParams, ContFun) ->
     Attribs = [{{A, undefined}, #{}} || A <- opcua_nodeset:attributes()],
     ReadSpec = [{NID, Attribs} || NID <- NodeIds],
-    UnpackParams = {Params, ContFun, Opts},
+    UnpackParams = {ContParams, ContFun, Opts},
     do_read(Data, ReadSpec, #{}, UnpackParams, fun contfun_unpack_get/4).
+
+do_retrieve_datatype(Data, NodeIds, ContParams, ContFun) ->
+    retrieve_datatype_browse(Data, NodeIds, sets:from_list(NodeIds), sets:new(),
+                             {ContParams, ContFun}).
 
 schedule_continuation(#data{continuations = ContMap} = Data, Key, Params, ContFun) ->
     ?assertNot(maps:is_key(Key, ContMap)),
     Data#data{continuations = ContMap#{Key => {Params, ContFun}}}.
 
-do_continue(Data, []) -> Data;
+do_handle_result(#data{} = Data) ->
+    {ok, Data};
+do_handle_result({deferred, Action, ProtoCont, #data{} = Data}) ->
+    do_handle_result(take_action(Data, Action, ProtoCont));
+do_handle_result({ok, Responses, #data{} = Data}) ->
+    {ok, do_continue(Data, Responses)};
+do_handle_result({error, Reason, #data{} = Data}) ->
+    {error, Reason, do_abort_all(Data, Reason)}.
+
+take_action(Data, {cache_datatype, Schemas}, ProtoCont) ->
+    ?LOG_DEBUG("Trying to retrieve remote data types ~s",
+              [lists:join(", ", [opcua_node:format(I) || I <- Schemas])]),
+    do_retrieve_datatype(Data, Schemas, ProtoCont,
+                         fun contfun_datatype_retrieved/4).
+
+% These are for this module internal continuations after any do_XXX calls,
+% they are different from the protocol continuations returned with the
+% deferred result. We should probably do some renaming...
+do_continue(#data{} = Data, []) -> Data;
 do_continue(#data{continuations = ContMap} = Data,
             [{Key, Outcome, ResultOrReason} | Rest]) ->
     case maps:take(Key, ContMap) of
@@ -551,7 +567,14 @@ do_continue(#data{continuations = ContMap} = Data,
         {{Params, ContFun}, ContMap2} ->
             Data2 = Data#data{continuations = ContMap2},
             do_continue(ContFun(Data2, Outcome, ResultOrReason, Params), Rest)
-    end.
+    end;
+do_continue({error, Reason, #data{} = Data}, Responses) ->
+    ?LOG_WARNING("Error while processing client responses: ~p", [Reason]),
+    do_continue(Data, Responses);
+do_continue({ok, #data{} = Data}, Responses) ->
+    do_continue(Data, Responses);
+do_continue({ok, MoreResponses, #data{} = Data}, Responses) ->
+    do_continue(Data, Responses ++ MoreResponses).
 
 do_continue(Data, Key, Outcome) ->
     do_continue(Data, Key, Outcome, '_NO_RESULT_').
@@ -561,6 +584,14 @@ do_continue(Data, Key, Outcome, Result) ->
 
 do_abort_all(#data{continuations = ContMap} = Data, Reason) ->
     do_continue(Data, [{K, error, Reason} || K <- maps:keys(ContMap)]).
+
+contfun_unpack_browse(Data, error, Reason,
+                    {_BrowseSpec, SubParams, SubContFun}) ->
+    SubContFun(Data, error, Reason, SubParams);
+contfun_unpack_browse(#data{conn = Conn} = Data, ok, Results,
+                    {BrowseSpec, SubParams, SubContFun}) ->
+    UnpackedResult = unpack_browse_result(Conn, BrowseSpec, Results),
+    SubContFun(Data, ok, UnpackedResult, SubParams).
 
 contfun_unpack_read(Data, error, Reason,
                     {_ReadSpec, SubParams, SubContFun}) ->
@@ -581,9 +612,13 @@ contfun_unpack_write(Data, ok, Results,
 contfun_unpack_get(Data, error, Reason,
                    {Params, ContFun, _Opts}) ->
     ContFun(Data, error, Reason, Params);
-contfun_unpack_get(Data, ok, Result,
-                   {Params, ContFun, _Opts}) ->
+contfun_unpack_get(#data{conn = Conn} = Data, ok, Result,
+                   {Params, ContFun, Opts}) ->
     Nodes = [opcua_node:from_attributes(A) || A <- Result],
+    case maps:get(cache, Opts, false) of
+        true -> opcua_space:add_nodes(Conn, Nodes);
+        false -> ok
+    end,
     ContFun(Data, ok, Nodes, Params).
 
 contfun_reply(Data, Outcome, '_NO_RESULT_', From) ->
@@ -593,8 +628,105 @@ contfun_reply(Data, Outcome, ResultOrReason, From) ->
     gen_statem:reply(From, {Outcome, ResultOrReason}),
     Data.
 
+contfun_retrieve_datatype(Data, error, Reason, {_, {ContParams, ContFun}}) ->
+    ContFun(Data, error, Reason, ContParams);
+contfun_retrieve_datatype(#data{conn = Conn} = Data, ok, Result,
+                          {{browsing, NodeIdsSet, RefSet}, ContInfo}) ->
+    %TODO: Refactor this function to make it more clear.
+    % If any browsed command failed, we only issue a warning, it could be
+    % some inconsistency that wouldn't prevent decoding. If this inconsistency
+    % would prevent decoding, the maximum number of decoding atempts will 
+    % be reached.
+    % Concatenate all the references, filter the HasSubType,
+    % HasProperty, HasEncoding and HasTypeDefinition, check if there is any new
+    % nodes referenced (Not is the space and not already browsed), if there is
+    % keep the references and keep browsing until there is no more new nodes.
+    % If there isn't any new nodes, get all of them and we are done.
+    RefGroups = lists:foldl(fun
+        (#opcua_error{node_id = NodeId, status = Reason}, Acc) ->
+            ?LOG_WARNING("Error while browsing data type information node ~s: ~p",
+                         [opcua_node:format(NodeId), Reason]),
+            Acc;
+        (Refs, Acc) ->
+            [Refs | Acc]
+    end, [], Result),
+    {NewNodeIds, NodeIdsSet2, RefSet2} = lists:foldl(fun
+        (#opcua_reference{type_id = T, source_id = S, target_id = D} = Ref,
+         {Acc0, Ns0, Rs0})
+          when T =:= ?NID_HAS_ENCODING; T =:= ?NID_HAS_SUBTYPE;
+               T =:= ?NID_HAS_TYPE_DEFINITION; T =:= ?NID_HAS_PROPERTY ->
+            Rs1 = sets:add_element(Ref, Rs0),
+            lists:foldl(fun(NodeId, {Acc2, Ns2, Rs2}) ->
+                case sets:is_element(NodeId, Ns2) of
+                    true ->
+                        {Acc2, Ns2, Rs2};
+                    false ->
+                        case opcua_space:node(Conn, NodeId) of
+                            #opcua_node{} ->
+                                {Acc2, Ns2, Rs2};
+                            undefined ->
+                                Ns3 = sets:add_element(NodeId, Ns2),
+                                {[NodeId | Acc2], Ns3, Rs2}
+                        end
+                end
+            end, {Acc0, Ns0, Rs1}, [S, D]);
+        (_Ref, Acc) ->
+            Acc
+    end, {[], NodeIdsSet, RefSet},
+         [R || #{reference := R} <- lists:append(RefGroups)]),
+    case NewNodeIds of
+        [] ->
+            % No more new nodes, get them all
+            NodeIdList = sets:to_list(NodeIdsSet2),
+            Refs = sets:to_list(RefSet2),
+            retrieve_datatype_get(Data, NodeIdList, Refs, ContInfo);
+        NewNodeIds ->
+            retrieve_datatype_browse(Data, NewNodeIds, NodeIdsSet2, RefSet2, ContInfo)
+    end;
+contfun_retrieve_datatype(Data, ok, Result,
+                          {{getting, Refs}, {ContParams, ContFun}}) ->
+    % Same as for browse commands, we ignore the errors.
+    Nodes = lists:foldl(fun
+        (#opcua_error{node_id = NodeId, status = Reason}, Acc) ->
+            ?LOG_WARNING("Error while retrieving data type information node ~s: ~p",
+                         [opcua_node:format(NodeId), Reason]),
+            Acc;
+        (Node, Acc) ->
+            [Node | Acc]
+    end, [], Result),
+    ContFun(Data, ok, {Nodes, Refs}, ContParams).
+
+retrieve_datatype_browse(Data, NodeIds, NodeIdsSet, RefSet, ContInfo) ->
+    {BrowseSpec, BrowseOpts} = prepare_browse(NodeIds, #{direction => both}),
+    Params = {{browsing, NodeIdsSet, RefSet}, ContInfo},
+    do_browse(Data, BrowseSpec, BrowseOpts, Params, fun contfun_retrieve_datatype/4).
+
+retrieve_datatype_get(Data, NodeIds, Refs, ContInfo) ->
+    Params = {{getting, Refs}, ContInfo},
+    do_get(Data, NodeIds, #{}, Params, fun contfun_retrieve_datatype/4).
+
+
+contfun_datatype_retrieved(Data, error, Reason, ProtoCont) ->
+    proto_abort(Data, ProtoCont, Reason);
+contfun_datatype_retrieved(#data{conn = Conn} = Data, ok,
+                           {Nodes, References}, ProtoCont) ->
+
+    DataTypesStr = [opcua_node:format(opcua_node:spec(I))
+                    || #opcua_node{node_id = I, node_class = #opcua_data_type{}}
+                    <- Nodes],
+    ?LOG_INFO("Caching remote data type(s) ~s",
+              [iolist_to_binary(lists:join(", ", DataTypesStr))]),
+    opcua_space:add_nodes(Conn, Nodes),
+    opcua_space:add_references(Conn, References),
+    continue_protocol(Data, ProtoCont).
+
 delay_response(Data, Tag, From) ->
     schedule_continuation(Data, Tag, From, fun contfun_reply/4).
+
+% This is for the continuation returned by the protocol when it requires the
+% client to do something (take action).
+continue_protocol(Data, ProtoCont) ->
+    do_handle_result(proto_continue(Data, ProtoCont)).
 
 
 %-- OTHER INTERNAL FUNCTIONS ---------------------------------------------------
@@ -630,16 +762,27 @@ prepare_connect_options(Opts) ->
                 prepare_client_identity(
                     prepare_selector(Merged))))).
 
-prepare_browse_spec([], Acc) ->
+default_browse_opts() ->
+    #{type => undefined, direction => forward, include_subtypes => false}.
+
+prepare_browse(BrowseSpec, Opts) ->
+    DefaultOpts = default_browse_opts(),
+    PreparedOpts = maps:merge(DefaultOpts, prepare_browse_opts(Opts)),
+    {prepare_browse_spec(DefaultOpts, BrowseSpec, []), PreparedOpts}.
+
+prepare_browse_spec(_DefaultOpts, [], Acc) ->
     lists:reverse(Acc);
-prepare_browse_spec([{NodeSpec, Opts} | Rest], Acc)
-  when is_map(Opts); Opts =:= undefined ->
-    FixedOpts = prepare_browse_opts(Opts),
-    Acc2 = [{opcua_node:id(NodeSpec), FixedOpts} | Acc],
-    prepare_browse_spec(Rest, Acc2);
-prepare_browse_spec([NodeSpec | Rest], Acc)->
+prepare_browse_spec(DefaultOpts, [{NodeSpec, undefined} | Rest], Acc) ->
     Acc2 = [{opcua_node:id(NodeSpec), undefined} | Acc],
-    prepare_browse_spec(Rest, Acc2).
+    prepare_browse_spec(DefaultOpts, Rest, Acc2);
+prepare_browse_spec(DefaultOpts, [{NodeSpec, Opts} | Rest], Acc)
+  when is_map(Opts) ->
+    FixedOpts = maps:merge(DefaultOpts, prepare_browse_opts(Opts)),
+    Acc2 = [{opcua_node:id(NodeSpec), FixedOpts} | Acc],
+    prepare_browse_spec(DefaultOpts, Rest, Acc2);
+prepare_browse_spec(DefaultOpts, [NodeSpec | Rest], Acc)->
+    Acc2 = [{opcua_node:id(NodeSpec), undefined} | Acc],
+    prepare_browse_spec(DefaultOpts, Rest, Acc2).
 
 prepare_browse_opts(#{type := NodeSpec} = Opts) ->
     Opts#{type => opcua_node:id(NodeSpec)};
@@ -805,6 +948,34 @@ filter_tokens(Tokens, AuthType) ->
 auth_type(anonymous) -> anonymous;
 auth_type({user_name, _, _}) -> user_name.
 
+unpack_browse_result(Space, BrowseSpec, BrowseResult) ->
+    unpack_browse_result(Space, BrowseSpec, BrowseResult, []).
+
+unpack_browse_result(_Space, [], [], Acc) ->
+    lists:reverse(Acc);
+unpack_browse_result(Space, [{NodeId, _} | Spec],
+                     [#opcua_error{} = Error | Results], Acc) ->
+    Error2 = Error#opcua_error{node_id = NodeId},
+    unpack_browse_result(Space, Spec, Results, [Error2 | Acc]);
+unpack_browse_result(Space, [{NodeId, _} | Spec], [BrowseResult | Results], Acc) ->
+    BrowseResult2 = [unpack_browse_result(NodeId, R) || R <- BrowseResult],
+    unpack_browse_result(Space, Spec, Results, [BrowseResult2 | Acc]).
+
+unpack_browse_result(SourceId, #{is_forward := true,
+                                 reference_type_id := TypeId,
+                                 node_id := ?XID(TargetId)} = Result) ->
+    Ref = #opcua_reference{type_id = TypeId,
+                           source_id = SourceId,
+                           target_id = TargetId},
+    Result#{reference => Ref};
+unpack_browse_result(TargetId, #{is_forward := false,
+                                 reference_type_id := TypeId,
+                                 node_id := ?XID(SourceId)} = Result) ->
+    Ref = #opcua_reference{type_id = TypeId,
+                           source_id = SourceId,
+                           target_id = TargetId},
+    Result#{reference => Ref}.
+
 unpack_read_result(Space, ReadSpec, ReadResult) ->
     unpack_read_result(Space, ReadSpec, ReadResult, #{}, []).
 
@@ -813,6 +984,12 @@ unpack_read_result(_Space, [], [], _, Acc) ->
 unpack_read_result(Space, [{_NodeId, []} | MoreNodes], ReadResult, Map, Acc) ->
     unpack_read_result(Space, MoreNodes, ReadResult, #{}, [Map | Acc]);
 unpack_read_result(Space, [{NodeId, [{AttribSpec, _} | MoreAttribs]} | MoreNodes],
+                   [#opcua_error{} = Error | MoreResults], Map, Acc) ->
+    % In case of error, we add the node identifier to simplify caller's life
+    ResultKey = result_key(AttribSpec),
+    unpack_read_result(Space, [{NodeId, MoreAttribs} | MoreNodes], MoreResults,
+                       Map#{ResultKey => Error#opcua_error{node_id = NodeId}}, Acc);
+unpack_read_result(Space, [{NodeId, [{AttribSpec, _} | MoreAttribs]} | MoreNodes],
                    [Result | MoreResults], Map, Acc) ->
     ResultKey = result_key(AttribSpec),
     AttribType = opcua_nodeset:attribute_type(ResultKey),
@@ -820,10 +997,11 @@ unpack_read_result(Space, [{NodeId, [{AttribSpec, _} | MoreAttribs]} | MoreNodes
     unpack_read_result(Space, [{NodeId, MoreAttribs} | MoreNodes], MoreResults,
                        Map#{ResultKey => UnpackedResult}, Acc).
 
-unpack_attribute_value(_Space, _, _, #opcua_error{} = Value) -> Value;
 unpack_attribute_value(_Space, _, variant, undefined) -> undefined;
 unpack_attribute_value(_Space, _, variant, #opcua_variant{} = Value) -> Value;
 unpack_attribute_value(_Space, _, Type, #opcua_variant{type = Type, value = Value}) -> Value;
+unpack_attribute_value(_Space, _, byte_string, #opcua_variant{type = byte, value = Byte}) ->
+    <<Byte:8>>;
 unpack_attribute_value(Space, _, #opcua_node_id{} = Type, #opcua_variant{value = Value}) ->
     opcua_codec:unpack_type(Space, Type, Value);
 unpack_attribute_value(_Space, Key, Type, Value) ->
@@ -839,6 +1017,12 @@ unpack_write_result([], [], _, Acc) ->
     lists:reverse(Acc);
 unpack_write_result([{_NodeId, []} | MoreNodes], WriteResult, Map, Acc) ->
     unpack_write_result(MoreNodes, WriteResult, #{}, [Map | Acc]);
+unpack_write_result([{NodeId, [{AttribSpec, _, _} | MoreAttribs]} | MoreNodes],
+                   [#opcua_error{} = Error | MoreResults], Map, Acc) ->
+    % In case of error, we add the node identifier to simplify caller's life
+    ResultKey = result_key(AttribSpec),
+    unpack_write_result([{NodeId, MoreAttribs} | MoreNodes], MoreResults,
+                       Map#{ResultKey => Error#opcua_error{node_id = NodeId}}, Acc);
 unpack_write_result([{NodeId, [{AttribSpec, _, _} | MoreAttribs]} | MoreNodes],
                    [Result | MoreResults], Map, Acc) ->
     ResultKey = result_key(AttribSpec),
@@ -860,6 +1044,26 @@ proto_produce(#data{conn = Conn, proto = Proto} = Data) ->
 
 proto_handle_data(#data{conn = Conn, proto = Proto} = Data, Input) ->
     case opcua_client_uacp:handle_data(Input, Conn, Proto) of
+        {deferred, Action, Cont, Conn2, Proto2} ->
+            {deferred, Action, Cont, Data#data{conn = Conn2, proto = Proto2}};
+        {ok, Responses, Conn2, Proto2} ->
+            {ok, Responses, Data#data{conn = Conn2, proto = Proto2}};
+        {error, Reason, Proto2} ->
+            {error, Reason, Data#data{proto = Proto2}}
+    end.
+
+proto_continue(#data{conn = Conn, proto = Proto} = Data, Cont) ->
+    case opcua_client_uacp:continue(Cont, Conn, Proto) of
+        {deferred, Action, Cont2, Conn2, Proto2} ->
+            {deferred, Action, Cont2, Data#data{conn = Conn2, proto = Proto2}};
+        {ok, Responses, Conn2, Proto2} ->
+            {ok, Responses, Data#data{conn = Conn2, proto = Proto2}};
+        {error, Reason, Proto2} ->
+            {error, Reason, Data#data{proto = Proto2}}
+    end.
+
+proto_abort(#data{conn = Conn, proto = Proto} = Data, Cont, Reason) ->
+    case opcua_client_uacp:abort(Reason, Cont, Conn, Proto) of
         {ok, Responses, Conn2, Proto2} ->
             {ok, Responses, Data#data{conn = Conn2, proto = Proto2}};
         {error, Reason, Proto2} ->

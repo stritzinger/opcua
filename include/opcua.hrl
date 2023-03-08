@@ -6,8 +6,10 @@
 -define(NID_NS(NS), #opcua_node_id{ns = NS}).
 -define(NNID(Num), #opcua_node_id{ns = 0, type = numeric, value = Num}).
 -define(NNID(NS, Num), #opcua_node_id{ns = NS, type = numeric, value = Num}).
--define(XID(NID), #opcua_expanded_node_id{node_id = NID}).
--define(XID(IDX, NID), #opcua_expanded_node_id{server_index = IDX, node_id = NID}).
+-define(XID(NID), #opcua_expanded_node_id{node_id = NID,
+    namespace_uri = undefined, server_index = undefined}).
+-define(XID(IDX, NID), #opcua_expanded_node_id{node_id = NID,
+    namespace_uri = undefined, server_index = IDX}).
 
 -define(UNDEF_NODE_ID, #opcua_node_id{ns = 0, type = numeric, value = 0}).
 -define(UNDEF_QUALIFIED_NAME, #opcua_qualified_name{ns = 0, name = undefined}).
@@ -86,7 +88,12 @@
 }).
 
 -record(opcua_error, {
-    status                      :: opcua:status()
+    status                      :: opcua:status(),
+    % This is only added by the client during decoding to simplify
+    % error handling, to give a hint of what node was involved in the error
+    % without having the API user keep track of what it requested when the
+    % the client actually knows this information.
+    node_id                     :: undefined | opcua:node_id()
 }).
 
 

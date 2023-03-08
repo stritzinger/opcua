@@ -38,6 +38,7 @@
 -export([format_path/1]).
 -export([issue/2]).
 -export([issue_schema_not_found/2]).
+-export([issue_descriptor_not_found/2]).
 -export([issue_encoding_not_supported/2]).
 
 
@@ -128,6 +129,10 @@ issue(Ctx, Reason) ->
 -spec issue_schema_not_found(ctx(), term()) -> no_return().
 issue_schema_not_found(Ctx, NodeId) ->
     throw_issue(Ctx, schema_not_found, NodeId).
+
+-spec issue_descriptor_not_found(ctx(), term()) -> no_return().
+issue_descriptor_not_found(Ctx, NodeId) ->
+    throw_issue(Ctx, descriptor_not_found, NodeId).
 
 -spec issue_encoding_not_supported(ctx(), term()) -> no_return().
 issue_encoding_not_supported(Ctx, Details) ->
