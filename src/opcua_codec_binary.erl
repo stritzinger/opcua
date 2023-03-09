@@ -172,20 +172,25 @@ decode_extension_object(Ctx, Data) ->
     case decode_extension_object(?POPF(Ctx2, node_id), Mask, TypeId, T) of
         {?UNDEF_EXT_OBJ, _Data2, _Ctx3} = Result -> Result;
         {#opcua_extension_object{type_id = NodeSpec, encoding = byte_string, body = Body} = ExtObj, Data2, Ctx3} ->
-            %TODO: Figure out if we shouldn't fail when we can't resolve the encoding ?
-            case resolve_encoding(Ctx3, NodeSpec) of
-                {NodeId, Enc} when Enc =:= binary; Enc =:= undefined ->
-                    try decode_type(?PUSHF(Ctx3, object), NodeId, Body) of
-                        {DecodedBody, _Rest, Ctx4} ->
-                            ExtObj2 = ExtObj#opcua_extension_object{type_id = NodeId,
-                                                                    body = DecodedBody},
-                            {ExtObj2, Data2, ?POPF(Ctx4, object)}
-                    catch
-                        ErrorType:ErrorReason:Stack ->
-                            opcua_codec_context:catch_and_continue(ErrorType,
-                                                    ErrorReason, Stack,
-                                                    Ctx, ?UNDEF_EXT_OBJ, Data2)
-                    end
+            try
+                case resolve_encoding(Ctx3, NodeSpec) of
+                    {NodeId, undefined} ->
+                        % We raise the issue so the context is the one to decide
+                        % if we should continue or not, and how to keep track
+                        % of the datatype issue.
+                        opcua_codec_context:issue_descriptor_not_found(Ctx, NodeId);
+                    {NodeId, binary} ->
+                        {DecodedBody, _Rest, Ctx4} =
+                            decode_type(?PUSHF(Ctx3, object), NodeId, Body),
+                        ExtObj2 = ExtObj#opcua_extension_object{type_id = NodeId,
+                                                                body = DecodedBody},
+                        {ExtObj2, Data2, ?POPF(Ctx4, object)}
+                end
+            catch
+                ErrorType:ErrorReason:Stack ->
+                    opcua_codec_context:catch_and_continue(ErrorType,
+                                            ErrorReason, Stack,
+                                            Ctx, ?UNDEF_EXT_OBJ, Data2)
             end;
         {#opcua_extension_object{encoding = EncInfo}, _Data2, Ctx3} ->
             opcua_codec_context:issue_encoding_not_supported(Ctx3, EncInfo)

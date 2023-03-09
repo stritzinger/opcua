@@ -27,6 +27,7 @@
 -export([consume/4]).
 -export([handle_data/4]).
 -export([continue/4]).
+-export([abort/5]).
 
 -export([iolist_chunk/2]).
 
@@ -36,7 +37,7 @@
 -define(DEFAULT_MAX_CHUNK_SIZE, 65535).
 -define(DEFAULT_MAX_MESSAGE_SIZE, 0).
 -define(DEFAULT_MAX_CHUNK_COUNT, 0).
--define(MAX_DECODING_RETRIES, 4).
+-define(MAX_DECODING_RETRIES, 2).
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -156,6 +157,10 @@ continue({decode_payload, RetryCount, Msg, Data}, Conn, Channel, State) ->
         {ok, Message, State2} -> {ok, [Message], [], Conn, Channel, State2};
         {issue, Issue, State2} -> {ok, [], [Issue], Conn, Channel, State2}
     end.
+
+abort(_Reason, {decode_payload, _RetryCount, _Msg, _Data}, Conn, Channel, State) ->
+    % There is nothing to abort...
+    {ok, [], [], Conn, Channel, State}.
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -354,10 +359,10 @@ decode_payload(State, Conn, RetryCount,
     case opcua_uacp_codec:decode_payload(Conn, MsgType, Data) of
         {ok, NodeId, Payload} ->
             {ok, Msg#uacp_message{node_id = NodeId, payload = Payload}, State};
-        {schema_not_found, NodeId, Payload, Schemas} ->
+        {missing_typedata, NodeId, Payload, TypeIds} ->
             PartialMsg = Msg#uacp_message{node_id = NodeId, payload = Payload},
             ContData = {decode_payload, RetryCount + 1, Msg, Data},
-            Issue = {schema_not_found, PartialMsg, Schemas, ContData},
+            Issue = {missing_typedata, PartialMsg, TypeIds, ContData},
             {issue, Issue, State}
     end.
 

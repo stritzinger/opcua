@@ -78,9 +78,9 @@ handle_issues(State, Conn, [Issue | _Rest], _Acc) ->
         %     handle_issues(State2, Conn2, Rest, [Msg | Acc])
     end.
 
-handle_issue(State, _Conn, {schema_not_found, _PartialMsg, Schemas, _Cont}) ->
-    ?LOG_WARNING("Failed to handle request, schema(s) ~s not found",
-                 [opcua_node:format(Schemas)]),
+handle_issue(State, _Conn, {missing_typedata, _PartialMsg, TypeIds, _Cont}) ->
+    ?LOG_WARNING("Failed to handle request, missing type information nodes ~s",
+                 [opcua_node:format(TypeIds)]),
     {error, bad_data_type_id_unknown, State}.
 
 handle_requests(State, Conn, []) -> {ok, Conn, State};

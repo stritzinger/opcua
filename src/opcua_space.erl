@@ -406,6 +406,12 @@ maybe_add_schema(Space, TypeId) ->
     %  - Data type node's browse name
     %  - Data type node's root-type identifier (builtin type)
     %  - Data type node's property named EnumValues
+    % We want to be extra flexible to be able to decode types even when
+    % there is slight inconsistencies in the model:
+    %  - If the data type definition contains a default encoding id that doesn't
+    %    exist in the space, we add a data descriptor for it.
+    %  - If data type with structure type definition do not have any super type,
+    %    we assume it doesn't inherit any fields.
     case node(Space, TypeId) of
         #opcua_node{browse_name = Name,
                     node_class = #opcua_data_type{
@@ -429,7 +435,11 @@ maybe_add_schema(Space, TypeId) ->
             RootTypeId = lookup_root_type(Space, TypeId),
             case generate_schema(TypeId, Name, TypeDef, RootTypeId, EnumValues) of
                 undefined -> ok;
-                Schema -> backend_add_schema(Space, Schema)
+                {undefined, Schema} ->
+                    backend_add_schema(Space, Schema);
+                {DescId, Schema} ->
+                    backend_add_descriptor(Space, DescId, TypeId, binary),
+                    backend_add_schema(Space, Schema)
             end;
         _ ->
             ok
@@ -486,64 +496,77 @@ del_subtype(Space, Type, SubType) ->
 
 generate_schema(TypeId, _, undefined, TypeId, _EnumValues) ->
     % Builtin types
-    #opcua_builtin{node_id = TypeId, builtin_node_id = TypeId};
-generate_schema(TypeId, Name, #{structure_type := T, fields := Fields},
-                ?NNID(22), _EnumValues)
-  when T =:= structure;
-       T =:= structure_with_optional_fields;
-       T =:= structure_with_subtyped_values ->
+    {undefined, #opcua_builtin{node_id = TypeId, builtin_node_id = TypeId}};
+generate_schema(TypeId, Name, #{structure_type := T,
+                                base_data_type := BaseTypeId,
+                                default_encoding_id := DescId,
+                                fields := Fields},
+                RootTypeId, _EnumValues)
+  when T =:= structure, RootTypeId =:= ?NNID(22);
+       T =:= structure, BaseTypeId =:= ?NNID(22);
+       T =:= structure_with_optional_fields, RootTypeId =:= ?NNID(22);
+       T =:= structure_with_optional_fields, BaseTypeId =:= ?NNID(22);
+       T =:= structure_with_subtyped_values, RootTypeId =:= ?NNID(22);
+       T =:= structure_with_subtyped_values, BaseTypeId =:= ?NNID(22) ->
     % Structure
     WithOpts = T =:= structure_with_optional_fields,
     AllowSubTypes = T =:= structure_with_subtyped_values,
-    #opcua_structure{
+    {if_defined(DescId), #opcua_structure{
         node_id = TypeId,
         name = Name,
         with_options = WithOpts,
         allow_subtypes = AllowSubTypes,
         fields = fields_from_struct_typedef(Fields, WithOpts or AllowSubTypes)
-    };
-generate_schema(TypeId, Name, #{structure_type := T, fields := Fields}, ?NNID(12756), _)
-  when T =:= union; T =:= union_with_subtyped_values ->
+    }};
+generate_schema(TypeId, Name, #{structure_type := T,
+                                base_data_type := BaseTypeId,
+                                default_encoding_id := DescId,
+                                fields := Fields},
+                RootTypeId, _)
+  when T =:= union, BaseTypeId =:= ?NNID(12756);
+       T =:= union, RootTypeId =:= ?NNID(12756);
+       T =:= union_with_subtyped_values, BaseTypeId =:= ?NNID(12756);
+       T =:= union_with_subtyped_values, RootTypeId =:= ?NNID(12756) ->
     % Union
     AllowSubTypes = T =:= union_with_subtyped_values,
-    #opcua_union{
+    {if_defined(DescId), #opcua_union{
         node_id = TypeId,
         name = Name,
         allow_subtypes = AllowSubTypes,
         fields = fields_from_struct_typedef(Fields, AllowSubTypes)
-    };
+    }};
 generate_schema(TypeId, _, undefined, ?NNID(29), EnumValues)
   when is_list(EnumValues) ->
     % Enum without data type definition but with enum values property
     %TODO: We could generate the missing data type definition...
-    #opcua_enum{
+    {undefined, #opcua_enum{
         node_id = TypeId,
         fields = fields_from_enum_values(EnumValues)
-    };
+    }};
 generate_schema(TypeId, _, #{fields := Fields}, ?NNID(29), _) ->
     % Enum with data type definition and optional enum values property
-    #opcua_enum{
+    {undefined, #opcua_enum{
         node_id = TypeId,
         fields = fields_from_enum_typedef(Fields)
-    };
+    }};
 generate_schema(TypeId, _, #{fields := Fields}, RootTypeId, _)
   when RootTypeId =:= ?NNID(3); RootTypeId =:= ?NNID(5); RootTypeId =:= ?NNID(7) ->
     % OptionSet with data type definition
-    #opcua_option_set{
+    {undefined, #opcua_option_set{
         node_id = TypeId,
         mask_type = opcua_codec:builtin_type_name(RootTypeId),
         fields = fields_from_enum_typedef(Fields)
-    };
+    }};
 generate_schema(TypeId, _, undefined, ?NNID(Id) = RootTypeId, _)
   when ?IS_BUILTIN_TYPE_ID(Id) ->
     % Subtype of some builtin types
-    #opcua_builtin{node_id = TypeId, builtin_node_id = RootTypeId};
+    {undefined, #opcua_builtin{node_id = TypeId, builtin_node_id = RootTypeId}};
 generate_schema(_TypeId, _Name, _TypeDef, _RootTypeId, _EnumValues) ->
-    % logger:warning("XXXXX ~s - Failed to generate ~s schema from ~p and ~p",
-    %                [opcua_node:format(opcua_node:spec(TypeId)),
-    %                 opcua_node:format(opcua_node:spec(RootTypeId)),
-    %                 TypeDef, EnumValues]),
     undefined.
+
+if_defined(#opcua_node_id{value = Value} = NodeId)
+  when Value =/= undefined -> NodeId;
+if_defined(_) -> undefined.
 
 fields_from_enum_values(EnumValues) ->
     fields_from_enum_values(EnumValues, []).

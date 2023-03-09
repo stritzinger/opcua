@@ -52,7 +52,8 @@ id({NS, Name}) when is_integer(NS), is_atom(Name), NS >= 0 ->
 id({NS, Name}) when is_integer(NS), is_binary(Name), NS >= 0 ->
     #opcua_node_id{type = string, ns = NS, value = Name}.
 
--spec spec(opcua:node_id() | opcua:node_ref()) -> opcua:node_spec().
+-spec spec(opcua:node_id() | opcua:node_ref() | opcua:expanded_node_id()) ->
+    opcua:node_spec().
 spec(undefined) -> undefined;
 spec(?UNDEF_NODE_ID) -> undefined;
 spec(#opcua_node{node_id = NodeId}) -> spec(NodeId);
@@ -85,7 +86,7 @@ spec(#opcua_node_id{ns = 0, type = string, value = Id})
 % String with explicit namespace
 spec(#opcua_node_id{ns = NS, type = numeric, value = Id})
   when is_integer(NS), is_binary(Id) -> {NS, Id};
-% OTherwise, the node id itself...
+% Otherwise, the node id itself...
 spec(#opcua_node_id{} = NodeId) ->
   NodeId.
 
