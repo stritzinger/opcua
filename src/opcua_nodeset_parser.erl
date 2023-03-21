@@ -415,7 +415,10 @@ finalize_fields(Fields) ->
             true -> [0 || _ <- lists:seq(1, ValueRank)];
             false -> []
         end,
-        DataType = maps:get(data_type, F, undefined),
+        % NOTE:
+        % We do not allow undefined types in Fields and default to Variant.
+        % Which by specification is the Encoding type for the BaseDataType.
+        DataType = maps:get(data_type, F, variant),
         Field = #{
             name => Name,
             description => #opcua_localized_text{text = Desc},
