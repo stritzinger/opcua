@@ -41,7 +41,7 @@
 -export([new/0, new/1, new/2]).
 -export([init/0, init/1]).
 -export([terminate/1]).
--export([add_namespace/3]).
+-export([add_namespace/2]).
 -export([add_nodes/2]).
 -export([del_nodes/2]).
 -export([add_references/2]).
@@ -189,17 +189,18 @@ terminate(Space) ->
 
 % @doc Adds a namespace to a space, if multiple layers of space are given, only
 % the last one is modified (the head).
--spec add_namespace(space() | spaces(), Id, Uri) -> ok
+-spec add_namespace(space() | spaces(), Uri) -> Id
     when Id :: non_neg_integer(), Uri :: binary().
-add_namespace([Space | _], Id, Uri) ->
+add_namespace([Space | _] = Spaces, Uri) ->
     NsUriTable = table(Space, namespace_uris),
     NsIdTable = table(Space, namespace_ids),
-    Tup = {Id, Uri},
+    NextId = next_namespace_id(Spaces),
+    Tup = {NextId, Uri},
     ets:insert(NsUriTable, Tup),
     ets:insert(NsIdTable, Tup),
-    ok;
-add_namespace(Space, Id, Uri) ->
-    add_namespace([Space], Id, Uri).
+    NextId;
+add_namespace(Space, Uri) ->
+    add_namespace([Space], Uri).
 
 % @doc Adds a node to a space, if multiple layers of space are given, only
 % the last one is modified (the head).
@@ -438,6 +439,12 @@ store(Space, {namespace, Term}) ->
 
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+next_namespace_id(Spaces) ->
+    case [I || {I, _} <- maps:to_list(get_namespaces(Spaces))] of
+        [] -> 0;
+        Ids -> lists:max(Ids) + 1
+    end.
 
 spawn_cleanup_proc(Pid, Keys) ->
     spawn(fun() ->

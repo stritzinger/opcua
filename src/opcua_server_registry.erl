@@ -31,8 +31,9 @@
 %%% MACRO %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -define(SERVER, ?MODULE).
+-define(SERVER_NAMESPACE_URI, <<"http://stritzinger.com/UA/">>).
 -define(MAX_SECURE_CHANNEL_ID, 4294967295).
--define(FIRST_CUSTOM_NODE_ID,  50000).
+-define(FIRST_CUSTOM_NODE_ID,  1).
 -define(DEFAULT_RESOLVER, opcua_server_default_resolver).
 
 
@@ -40,6 +41,7 @@
 
 -record(state, {
     next_secure_channel_id :: pos_integer(),
+    server_ns :: pos_integer(),
     next_node_id = ?FIRST_CUSTOM_NODE_ID :: pos_integer()
 }).
 
@@ -75,15 +77,23 @@ init(Opts) ->
     {ok, Vals, Nodes, Refs, ResState} = ResMod:init(),
     persistent_term:put({?MODULE, resolver}, {ResMod, ResState}),
     NextSecureChannelId = crypto:bytes_to_integer(crypto:strong_rand_bytes(4)),
-    State = #state{next_secure_channel_id = NextSecureChannelId},
+    ServerNS = case opcua_server_space:namespace_id(?SERVER_NAMESPACE_URI) of
+        undefined -> opcua_server_space:add_namespace(?SERVER_NAMESPACE_URI);
+        NS -> NS
+    end,
+    State = #state{
+        server_ns = ServerNS,
+        next_secure_channel_id = NextSecureChannelId
+    },
     {ok, State, {continue, {Vals, Nodes, Refs}}}.
 
 handle_continue({Vals, Nodes, Refs}, State) ->
     setup_static_data(Vals, Nodes, Refs),
     {noreply, State}.
 
-handle_call(next_node_id, _From, #state{next_node_id = NextId} = State) ->
-    {reply, ?NNID(NextId), State#state{next_node_id = NextId + 1}};
+handle_call(next_node_id, _From,
+            #state{server_ns = NS, next_node_id = NextId} = State) ->
+    {reply, ?NNID(NS, NextId), State#state{next_node_id = NextId + 1}};
 handle_call({allocate_secure_channel, _Pid}, _From, State) ->
     {ChannelId, State2} = next_secure_channel_id(State),
     {reply, {ok, ChannelId}, State2};

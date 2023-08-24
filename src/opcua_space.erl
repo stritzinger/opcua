@@ -22,7 +22,7 @@
 -callback init() -> State
     when State :: term().
 
--callback add_namespace(State, Id, Uri) -> ok
+-callback add_namespace(State, Uri) -> Id
     when State :: term(), Id :: non_neg_integer(), Uri :: binary().
 
 -callback add_nodes(State, [Node]) -> ok
@@ -111,7 +111,7 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API Functions
--export([add_namespace/3]).
+-export([add_namespace/2]).
 -export([add_nodes/2]).
 -export([del_nodes/2]).
 -export([add_references/2]).
@@ -148,14 +148,14 @@
 
 % @doc Adds a namespace to given space.
 % Depending on the backend, may only be allowed from the owning process.
-add_namespace(#uacp_connection{space = Space}, Id, Uri) ->
-    add_namespace(Space, Id, Uri);
-add_namespace({Mod, Sub}, Id, Uri) ->
-    Mod:add_namespace(Sub, Id, Uri);
-add_namespace(Mod, Id, Uri) ->
+add_namespace(#uacp_connection{space = Space}, Uri) ->
+    add_namespace(Space, Uri);
+add_namespace({Mod, Sub}, Uri) ->
+    Mod:add_namespace(Sub, Uri);
+add_namespace(Mod, Uri) ->
     % When delegating to a module with its own state,
     % we are delegating the side-effects too.
-    Mod:add_namespace(Id, Uri).
+    Mod:add_namespace(Uri).
 
 % @doc Adds given nodes to the given database.
 % Depending on the backend, may only be allowed from the owning process.

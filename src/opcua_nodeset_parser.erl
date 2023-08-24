@@ -93,11 +93,14 @@ parse(DestDir, [], Meta, Nodes) ->
     RefIdx = build_ref_index(Nodes),
     % Finalize data type definitions
     NodeMap2 = post_process_data_types(NodeMap, RefIdx),
-    % Create a space and add the namespaces from the meta data
+    % Create a space and add the namespaces from the meta data.
+    % As the namespaces must be consecutive, we sort them and check the added
+    % namespace id match.
     Space = opcua_space_backend:new(),
     lists:foreach(fun({Id, Uri}) ->
-        opcua_space:add_namespace(Space, Id, Uri)
-    end, maps:to_list(maps:get(namespaces, Meta, #{}))),
+        %TODO: Better error handling in case the Id do not match
+        Id = opcua_space:add_namespace(Space, Uri)
+    end, lists:sort(maps:to_list(maps:get(namespaces, Meta, #{})))),
     % First add all the nodes and references required to generate the decoding
     % schemas. That includes all the data type nodes, all the encoding
     % descriptor nodes, all the relevent HasSubType, HasEncoding
