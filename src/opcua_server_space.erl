@@ -16,6 +16,7 @@
 -export([del_nodes/1]).
 -export([add_references/1]).
 -export([del_references/1]).
+-export([browse_path/2]).
 -export([node/1]).
 -export([references/1, references/2]).
 -export([data_type/1]).
@@ -61,6 +62,9 @@ add_references(References) ->
 
 del_references(References) ->
     gen_server:call(?MODULE, {del_references, References}).
+
+browse_path(Source, Path) ->
+    opcua_space:browse_path({opcua_space_backend, [?MODULE, opcua_nodeset]}, Source, Path).
 
 node(NodeId) ->
     opcua_space_backend:node([?MODULE, opcua_nodeset], NodeId).

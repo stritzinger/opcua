@@ -18,6 +18,7 @@
 
 %-- OPCUA Standard Node Id Numbers ---------------------------------------------
 
+-define(REF_HIERARCHICAL,           33).
 -define(REF_HAS_CHILD,              34).
 -define(REF_ORGANIZES,              35).
 -define(REF_HAS_ENCODING,           38).

@@ -32,6 +32,7 @@
 -export([namespace_id/1]).
 -export([namespaces/0]).
 -export([is_subtype/2]).
+-export([browse_path/2]).
 -export([node/1]).
 -export([references/1, references/2]).
 
@@ -141,6 +142,9 @@ namespaces() ->
 
 is_subtype(SubTypeSpec, SuperTypeSpec) ->
     opcua_space_backend:is_subtype(?MODULE, SubTypeSpec, SuperTypeSpec).
+
+browse_path(Source, Path) ->
+    opcua_space:browse_path({opcua_space_backend, ?MODULE}, Source, Path).
 
 node(NodeSpec) ->
     opcua_space_backend:node(?MODULE, NodeSpec).

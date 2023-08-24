@@ -116,6 +116,7 @@
 -export([del_nodes/2]).
 -export([add_references/2]).
 -export([del_references/2]).
+-export([browse_path/3]).
 -export([node/2]).
 -export([references/2, references/3]).
 -export([data_type/2]).
@@ -132,6 +133,15 @@
 -type state() :: module() | {module(), term()} | opcua:connection().
 
 -export_type([state/0]).
+
+
+%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(DEFAULT_BROWSE_PATH_REFOPTS, #{
+    direction => forward,
+    type => ?NNID(?REF_HIERARCHICAL),
+    include_subtypes => true
+}).
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -201,6 +211,31 @@ del_references(Mod, References) ->
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% @doc Lookup a node record from given path from a starting node record or node spec.
+browse_path(_Space, _Source, []) -> undefined;
+browse_path(Space, #opcua_node{node_id = SourceNodeId}, Path) ->
+    browse_path(Space, SourceNodeId, Path);
+browse_path(Space, SourceNodeSpec, [PathName | Rest])
+  when is_binary(PathName) ->
+    RefOpts = ?DEFAULT_BROWSE_PATH_REFOPTS,
+    browse_path(Space, SourceNodeSpec, [{0, PathName, RefOpts} | Rest]);
+browse_path(Space, SourceNodeSpec, [{PathNS, PathName} | Rest])
+  when is_integer(PathNS), is_binary(PathName) ->
+    RefOpts = ?DEFAULT_BROWSE_PATH_REFOPTS,
+    browse_path(Space, SourceNodeSpec, [{PathNS, PathName, RefOpts} | Rest]);
+browse_path(Space, SourceNodeSpec, [{PathNS, PathName, RefOpts} | Rest])
+  when is_integer(PathNS), is_binary(PathName), is_map(RefOpts) ->
+    Refs = references(Space, SourceNodeSpec, RefOpts),
+    AllNodes = [node(Space, TID) || #opcua_reference{target_id = TID} <- Refs],
+    FilteredNodes = [N || N = #opcua_node{node_id = #opcua_node_id{ns = NS},
+                                          browse_name = BrowseName} <- AllNodes,
+                      BrowseName =:= PathName, NS =:= PathNS],
+    case {Rest, FilteredNodes} of
+        {_, []} -> undefined;
+        {[], [Node]} -> Node;
+        {_, [Node]} -> browse_path(Space, Node, Rest)
+    end.
 
 % @doc Retrieves a node record from given database.
 node(#uacp_connection{space = Space}, NodeSpec) ->
