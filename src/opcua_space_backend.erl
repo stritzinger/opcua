@@ -187,18 +187,23 @@ terminate(Space) ->
     cleanup_persistent_terms(Keys),
     ok.
 
-% @doc Adds a namespace to a space, if multiple layers of space are given, only
-% the last one is modified (the head).
+% @doc Adds a a namespace to a space. If it was already there,
+% returns the corresponding identifier.
+% if multiple layers of space are given, only the last one is modified (the head).
 -spec add_namespace(space() | spaces(), Uri) -> Id
     when Id :: non_neg_integer(), Uri :: binary().
 add_namespace([Space | _] = Spaces, Uri) ->
-    NsUriTable = table(Space, namespace_uris),
-    NsIdTable = table(Space, namespace_ids),
-    NextId = next_namespace_id(Spaces),
-    Tup = {NextId, Uri},
-    ets:insert(NsUriTable, Tup),
-    ets:insert(NsIdTable, Tup),
-    NextId;
+    case get_namespace_id(Spaces, Uri) of
+        undefined ->
+            NsUriTable = table(Space, namespace_uris),
+            NsIdTable = table(Space, namespace_ids),
+            NextId = next_namespace_id(Spaces),
+            Tup = {NextId, Uri},
+            ets:insert(NsUriTable, Tup),
+            ets:insert(NsIdTable, Tup),
+            NextId;
+        Id -> Id
+    end;
 add_namespace(Space, Uri) ->
     add_namespace([Space], Uri).
 

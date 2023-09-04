@@ -27,6 +27,8 @@
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% API
+-export([ensure/1, ensure/2]).
+-export([list_nodes/1, list_nodes/2]).
 -export([add_object/2, add_object/3]).
 -export([del_object/1]).
 -export([add_variable/5]).
@@ -34,20 +36,57 @@
 -export([set_value/2]).
 
 
+%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(DEFAULT_ENSURE_OPTS, #{
+    namespace_aliases => #{server => opcua_server_registry:namespace_id()},
+    node_id_fun => fun opcua_server_registry:next_node_id/0
+}).
+
+
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ensure(Templates) ->
+    Opts = ?DEFAULT_ENSURE_OPTS,
+    opcua_template:ensure(opcua_server_space, Templates, Opts).
+
+ensure(Templates, Opts) ->
+    Opts2 = maps:merge(?DEFAULT_ENSURE_OPTS, Opts),
+    opcua_template:ensure(opcua_server_space, Templates, Opts2).
+
+list_nodes(ParentSpec) ->
+    list_nodes(ParentSpec, ?NNID(?REF_HIERARCHICAL)).
+
+list_nodes(ParentSpec, RefTypeSpec) ->
+    Opts = #{
+        direction => forward,
+        type => RefTypeSpec,
+        include_subtypes => true
+    },
+    [opcua_server_space:node(N)
+     || #opcua_reference{target_id = N}
+     <- opcua_server_space:references(ParentSpec, Opts)].
 
 add_object(Name, TypeSpec) ->
     add_object(?OBJ_OBJECTS_FOLDER, Name, TypeSpec).
 
 add_object(ParentSpec, Name, TypeSpec) when is_binary(Name) ->
-    NodeId = opcua_server_registry:next_node_id(),
+    NodeTemplate = #opcua_node{
+        browse_name = Name,
+        node_class = #opcua_object{}},
+    add_object(ParentSpec, NodeTemplate, TypeSpec);
+add_object(ParentSpec, #opcua_node{} = NodeTemplate, TypeSpec) ->
+    NodeId = case NodeTemplate of
+        #opcua_node{node_id = undefined} ->
+            opcua_server_registry:next_node_id();
+        #opcua_node{node_id = Id} ->
+            Id
+    end,
     TypeId = opcua_node:id(TypeSpec),
     ParentId = opcua_node:id(ParentSpec),
-    opcua_server_space:add_nodes([#opcua_node{
+    opcua_server_space:add_nodes([NodeTemplate#opcua_node{
         node_id = NodeId,
-        origin = local,
-        browse_name = Name,
-        node_class = #opcua_object{}
+        origin = local
     }]),
     opcua_server_space:add_references([
         #opcua_reference{

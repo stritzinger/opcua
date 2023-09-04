@@ -28,16 +28,36 @@ id(#opcua_node{node_id = NodeId}) -> NodeId;
 % Common base nodes
 id(root) -> ?NNID(?OBJ_ROOT_FOLDER);
 id(objects) -> ?NNID(?OBJ_OBJECTS_FOLDER);
+id(types) -> ?NNID(?OBJ_TYPES_FOLDER);
+id(object_types) -> ?NNID(?OBJ_OBJECT_TYPES_FOLDER);
+id(variable_types) -> ?NNID(?OBJ_VARIABLE_TYPES_FOLDER);
+id(data_types) -> ?NNID(?OBJ_DATA_TYPES_FOLDER);
+id(reference_types) -> ?NNID(?OBJ_REFERENCE_TYPES_FOLDER);
 id(server) -> ?NNID(?OBJ_SERVER);
+% Modeling rules
+id(mandatory) -> ?NNID(?OBJ_MANDATORY);
+id(optional) -> ?NNID(?OBJ_OPTIONAL);
+id(exposes_its_array) -> ?NNID(?OBJ_EXPOSES_ITS_ARRAY);
+id(optional_placeholder) -> ?NNID(?OBJ_OPTIONAL_PLACEHOLDER);
+id(mandatory_placeholder) -> ?NNID(?OBJ_MANDATORY_PLACEHOLDER);
+% Common types
+id(base_object_type) -> ?NNID(?TYPE_BASE_OBJECT);
+id(folder_type) -> ?NNID(?TYPE_FOLDER);
+id(property_type) -> ?NNID(?TYPE_PROPERTY);
+% Explicit data types beside builtins
+id(enumeration) -> ?NNID(?DATATYPE_ENUMERATION);
+id(enum_value) -> ?NNID(?DATAYPE_ENUM_VALUE);
 % Common reference types
-id(has_component) -> ?NID_HAS_COMPONENT;
-id(has_property) -> ?NID_HAS_PROPERTY;
+id(has_child) -> ?NID_HAS_CHILD;
 id(organizes) -> ?NID_ORGANIZES;
-id(has_notifier) -> ?NID_HAS_NOTIFIER;
-id(has_subtype) -> ?NID_HAS_SUBTYPE;
-id(has_type_definition) -> ?NID_HAS_TYPE_DEFINITION;
+id(has_modeling_rule) -> ?NNID(?REF_HAS_MODELING_RULE);
 id(has_encoding) -> ?NID_HAS_ENCODING;
 id(has_description) -> ?NID_HAS_DESCRIPTION;
+id(has_type_definition) -> ?NID_HAS_TYPE_DEFINITION;
+id(has_subtype) -> ?NID_HAS_SUBTYPE;
+id(has_property) -> ?NID_HAS_PROPERTY;
+id(has_component) -> ?NID_HAS_COMPONENT;
+id(has_notifier) -> ?NID_HAS_NOTIFIER;
 %
 id(#opcua_node_id{} = NodeId) -> NodeId;
 id(Num) when is_integer(Num), Num >= 0 -> #opcua_node_id{value = Num};
@@ -60,16 +80,36 @@ spec(#opcua_node{node_id = NodeId}) -> spec(NodeId);
 % Common base nodes
 spec(?NNID(?OBJ_ROOT_FOLDER)) -> root;
 spec(?NNID(?OBJ_OBJECTS_FOLDER)) -> objects;
+spec(?NNID(?OBJ_TYPES_FOLDER)) -> types;
+spec(?NNID(?OBJ_OBJECT_TYPES_FOLDER)) -> object_types;
+spec(?NNID(?OBJ_VARIABLE_TYPES_FOLDER)) -> variable_types;
+spec(?NNID(?OBJ_DATA_TYPES_FOLDER)) -> data_types;
+spec(?NNID(?OBJ_REFERENCE_TYPES_FOLDER)) -> reference_types;
 spec(?NNID(?OBJ_SERVER)) -> server;
+% Modeling rules
+spec(?NNID(?OBJ_MANDATORY)) -> mandatory;
+spec(?NNID(?OBJ_OPTIONAL)) -> optional;
+spec(?NNID(?OBJ_EXPOSES_ITS_ARRAY)) -> exposes_its_array;
+spec(?NNID(?OBJ_OPTIONAL_PLACEHOLDER)) -> optional_placeholder;
+spec(?NNID(?OBJ_MANDATORY_PLACEHOLDER)) -> mandatory_placeholder;
+% Common types
+spec(?NNID(?TYPE_BASE_OBJECT)) -> base_object_type;
+spec(?NNID(?TYPE_FOLDER)) -> folder_type;
+spec(?NNID(?TYPE_PROPERTY)) -> property_type;
+% Explicit data types beside builtins
+spec(?NNID(?DATATYPE_ENUMERATION)) -> enumeration;
+spec(?NNID(?DATAYPE_ENUM_VALUE)) -> enum_value;
 % Common reference types
-spec(?NID_HAS_COMPONENT) -> has_component;
-spec(?NID_HAS_PROPERTY) -> has_property;
+spec(?NID_HAS_CHILD) -> has_child;
 spec(?NID_ORGANIZES) -> organizes;
-spec(?NID_HAS_NOTIFIER) -> has_notifier;
-spec(?NID_HAS_SUBTYPE) -> has_subtype;
-spec(?NID_HAS_TYPE_DEFINITION) -> has_type_definition;
+spec(?NNID(?REF_HAS_MODELING_RULE)) -> has_modeling_rule;
 spec(?NID_HAS_ENCODING) -> has_encoding;
 spec(?NID_HAS_DESCRIPTION) -> has_description;
+spec(?NID_HAS_TYPE_DEFINITION) -> has_type_definition;
+spec(?NID_HAS_SUBTYPE) -> has_subtype;
+spec(?NID_HAS_PROPERTY) -> has_property;
+spec(?NID_HAS_COMPONENT) -> has_component;
+spec(?NID_HAS_NOTIFIER) -> has_notifier;
 % Builtin types
 spec(#opcua_node_id{ns = 0, type = numeric, value = Id})
   when ?IS_BUILTIN_TYPE_ID(Id) ->

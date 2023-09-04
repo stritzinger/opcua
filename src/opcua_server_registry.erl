@@ -13,6 +13,7 @@
 
 %% API Functions
 -export([start_link/1]).
+-export([namespace_id/0]).
 -export([next_node_id/0]).
 -export([allocate_secure_channel/1]).
 -export([release_secure_channel/1]).
@@ -50,6 +51,9 @@
 
 start_link(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Opts, []).
+
+namespace_id() ->
+    gen_server:call(?SERVER, namespace_id).
 
 next_node_id() ->
     gen_server:call(?SERVER, next_node_id).
@@ -91,6 +95,8 @@ handle_continue({Vals, Nodes, Refs}, State) ->
     setup_static_data(Vals, Nodes, Refs),
     {noreply, State}.
 
+handle_call(namespace_id, _From, #state{server_ns = NS} = State) ->
+    {reply, NS, State};
 handle_call(next_node_id, _From,
             #state{server_ns = NS, next_node_id = NextId} = State) ->
     {reply, ?NNID(NS, NextId), State#state{next_node_id = NextId + 1}};

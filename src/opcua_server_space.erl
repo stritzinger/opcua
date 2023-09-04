@@ -6,6 +6,8 @@
 
 -behavior(gen_server).
 
+-compile({no_auto_import,[node/1]}).
+
 
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -43,58 +45,63 @@
 -include("opcua_internal.hrl").
 
 
+%%% MACRO %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(INPROC_SPACE, {opcua_space_backend, [?MODULE, opcua_nodeset]}).
+
+
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 add_namespace(Uri) ->
-    gen_server:call(?MODULE, {add_namespace, Uri}).
+    delegate({add_namespace, Uri}).
 
 add_nodes(Nodes) ->
-    gen_server:call(?MODULE, {add_nodes, Nodes}).
+    delegate({add_nodes, Nodes}).
 
 del_nodes(NodeIds) ->
-    gen_server:call(?MODULE, {del_nodes, NodeIds}).
+    delegate({del_nodes, NodeIds}).
 
 add_references(References) ->
-    gen_server:call(?MODULE, {add_references, References}).
+    delegate({add_references, References}).
 
 del_references(References) ->
-    gen_server:call(?MODULE, {del_references, References}).
+    delegate({del_references, References}).
 
 browse_path(Source, Path) ->
-    opcua_space:browse_path({opcua_space_backend, [?MODULE, opcua_nodeset]}, Source, Path).
+    opcua_space:browse_path(?INPROC_SPACE, Source, Path).
 
 node(NodeId) ->
-    opcua_space_backend:node([?MODULE, opcua_nodeset], NodeId).
+    opcua_space:node(?INPROC_SPACE, NodeId).
 
 references(OriginNode) ->
-    opcua_space_backend:references([?MODULE, opcua_nodeset], OriginNode, #{}).
+    opcua_space:references(?INPROC_SPACE, OriginNode, #{}).
 
 references(OriginNode, Opts) ->
-    opcua_space_backend:references([?MODULE, opcua_nodeset], OriginNode, Opts).
+    opcua_space:references(?INPROC_SPACE, OriginNode, Opts).
 
 data_type(TypeDescriptorSpec) ->
-    opcua_space_backend:data_type([?MODULE, opcua_nodeset], TypeDescriptorSpec).
+    opcua_space:data_type(?INPROC_SPACE, TypeDescriptorSpec).
 
 type_descriptor(NodeSpec, Encoding) ->
-    opcua_space_backend:type_descriptor([?MODULE, opcua_nodeset], NodeSpec, Encoding).
+    opcua_space:type_descriptor(?INPROC_SPACE, NodeSpec, Encoding).
 
 schema(TypeSpec) ->
-    opcua_space_backend:schema([?MODULE, opcua_nodeset], TypeSpec).
+    opcua_space:schema(?INPROC_SPACE, TypeSpec).
 
 namespace_uri(Id) ->
-    opcua_space_backend:namespace_uri([?MODULE, opcua_nodeset], Id).
+    opcua_space:namespace_uri(?INPROC_SPACE, Id).
 
 namespace_id(Uri) ->
-    opcua_space_backend:namespace_id([?MODULE, opcua_nodeset], Uri).
+    opcua_space:namespace_id(?INPROC_SPACE, Uri).
 
 namespaces() ->
-    opcua_space_backend:namespaces([?MODULE, opcua_nodeset]).
+    opcua_space:namespaces(?INPROC_SPACE).
 
 is_subtype(SubTypeSpec, SuperTypeSpec) ->
-    opcua_space_backend:is_subtype([?MODULE, opcua_nodeset], SubTypeSpec, SuperTypeSpec).
+    opcua_space:is_subtype(?INPROC_SPACE, SubTypeSpec, SuperTypeSpec).
 
 
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -103,20 +110,35 @@ init([]) ->
     {ok, opcua_space_backend:new(?MODULE, [opcua_nodeset])}.
 
 handle_call({add_namespace, Uri}, _From, Space) ->
-    Id = opcua_space:add_namespace(Space, Uri),
-    {reply, Id, Space};
+    try opcua_space:add_namespace(Space, Uri) of
+        Id -> {reply, {ok, Id}, Space}
+    catch throw:Reason:Stack ->
+        {reply, {raise, throw, Reason, Stack}, Space}
+    end;
 handle_call({add_nodes, Nodes}, _From, Space) ->
-    opcua_space:add_nodes(Space, Nodes),
-    {reply, ok, Space};
+    try opcua_space:add_nodes(Space, Nodes) of
+        _ -> {reply, ok, Space}
+    catch throw:Reason:Stack ->
+        {reply, {raise, throw, Reason, Stack}, Space}
+    end;
 handle_call({del_nodes, NodeIds}, _From, Space) ->
-    opcua_space:del_nodes(Space, NodeIds),
-    {reply, ok, Space};
+    try opcua_space:del_nodes(Space, NodeIds) of
+        _ -> {reply, ok, Space}
+    catch throw:Reason:Stack ->
+        {reply, {raise, throw, Reason, Stack}, Space}
+    end;
 handle_call({add_references, References}, _From, Space) ->
-    opcua_space:add_references(Space, References),
-    {reply, ok, Space};
+    try opcua_space:add_references(Space, References) of
+        _ -> {reply, ok, Space}
+    catch throw:Reason:Stack ->
+        {reply, {raise, throw, Reason, Stack}, Space}
+    end;
 handle_call({del_references, References}, _From, Space) ->
-    opcua_space:del_references(Space, References),
-    {reply, ok, Space};
+    try opcua_space:del_references(Space, References) of
+        _ -> {reply, ok, Space}
+    catch throw:Reason:Stack ->
+        {reply, {raise, throw, Reason, Stack}, Space}
+    end;
 handle_call(stop, _From, Space) ->
     {stop, normal, ok, Space}.
 
@@ -129,3 +151,13 @@ handle_info(Info, _Spaces) ->
 terminate(_Reason, Space) ->
     opcua_space_backend:terminate(Space),
     ok.
+
+
+%%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+delegate(Message) ->
+    case gen_server:call(?MODULE, Message) of
+        ok -> ok;
+        {ok, Result} -> Result;
+        {raise, Class, Reason, Stack} -> erlang:raise(Class, Reason, Stack)
+    end.

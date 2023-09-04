@@ -60,7 +60,13 @@
 -type variant() :: #opcua_variant{}.
 -type data_value() :: #opcua_data_value{}.
 -type diagnostic_info() :: #opcua_diagnostic_info{}.
--type node_spec() :: non_neg_integer() | atom() | binary() | node_id() | node_rec().
+-type node_spec() :: atom()
+                   | non_neg_integer()
+                   | binary()
+                   | {non_neg_integer(), non_neg_integer()}
+                   | {non_neg_integer(), binary()}
+                   | node_id()
+                   | node_rec().
 -type codec_spec() :: node_spec() | [node_spec()] | [{atom(), node_spec()}].
 -type stream_encoding() :: binary | xml | json.
 -type extobj_encoding() :: xml | byte_string.

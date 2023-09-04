@@ -21,6 +21,7 @@
 -define(REF_HIERARCHICAL,           33).
 -define(REF_HAS_CHILD,              34).
 -define(REF_ORGANIZES,              35).
+-define(REF_HAS_MODELING_RULE,      37).
 -define(REF_HAS_ENCODING,           38).
 -define(REF_HAS_DESCRIPTION,        39).
 -define(REF_HAS_TYPE_DEFINITION,    40).
@@ -33,13 +34,28 @@
 -define(TYPE_FOLDER,                61).
 -define(TYPE_PROPERTY,              68).
 
+-define(DATATYPE_ENUMERATION,       29).
+-define(DATAYPE_ENUM_VALUE,         7594).
+
 -define(OBJ_ROOT_FOLDER,            84).
 -define(OBJ_OBJECTS_FOLDER,         85).
+-define(OBJ_TYPES_FOLDER,           86).
+-define(OBJ_OBJECT_TYPES_FOLDER,    88).
+-define(OBJ_VARIABLE_TYPES_FOLDER,  89).
+-define(OBJ_DATA_TYPES_FOLDER,      90).
+-define(OBJ_REFERENCE_TYPES_FOLDER, 91).
 -define(OBJ_SERVER,                 2253).
 -define(OBJ_SERVER_STATUS,          2256).
 
 -define(OBJ_SERVER_TYPE,            2004).
 -define(OBJ_SERVER_STATUS_TYPE,     2138).
+
+% Modeling rules identifiers
+-define(OBJ_MANDATORY,              78).
+-define(OBJ_OPTIONAL,               80).
+-define(OBJ_EXPOSES_ITS_ARRAY,      83).
+-define(OBJ_OPTIONAL_PLACEHOLDER,   11508).
+-define(OBJ_MANDATORY_PLACEHOLDER,  11510).
 
 
 %%% TYPES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -106,7 +122,7 @@
 }).
 
 -record(opcua_node, {
-    node_id                     :: undefind | opcua:node_id(),
+    node_id                     :: undefined | opcua:node_id(),
     node_class                  :: opcua:node_class_rec(),
     origin                      :: opcua:node_origin(),
     browse_name                 :: opcua:optional(binary()),

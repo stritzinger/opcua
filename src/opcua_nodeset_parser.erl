@@ -317,9 +317,7 @@ post_process_data_type(NodeMap, RefIdx, #{node_id := NodeId, partial_definition 
             {ok, N} = maps:find(SuperNodeId, M),
             {M, N}
     end,
-    % ?debug(29, NodeId, ">>>>>>>>>> ~p: ", [NodeId]),
     Node2 = finalize_type_definition(Node, EncNodeId, SuperNode, RefIdx),
-    % ?debug(29, NodeId, "~p~n", [Node2]),
     NodeMap2#{NodeId => Node2}.
 
 finalize_type_definition(#{node_id := NodeId, is_abstract := true} = Node,
