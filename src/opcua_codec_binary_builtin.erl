@@ -259,6 +259,8 @@ encode_diagnostic_info(DI = #opcua_diagnostic_info{}) ->
 encode_qualified_name(#opcua_qualified_name{ns = NamespaceIndex, name = Name}) ->
     encode_multi([{uint16, NamespaceIndex}, {string, Name}]).
 
+encode_localized_text(undefined) ->
+    encode_localized_text(#opcua_localized_text{locale = undefined, text = undefined});
 encode_localized_text(LocalizedText) when is_binary(LocalizedText) ->
     encode_localized_text(#opcua_localized_text{locale = undefined, text = LocalizedText});
 encode_localized_text(#opcua_localized_text{locale = Locale, text = Text}) ->

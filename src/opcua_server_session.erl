@@ -333,10 +333,10 @@ attribute_read_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     {{reply, Resp, Conn}, Data}.
 
 attribute_read(Data, ReadOpts, ReadIds) ->
-    attribute_read(Data, ReadOpts, ReadIds, []).
+    attribute_read(Data, ReadOpts, ReadIds, [], 0).
 
-attribute_read(_Data, _ReadOpts, [], Acc) -> lists:reverse(Acc);
-attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
+attribute_read(_Data, _ReadOpts, [], Acc, _Idx) -> lists:reverse(Acc);
+attribute_read(Data, ReadOpts, [ReadId | Rest], Acc, Idx) ->
     #{
         node_id := NodeId,
         attribute_id := AttributeId,
@@ -355,13 +355,13 @@ attribute_read(Data, ReadOpts, [ReadId | Rest], Acc) ->
                 [{error, Reason}] ->
                     Status = opcua_nodeset:status_name(Reason, bad_internal_error),
                     Result = #opcua_data_value{status = Status},
-                    attribute_read(Data, ReadOpts, Rest, [Result | Acc]);
+                    attribute_read(Data, ReadOpts, Rest, [Result | Acc], Idx + 1);
                 [#opcua_data_value{} = Result] ->
-                    attribute_read(Data, ReadOpts, Rest, [Result | Acc])
+                    attribute_read(Data, ReadOpts, Rest, [Result | Acc], Idx + 1)
             end;
         _ ->
             Result = #opcua_data_value{status = bad_data_encoding_unsupported},
-            attribute_read(Data, ReadOpts, Rest, [Result | Acc])
+            attribute_read(Data, ReadOpts, Rest, [Result | Acc], Idx + 1)
     end.
 
 parse_max_age(Age) when Age >= 0, Age < ?EPSILON -> newest;
@@ -387,10 +387,10 @@ view_browse_command(Data, Conn, #uacp_message{payload = Msg} = Req) ->
     {{reply, Resp, Conn}, Data}.
 
 view_browse(Data, BrowseOpts, NodesToBrowse) ->
-    view_browse(Data, BrowseOpts, NodesToBrowse, []).
+    view_browse(Data, BrowseOpts, NodesToBrowse, [], 0).
 
-view_browse(_Data, _BrowseOpts, [], Acc) -> lists:reverse(Acc);
-view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
+view_browse(_Data, _BrowseOpts, [], Acc, _Idx) -> lists:reverse(Acc);
+view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc, Idx) ->
     #{
         node_id := NodeId,
         reference_type_id := RefType,
@@ -411,7 +411,7 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
                 continuation_point => undefined,
                 references => []
             },
-            view_browse(Data, BrowseOpts, Rest, [BrowseResult | Acc]);
+            view_browse(Data, BrowseOpts, Rest, [BrowseResult | Acc], Idx + 1);
         [CommandResult] ->
             BrowseResult = #{
                 status_code => maps:get(status, CommandResult, good),
@@ -426,7 +426,7 @@ view_browse(Data, BrowseOpts, [BrowseSpec | Rest], Acc) ->
                     type_definition => maps:get(type_definition, Ref, ?UNDEF_EXT_NODE_ID)
                 } || Ref <- maps:get(references, CommandResult, [])]
             },
-            view_browse(Data, BrowseOpts, Rest, [BrowseResult | Acc])
+            view_browse(Data, BrowseOpts, Rest, [BrowseResult | Acc], Idx + 1)
     end.
 
 add_server_signature(Conn, ClientDerCert, ClientNonce) ->

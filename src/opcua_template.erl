@@ -32,6 +32,10 @@
     node_id => template_node_spec(),
     % if not specified, it is assumed to be object.
     node_class => opcua:node_class(),
+    % The type of object instance.
+    % The references and sub-nodes will be created from the given object type.
+    % If defined, the node_class MUST be object or undefined.
+    instance_of => template_node_spec(),
 
     % List of required referencesa a list of tuple with the reference type spec
     % and either a node spec to an existing node, or a node template that may
@@ -62,6 +66,37 @@
 }.
 -export_type([node_template/0]).
 -export_type([template_result/0]).
+
+%%% MACROS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(ENABLE_DEBUG, false).
+-if(?ENABLE_DEBUG =:= true).
+-define(DEBUG(F, A), io:format(F "~n", A)).
+-define(TAG(ARG), fun
+    (#opcua_node_id{} = __Id) ->
+        iolist_to_binary(io_lib:format("~p", [opcua_node:spec(__Id)]));
+    (#{browse_name := __N} = __T) ->
+        __NS = maps:get(namespace, __T, 0),
+        __Spec = opcua_node:spec(maps:get(node_id, __T, undefined)),
+        __Alias = case maps:find(alias, __T) of
+            error -> <<"">>;
+            {ok, __R} when is_reference(__R) ->
+                iolist_to_binary(io_lib:format("(~s)", [erlang:ref_to_list(__R)]));
+            {ok, __A} when is_atom(__A) ->
+                iolist_to_binary(io_lib:format("(~w)", [__A]))
+        end,
+        iolist_to_binary(io_lib:format("~p:~s/~p~s", [__NS, __N, __Spec, __Alias]));
+    (#opcua_node{node_id = __Id, browse_name = __N}) ->
+        iolist_to_binary(io_lib:format("~s/~p", [__N, opcua_node:spec(__Id)]));
+    (#opcua_reference{type_id = __R, source_id = __S, target_id = __T}) ->
+        iolist_to_binary(io_lib:format("~p=~p=>~p",
+            [opcua_node:spec(__S), opcua_node:spec(__R),opcua_node:spec(__T)]));
+    (__O) ->
+        iolist_to_binary(io_lib:format("~p", [__O]))
+end(ARG)).
+-else.
+-define(DEBUG(F, A), ok).
+-endif.
 
 
 %%% API FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -101,6 +136,8 @@ normalize_options(#{node_id_fun := Fun} = Opts) when is_function(Fun) ->
         node_aliases => #{}
     }, Opts).
 
+resolve_id(_Space, _Opts, #opcua_node_id{} = NodeId) ->
+    NodeId;
 resolve_id(_Space, #{namespace_aliases := Aliases}, {Alias, Id})
   when is_atom(Alias), is_integer(Id); is_binary(Id) ->
     case maps:find(Alias, Aliases) of
@@ -121,11 +158,9 @@ resolve_id(Space, _Opts, {Uri, Id})
 resolve_id(_Space, #{node_aliases := Aliases}, NodeSpec)
   when is_atom(NodeSpec); is_integer(NodeSpec); is_binary(NodeSpec) ->
     case maps:find(NodeSpec, Aliases) of
-        error -> opcua_node:id(NodeSpec);
-        {ok, NodeId} -> NodeId
-    end;
-resolve_id(_Space, _Opts, #opcua_node_id{} = NodeId) ->
-    NodeId.
+        {ok, #opcua_node_id{} = NodeId} -> NodeId;
+        error -> opcua_node:id(NodeSpec)
+    end.
 
 resolve_namespace(_Space, _Opts, undefined, undefined) ->
     {0, undefined};
@@ -196,28 +231,41 @@ match_node({_NS, Name1, #opcua_node_id{} = NodeId},
     throw({browse_name_conflict, NodeId, Name1, Name2});
 match_node({_NS, _Name, _NodeId}, _Node) -> false.
 
+update_alias(Aliases, #{alias := Alias} = Template) ->
+    {Alias, Template, Aliases#{Alias => Template}};
+update_alias(Aliases, Template) ->
+    Alias = make_ref(),
+    Template2 = Template#{alias => Alias},
+    {Alias, Template2, Aliases#{Alias => Template2}}.
+
 prepare_templates(Space, Opts, Templates) when is_list(Templates) ->
     % First check for already existing nodes and relations.
-    PrepTemplates = prepare_templates(Space, Opts, Templates, []),
+    ?DEBUG("Preparing ~w templates...", [length(Templates)]),
+    {Order, Aliases} = prepare_templates(Space, Opts, Templates, #{}, []),
     % Then create the missing nodes and relations, validate exisiting nodes
     % and prepare the result structure.
-    apply_templates(Space, Opts, PrepTemplates, [], [], []).
+    ?DEBUG("Applying ~w templates...", [length(Order)]),
+    apply_templates(Space, Opts, Aliases, Order).
 
-prepare_templates(_Space, _Opts, [], Acc) ->
-    lists:reverse(Acc);
-prepare_templates(Space, Opts, [Template | Rest], Acc) ->
-    PrepTemplate = prepare_template(Space, Opts, Template),
-    prepare_templates(Space, Opts, Rest, [PrepTemplate | Acc]).
+prepare_templates(_Space, _Opts, [], Aliases, Acc) ->
+    {lists:reverse(Acc), Aliases};
+prepare_templates(Space, Opts, [Template | Rest], Aliases, Acc) ->
+    ?DEBUG("Preparing template ~s...", [?TAG(Template)]),
+    {Alias, Aliases2} = prepare_template(Space, Opts, Aliases, Template),
+    ?DEBUG("Preparing template ~s: DONE", [?TAG(Template)]),
+    prepare_templates(Space, Opts, Rest, Aliases2, [Alias | Acc]).
 
-prepare_template(Space, Opts, Template) ->
+prepare_template(Space, Opts, Aliases, Template) ->
     % First try figuring out if nodes and references needs to be created
     % by following references up from the bottom of the template structure,
     % propagating up the existing node identifiers.
-    {_, Template2} = bottomup_prepare_node(Space, Opts, Template),
+    {_, Alias, Aliases2}
+        = bottomup_prepare_node(Space, Opts, Aliases, Template),
     % Then from top to bottom, check for exisiting nodes and relations.
-    topdown_prepare_node(Space, Opts, Template2).
+    Aliases3 = topdown_prepare_node(Space, Opts, Aliases2, Alias),
+    {Alias, Aliases3}.
 
-bottomup_prepare_node(Space, Opts, Template) when is_map(Template) ->
+bottomup_prepare_node(Space, Opts, Aliases, Template) when is_map(Template) ->
     #{browse_name := TemplateBrowseName} = Template,
     {Template2, TemplateNamespace, TemplateNodeId} = case Template of
         #{namespace := TNS, node_id := TId} = T ->
@@ -230,143 +278,238 @@ bottomup_prepare_node(Space, Opts, Template) when is_map(Template) ->
             {NS, Id} = resolve_namespace(Space, Opts, TNS, undefined),
             {T#{namespace => NS, node_id => Id}, NS, Id}
     end,
+    {_, Template3, Aliases2} = update_alias(Aliases, Template2),
+    ?DEBUG("Bottom-Up preparation of ~s...", [?TAG(Template3)]),
     MatchSpec = {TemplateNamespace, TemplateBrowseName, TemplateNodeId},
     RefSpecs = maps:get(references, Template2, []),
-    case bottomup_prepare_refs(Space, Opts, MatchSpec, RefSpecs) of
-        {undefined, PreparedRefs} ->
-            % No node found with any of the references
+    case bottomup_prepare_refs(Space, Opts, Aliases2, MatchSpec, RefSpecs) of
+        {undefined, PreparedRefs, Aliases3} ->
+            % No node found with any of the references,
+            % try retriving the current node from node_id
+            ?DEBUG("Bottom-Up preparation of template ~s: NODE NOT FOUND FROM REFERENCES",
+                   [?TAG(Template3)]),
             {NodeRec, NodeId}
                 = retrieve_node(Space, Opts, optional, TemplateNodeId),
-            Template3 = Template2#{node => NodeRec, node_id => NodeId,
+            Template4 = Template3#{node => NodeRec, node_id => NodeId,
                                    references => PreparedRefs},
-            {NodeRec, Template3};
-        {NodeRec, PreparedRefs} ->
+            {Alias, _, Aliases4} = update_alias(Aliases3, Template4),
+            {NodeRec, Alias, Aliases4};
+        {#opcua_node{node_id = NodeId} = NodeRec, PreparedRefs, Aliases3} ->
+            ?DEBUG("Bottom-Up preparation of template ~s: FOUND ~s",
+                   [?TAG(Template3), ?TAG(NodeRec)]),
             % Found a match from the references, keep it for later validation
-            Template3 = Template2#{node => NodeRec, references => PreparedRefs},
-            {NodeRec, Template3}
+            Template4 = Template3#{node => NodeRec, node_id => NodeId,
+                                   references => PreparedRefs},
+            {Alias, _, Aliases4} = update_alias(Aliases3, Template4),
+            {NodeRec, Alias, Aliases4}
     end;
-bottomup_prepare_node(Space, Opts, NodeSpec) ->
-    retrieve_node(Space, Opts, required, NodeSpec).
+bottomup_prepare_node(Space, Opts, Aliases, NodeSpecOrAlias) ->
+    case maps:find(NodeSpecOrAlias, Aliases) of
+        error ->
+            ?DEBUG("Bottom-Up preparation reached external ~s...",
+                   [?TAG(NodeSpecOrAlias)]),
+            {NodeRec, NodeId}
+                = retrieve_node(Space, Opts, required, NodeSpecOrAlias),
+            {NodeRec, NodeId, Aliases};
+        {ok, #{node := NodeRec}} ->
+            ?DEBUG("Bottom-Up preparation reached alias ~s...",
+                   [?TAG(NodeSpecOrAlias)]),
+            {NodeRec, NodeSpecOrAlias, Aliases}
+    end.
 
 retrieve_node(Space, Opts, required, NodeSpec)
   when NodeSpec =/= undefined ->
     NodeId = resolve_id(Space, Opts, NodeSpec),
     case opcua_space:node(Space, NodeId) of
         undefined -> throw({node_not_found, NodeSpec});
-        NodeRec -> {NodeRec, NodeId}
+        NodeRec ->
+            ?DEBUG("Found node ~s: ~s", [?TAG(NodeSpec), ?TAG(NodeRec)]),
+            {NodeRec, NodeId}
     end;
 retrieve_node(_Space, _Opts, optional, undefined) ->
     {undefined, undefined};
 retrieve_node(Space, Opts, optional, NodeSpec) ->
     NodeId = resolve_id(Space, Opts, NodeSpec),
     case opcua_space:node(Space, NodeId) of
-        undefined -> {undefined, NodeId};
-        NodeRec -> {NodeRec, NodeId}
+        undefined ->
+            ?DEBUG("Node ~s not found", [?TAG(NodeSpec)]),
+            {undefined, NodeId};
+        NodeRec ->
+            ?DEBUG("Found node ~s: ~s", [?TAG(NodeSpec), ?TAG(NodeRec)]),
+            {NodeRec, NodeId}
     end.
 
-bottomup_prepare_refs(Space, Opts, MatchSpec, RefSpecs) ->
-    bottomup_prepare_refs(Space, Opts, MatchSpec, RefSpecs, undefined, []).
+bottomup_prepare_refs(Space, Opts, Aliases, MatchSpec, RefSpecs) ->
+    ?DEBUG("Bottom-Up preparing ~w references...", [length(RefSpecs)]),
+    bottomup_prepare_refs(Space, Opts, Aliases, MatchSpec,
+                          RefSpecs, undefined, []).
 
-
-bottomup_prepare_refs(_Space, _Opts, _MatchSpec, [], NodeRec, Acc) ->
-    {NodeRec, lists:reverse(Acc)};
-bottomup_prepare_refs(Space, Opts, MatchSpec, [RefSpec | Rest], NodeRec, Acc) ->
-    {PeerRec, PrepRefSpec}
-        = bottomup_prepare_ref(Space, Opts, MatchSpec, RefSpec),
+bottomup_prepare_refs(_Space, _Opts, Aliases, _MatchSpec, [], NodeRec, Acc) ->
+    {NodeRec, lists:reverse(Acc), Aliases};
+bottomup_prepare_refs(Space, Opts, Aliases, MatchSpec,
+                      [RefSpec | Rest], NodeRec, Acc) ->
+    {PeerRec, PrepRefSpec, Aliases2}
+        = bottomup_prepare_ref(Space, Opts, Aliases, MatchSpec, RefSpec),
     case {NodeRec, PeerRec}  of
         {_, undefined} ->
             % No new matching reference found
-            bottomup_prepare_refs(Space, Opts, MatchSpec, Rest,
+            bottomup_prepare_refs(Space, Opts, Aliases2, MatchSpec, Rest,
                                   NodeRec, [PrepRefSpec | Acc]);
         {undefined, _} ->
             % No matching reference yet
-            bottomup_prepare_refs(Space, Opts, MatchSpec, Rest,
+            bottomup_prepare_refs(Space, Opts, Aliases2, MatchSpec, Rest,
                                   PeerRec, [PrepRefSpec | Acc]);
         {NodeRec, NodeRec} ->
             % Consistent reference to the same existing node
-            bottomup_prepare_refs(Space, Opts, MatchSpec, Rest,
+            bottomup_prepare_refs(Space, Opts, Aliases2, MatchSpec, Rest,
                                   NodeRec, [PrepRefSpec | Acc]);
         {#opcua_node{node_id = NodeId1}, #opcua_node{node_id = NodeId2}} ->
             % Found multiple nodes matching
             throw({node_id_conflict, NodeId1, NodeId2})
     end.
 
-bottomup_prepare_ref(Space, Opts, MatchSpec, {Dir, RefTypeSpec, Template}) ->
-    {PeerNode, Template2} = bottomup_prepare_node(Space, Opts, Template),
-    RefTypeId = resolve_id(Space, Opts, RefTypeSpec),
-    PrepRefSpec = {Dir, RefTypeId, PeerNode, Template2},
-    case PeerNode of
-        undefined ->
+
+bottomup_prepare_ref(Space, Opts, Aliases, MatchSpec,
+                     {Dir, RefTypeSpec, Template}) ->
+    ?DEBUG("Bottom-Up preparing ~s ~s reference to ~s...",
+           [Dir, ?TAG(RefTypeSpec), ?TAG(Template)]),
+    {PeerNode, TemplateId, Aliases2}
+        = bottomup_prepare_node(Space, Opts, Aliases, Template),
+    %TODO: Remove this assert
+    case TemplateId of
+        #opcua_node_id{} -> ok;
+        _ -> {ok, _} = maps:find(TemplateId, Aliases2)
+    end,
+    %TODO
+    {RefTypeId, RefTypeAlias} = case maps:find(RefTypeSpec, Aliases) of
+        {ok, #{node_id := Id}} ->
+            % Keep alias references for later
+            {Id, RefTypeSpec};
+        error ->
+            % Resolve to a node id
+            Id = resolve_id(Space, Opts, RefTypeSpec),
+            {Id, Id}
+    end,
+    PrepRefSpec = {Dir, RefTypeAlias, PeerNode, TemplateId},
+    case {RefTypeId, PeerNode} of
+        {_, undefined} ->
             % No sub-node found, no need to check references yet
-            {undefined, PrepRefSpec};
-        #opcua_node{node_id = PeerId} ->
-            % Found peer node, check for a matching reverse reference
+            ?DEBUG("Bottom-Up preparing ~s ~s reference to ~s: CAN'T DO",
+                   [Dir, ?TAG(RefTypeSpec), ?TAG(Template)]),
+            {undefined, PrepRefSpec, Aliases2};
+        {#opcua_node_id{}, #opcua_node{node_id = PeerId} = _PeerNode} ->
+            % Found peer node, and reference type, check for a matching reverse reference
+            ?DEBUG("Bottom-Up preparing ~s ~s reference to ~s: FOUND PEER ~s",
+                   [Dir, ?TAG(RefTypeSpec), ?TAG(Template), ?TAG(_PeerNode)]),
             RefOpts = #{direction => reverse(Dir),
                         type => RefTypeId,
                         include_subtypes => false},
             Refs = opcua_space:references(Space, PeerId, RefOpts),
+            ?DEBUG("Bottom-Up preparing ~s ~s reference to ~s: FOUND ~w REFERENCES",
+                   [Dir, ?TAG(RefTypeSpec), ?TAG(Template), length(Refs)]),
             ParentIds = [select_side(top, Dir, Ref) || Ref <- Refs],
             ParentNodes = [opcua_space:node(Space, I) || I <- ParentIds],
             MatchingNodes = [N || N <- ParentNodes, match_node(MatchSpec, N)],
+            ?DEBUG("Bottom-Up preparing ~s ~s reference to ~s: FOUND ~w MATCHES",
+                   [Dir, ?TAG(RefTypeSpec), ?TAG(Template), length(MatchingNodes)]),
             case MatchingNodes of
-                [] -> {undefined, PrepRefSpec};
-                [ParentNode] -> {ParentNode, PrepRefSpec};
+                [] -> {undefined, PrepRefSpec, Aliases2};
+                [ParentNode] -> {ParentNode, PrepRefSpec, Aliases2};
                 OtherNodes ->
                     throw({multiple_match, MatchSpec,
                            [I || #opcua_node{node_id = I} <- OtherNodes]})
-            end
+            end;
+        {_, _} ->
+            % The reference type is not yet created
+            {undefined, PrepRefSpec, Aliases2}
     end.
 
-topdown_prepare_node(Space, Opts,
-                     #{node := Node, references := RefSpecs} = Template) ->
-    RefSpecs2 = topdown_prepare_refs(Space, Opts, Node, RefSpecs),
-    Template#{references := RefSpecs2}.
+topdown_prepare_node(_Space, _Opts, Aliases, #opcua_node_id{} = _NodeId) ->
+    % Reference to external node, nothing to do there
+    ?DEBUG("Top-Down preparation reached leaf ~s", [?TAG(_NodeId)]),
+    Aliases;
+topdown_prepare_node(Space, Opts, Aliases, Alias) ->
+    #{Alias := #{node := Node, references := RefSpecs} = Template} = Aliases,
+    ?DEBUG("Top-Down preparation of ~s...", [?TAG(Template)]),
+    {RefSpecs2, Aliases2}
+        = topdown_prepare_refs(Space, Opts, Aliases, Node, RefSpecs),
+    Template2 = Template#{references := RefSpecs2},
+    {_, _, Aliases3} = update_alias(Aliases2, Template2),
+    Aliases3.
 
-topdown_prepare_refs(Space, Opts, Node, RefSpecs) ->
-    topdown_prepare_refs(Space, Opts, Node, RefSpecs, []).
+topdown_prepare_refs(Space, Opts, Aliases, Node, RefSpecs) ->
+    ?DEBUG("Top-Down preparation of ~w references...", [length(RefSpecs)]),
+    topdown_prepare_refs(Space, Opts, Aliases, Node, RefSpecs, []).
 
-topdown_prepare_refs(_Space, _Opts, _Node, [], Acc) ->
-    lists:reverse(Acc);
-topdown_prepare_refs(Space, Opts, Node, [RefSpec | Rest], Acc) ->
-    RefSpec2 = topdown_prepare_ref(Space, Opts, Node, RefSpec),
-    topdown_prepare_refs(Space, Opts, Node, Rest, [RefSpec2 | Acc]).
+topdown_prepare_refs(_Space, _Opts, Aliases, _Node, [], Acc) ->
+    {lists:reverse(Acc), Aliases};
+topdown_prepare_refs(Space, Opts, Aliases, Node, [RefSpec | Rest], Acc) ->
+    {RefSpec2, Aliases2}
+        = topdown_prepare_ref(Space, Opts, Aliases, Node, RefSpec),
+    topdown_prepare_refs(Space, Opts, Aliases2, Node, Rest, [RefSpec2 | Acc]).
 
-topdown_prepare_ref(_Space, _Opts, _ParentNode,
+topdown_prepare_ref(_Space, _Opts, Aliases, _ParentNode,
                     {_Dir, _RefTypeId, #opcua_node{} = _PeerNode,
-                     #opcua_node_id{}} = RefSpec) ->
+                     #opcua_node_id{} = _Id} = RefSpec) ->
     % No top-down reference check required or possible and we reached a leaf
-    RefSpec;
-topdown_prepare_ref(Space, Opts, #opcua_node{} = _ParentNode,
-                    {Dir, RefTypeId, #opcua_node{} = PeerNode, Template}) ->
+    ?DEBUG("Top-Down preparing ~s ~s reference to ~s => ~s: REACHED LEAF",
+           [_Dir, ?TAG(_RefTypeId), ?TAG(_Id), ?TAG(_PeerNode)]),
+    {RefSpec, Aliases};
+topdown_prepare_ref(Space, Opts, Aliases, #opcua_node{} = _ParentNode,
+                    {_Dir, _RefTypeId, #opcua_node{} = _PeerNode,
+                     Alias} = RefSpec) ->
     % No top-down reference check required, continue down
-    Template2 = topdown_prepare_node(Space, Opts, Template),
-    {Dir, RefTypeId, PeerNode, Template2};
-topdown_prepare_ref(Space, Opts, undefined,
-                    {Dir, RefTypeId, PeerNode, Template}) ->
+    ?DEBUG("Top-Down preparing ~s ~s reference to ~s => ~s: NO NEED",
+           [_Dir, ?TAG(_RefTypeId), ?TAG(Alias), ?TAG(_PeerNode)]),
+    {RefSpec, topdown_prepare_node(Space, Opts, Aliases, Alias)};
+topdown_prepare_ref(Space, Opts, Aliases, undefined,
+                    {_Dir, _RefTypeId, _PeerNode, Alias} = RefSpec) ->
     % No top-down reference check possible, continue down
-    Template2 = topdown_prepare_node(Space, Opts, Template),
-    {Dir, RefTypeId, PeerNode, Template2};
-topdown_prepare_ref(Space, Opts, ParentNode,
-                    {Dir, RefTypeId, undefined, Template}) ->
+    ?DEBUG("Top-Down preparing ~s ~s reference to ~s => ~s: CAN'T DO",
+           [_Dir, ?TAG(_RefTypeId), ?TAG(Alias), ?TAG(_PeerNode)]),
+    {RefSpec, topdown_prepare_node(Space, Opts, Aliases, Alias)};
+topdown_prepare_ref(Space, Opts, Aliases, ParentNode,
+                    {Dir, #opcua_node_id{} = RefTypeId, undefined, Alias}) ->
+    ?DEBUG("Top-Down preparing ~s ~s reference to ~s: CHECKING...",
+           [Dir, ?TAG(RefTypeId), ?TAG(Alias)]),
+    #{Alias := Template} = Aliases,
+    PeerNode
+        = topdown_check_refs(Space, Opts, ParentNode, Dir, RefTypeId, Template),
+    {_, _, Aliases2} = update_alias(Aliases, Template#{node := PeerNode}),
+    Aliases3 = topdown_prepare_node(Space, Opts, Aliases2, Alias),
+    {{Dir, RefTypeId, PeerNode, Alias}, Aliases3};
+topdown_prepare_ref(Space, Opts, Aliases, ParentNode,
+                    {Dir, RefTypeAlias, undefined, Alias}) ->
+    % The reference type is an alias an may not exist yet
+    ?DEBUG("Top-Down preparing ~s ~s reference to ~s: CHECKING...",
+           [Dir, ?TAG(RefTypeAlias), ?TAG(Alias)]),
+    #{RefTypeAlias := #{node_id := RefTypeId}} = Aliases,
+    #{Alias := Template} = Aliases,
+    PeerNode
+        = topdown_check_refs(Space, Opts, ParentNode, Dir, RefTypeId, Template),
+    {_, _, Aliases2} = update_alias(Aliases, Template#{node := PeerNode}),
+    Aliases3 = topdown_prepare_node(Space, Opts, Aliases2, Alias),
+    {{Dir, RefTypeAlias, PeerNode, Alias}, Aliases3}.
+
+topdown_check_refs(_Space, _Opts, _ParentNode, _Dir, undefined, _Template) ->
+    undefined;
+topdown_check_refs(Space, _Opts, ParentNode, Dir, RefTypeId, Template) ->
     % Check for references from the parent node
+    #opcua_node{node_id = ParentId} = ParentNode,
     #{namespace := NS, browse_name := BrowseName, node_id := NodeId} = Template,
     MatchSpec = {NS, BrowseName, NodeId},
     RefOpts = #{direction => Dir, type => RefTypeId, include_subtypes => false},
-    #opcua_node{node_id = ParentId} = ParentNode,
     Refs = opcua_space:references(Space, ParentId, RefOpts),
+    ?DEBUG("Top-Down preparing ~s ~s reference to ~s: ~w REFERENCES FOUND",
+           [Dir, ?TAG(RefTypeId), ?TAG(Template), length(Refs)]),
     PeerIds = [select_side(bottom, Dir, Ref) || Ref <- Refs],
     PeerNodes = [opcua_space:node(Space, I) || I <- PeerIds],
     MatchingNodes = [N || N <- PeerNodes, match_node(MatchSpec, N)],
+    ?DEBUG("Top-Down preparing ~s ~s reference to ~s: ~w MATCHES",
+           [Dir, ?TAG(RefTypeId), ?TAG(Template), length(MatchingNodes)]),
     case MatchingNodes of
-        [] ->
-            % No reference found, continue down
-            Template2 = topdown_prepare_node(Space, Opts, Template),
-            {Dir, RefTypeId, undefined, Template2};
-        [PeerNode] ->
-            % Found a peer node, update the ref spec and template and continue
-            Template2 = Template#{node := PeerNode},
-            Template3 = topdown_prepare_node(Space, Opts, Template2),
-            {Dir, RefTypeId, PeerNode, Template3};
+        [] -> undefined;
+        [PeerNode] -> PeerNode;
         OtherNodes ->
             throw({multiple_match, MatchSpec,
                    [I || #opcua_node{node_id = I} <- OtherNodes]})
@@ -380,58 +523,96 @@ select_side(top, inverse, #opcua_reference{target_id = NodeId}) -> NodeId;
 select_side(bottom, forward, #opcua_reference{target_id = NodeId}) -> NodeId;
 select_side(bottom, inverse, #opcua_reference{source_id = NodeId}) -> NodeId.
 
-apply_templates(_Space, _Opts, [], Refs, Nodes, Acc) ->
-    {lists:reverse(Acc), Nodes, Refs};
-apply_templates(Space, Opts, [Template | Rest], Refs, Nodes, Acc) ->
-    {Result, Nodes2, Refs2}
-        = collect_node(Space, Opts, Refs, Nodes, Template),
-    apply_templates(Space, Opts, Rest, Refs2, Nodes2, [Result | Acc]).
+apply_templates(Space, Opts, Aliases, Order) ->
+    apply_templates(Space, Opts, Aliases, Order, [], #{}, []).
 
+apply_templates(_Space, _Opts, _Aliases, [], Refs, Nodes, Acc) ->
+    {lists:reverse(Acc), maps:values(Nodes), Refs};
+apply_templates(Space, Opts, Aliases, [Alias | Rest], Refs, Nodes, Acc) ->
+    {Result, Nodes2, Refs2, Aliases2}
+        = collect_node(Space, Opts, Aliases, Refs, Nodes, Alias),
+    apply_templates(Space, Opts, Aliases2, Rest, Refs2, Nodes2, [Result | Acc]).
 
-collect_node(_Space, _Opts, Refs, Nodes, #opcua_node_id{} = NodeId) ->
+collect_node(_Space, _Opts, Aliases, Refs, Nodes, #opcua_node_id{} = NodeId) ->
     % Reached a leaf
-    {{NodeId, []}, Nodes, Refs};
-collect_node(Space, Opts, Refs, Nodes,
-             #{node := #opcua_node{node_id = NodeId} = Node,
-               references := RefSpecs} = Template) ->
-    % Node was found, validate it matches the template
-    case validate_node(Space, Opts, Template, Node) of
-        %TODO: Uncomment when validate_node is implemented
-        % false -> throw({node_validation_failed, Node#opcua_node.node_id});
-        true ->
-            {Results, Nodes2, Refs2}
-                = collect_refs(Space, Opts, Refs, Nodes, true, Node, RefSpecs),
-            {{NodeId, Results}, Nodes2, Refs2}
-    end;
-collect_node(Space, Opts, Refs, Nodes,
-             #{node := undefined, references := RefSpecs} = Template) ->
-    % Node not found, create it and continue down
-    #opcua_node{node_id = NodeId} = Node = create_node(Space, Opts, Template),
-    {Results, Nodes2, Refs2}
-        = collect_refs(Space, Opts, Refs, [Node | Nodes], false, Node, RefSpecs),
-    {{NodeId, Results}, Nodes2, Refs2}.
+    {{NodeId, []}, Nodes, Refs, Aliases};
+collect_node(Space, Opts, Aliases, Refs, Nodes, Alias) ->
+    case maps:find(Alias, Nodes) of
+        {ok, #opcua_node{node_id = NodeId} = _Node} ->
+            ?DEBUG("Collecting from ~s: NODE ~s ALLREADY CREATED",
+                   [?TAG(maps:get(Alias, Aliases)), ?TAG(_Node)]),
+            {{NodeId, []}, Nodes, Refs, Aliases};
+        error ->
+            #{Alias := Template} = Aliases,
+            #{node := NodeRec, references := RefSpecs} = Template,
+            ?DEBUG("Collecting from ~s...", [?TAG(Template)]),
+            case NodeRec of
+                undefined ->
+                    % Node not found, create it and continue down
+                    {Node, Aliases2}
+                        = create_node(Space, Opts, Aliases, Template),
+                    ?DEBUG("Collecting from ~s: NODE ~s CREATED",
+                           [?TAG(Template), ?TAG(Node)]),
+                    #opcua_node{node_id = NodeId} = Node,
+                    Nodes2 = Nodes#{Alias => Node},
+                    {Results, Nodes3, Refs2, Aliases3}
+                        = collect_refs(Space, Opts, Aliases2, Refs,
+                                       Nodes2, false, Node, RefSpecs),
+                    {{NodeId, Results}, Nodes3, Refs2, Aliases3};
+                #opcua_node{node_id = NodeId} ->
+                    % Node was found, validate it matches the template
+                    ?DEBUG("Collecting from ~s: NODE ~s ALREADY EXISTS",
+                           [?TAG(Template), ?TAG(NodeRec)]),
+                    case validate_node(Space, Opts, Template, NodeRec) of
+                        %TODO: Uncomment when validate_node is implemented
+                        % false -> throw({node_validation_failed, Node#opcua_node.node_id});
+                        true ->
+                            {Results, Nodes2, Refs2, Aliases2}
+                                = collect_refs(Space, Opts, Aliases, Refs,
+                                               Nodes, true, NodeRec, RefSpecs),
+                            {{NodeId, Results}, Nodes2, Refs2, Aliases2}
+                    end
+            end
+    end.
 
-collect_refs(Space, Opts, Refs, Nodes, ParentExists, ParentNode, RefSpecs) ->
-    collect_refs(Space, Opts, Refs, Nodes, ParentExists, ParentNode, RefSpecs, []).
+collect_refs(Space, Opts, Aliases, Refs, Nodes,
+             ParentExists, ParentNode, RefSpecs) ->
+    ?DEBUG("Collecting from ~w references of ~s ~s...",
+           [length(RefSpecs),
+            if ParentExists -> "existing"; true -> "new" end,
+            ?TAG(ParentNode)]),
+    collect_refs(Space, Opts, Aliases, Refs, Nodes,
+                 ParentExists, ParentNode, RefSpecs, []).
 
-collect_refs(_Space, _Opts, Refs, Nodes, _ParentExists, _ParentNode, [], Acc) ->
-    {lists:reverse(Acc), Nodes, Refs};
-collect_refs(Space, Opts, Refs, Nodes, ParentExists, ParentNode, [RefSpec | Rest], Acc) ->
-    {Result, Nodes2, Refs2}
-        = collect_ref(Space, Opts, Refs, Nodes, ParentExists, ParentNode, RefSpec),
-    collect_refs(Space, Opts, Refs2, Nodes2, ParentExists, ParentNode, Rest, [Result | Acc]).
+collect_refs(_Space, _Opts, Aliases, Refs, Nodes,
+             _ParentExists, _ParentNode, [], Acc) ->
+    {lists:reverse(Acc), Nodes, Refs, Aliases};
+collect_refs(Space, Opts, Aliases, Refs, Nodes,
+             ParentExists, ParentNode, [RefSpec | Rest], Acc) ->
+    {Result, Nodes2, Refs2, Aliases2}
+        = collect_ref(Space, Opts, Aliases, Refs, Nodes,
+                      ParentExists, ParentNode, RefSpec),
+    collect_refs(Space, Opts, Aliases2, Refs2, Nodes2,
+                 ParentExists, ParentNode, Rest, [Result | Acc]).
 
-collect_ref(Space, Opts, Refs, Nodes, true, _ParentNode,
-            {_Dir, _RefTypeId, #opcua_node{}, Template}) ->
+collect_ref(Space, Opts, Aliases, Refs, Nodes, true, _ParentNode,
+            {_Dir, _RefTypeId, #opcua_node{} = _PeerNode, Alias}) ->
     % The reference was already found, only continue collecting
-    collect_node(Space, Opts, Refs, Nodes, Template);
-collect_ref(Space, Opts, Refs, Nodes, _ParentExists, ParentNode,
-            {Dir, RefTypeId, _PeerNode, Template}) ->
+    ?DEBUG("Collecting from ~s ~s reference to ~s => ~s : ALREADY EXISTS",
+           [_Dir, ?TAG(_RefTypeId), ?TAG(Alias), ?TAG(_PeerNode)]),
+    collect_node(Space, Opts, Aliases, Refs, Nodes, Alias);
+collect_ref(Space, Opts, Aliases, Refs, Nodes, _ParentExists, ParentNode,
+            {Dir, RefTypeId, _PeerNode, Alias}) ->
     % Reference wasn't found, create one and continue
-    {{PeerId, _} = Result, Nodes2, Refs2}
-        = collect_node(Space, Opts, Refs, Nodes, Template),
-    Ref = create_reference(Space, Opts, RefTypeId, Dir, ParentNode, PeerId),
-    {Result, Nodes2, [Ref | Refs2]}.
+    ?DEBUG("Collecting from ~s ~s reference to ~s => ~s...",
+           [Dir, ?TAG(RefTypeId), ?TAG(Alias), ?TAG(_PeerNode)]),
+    {{PeerId, _} = Result, Nodes2, Refs2, Aliases2}
+        = collect_node(Space, Opts, Aliases, Refs, Nodes, Alias),
+    Ref = create_reference(Space, Opts, Aliases2, RefTypeId,
+                           Dir, ParentNode, PeerId),
+    ?DEBUG("Collecting from ~s ~s reference to ~s => ~s : CREATED REFERENCE ~s",
+           [Dir, ?TAG(RefTypeId), ?TAG(Alias), ?TAG(_PeerNode), ?TAG(Ref)]),
+    {Result, Nodes2, [Ref | Refs2], Aliases2}.
 
 template_get(Key, Template) ->
     case maps:find(Key, Template) of
@@ -442,22 +623,27 @@ template_get(Key, Template) ->
 template_get(Key, Template, Default) ->
     maps:get(Key, Template, Default).
 
-create_node(Space, #{node_id_fun := Fun} = Opts, Template) ->
-    NodeId = case Template of
-        #{node_id := #opcua_node_id{} = I} -> I;
-        _ -> Fun()
+create_node(Space, #{node_id_fun := Fun} = Opts, Aliases, Template) ->
+    {NodeId, Template2, Aliases2} = case Template of
+        #{node_id := #opcua_node_id{} = I} = T -> {I, T, Aliases};
+        T ->
+            % No node id defined, generate a new one
+            I = Fun(),
+            T2 = T#{node_id => I},
+            {_, T2, As2} = update_alias(Aliases, T2),
+            {I, T2, As2}
     end,
-    ClassName = template_get(class, Template, object),
-    ClassRec = create_node_class(Space, Opts, ClassName, Template),
+    ClassName = template_get(class, Template2, object),
+    ClassRec = create_node_class(Space, Opts, ClassName, Template2),
     NodeRec = #opcua_node{
         node_id = NodeId,
         node_class = ClassRec,
         origin = local,
-        browse_name = template_get(browse_name, Template),
-        display_name = template_get(display_name, Template, undefined),
-        description = template_get(description, Template, undefined)
+        browse_name = template_get(browse_name, Template2),
+        display_name = template_get(display_name, Template2, undefined),
+        description = template_get(description, Template2, undefined)
     },
-    NodeRec.
+    {NodeRec, Aliases2}.
 
 create_node_class(_Space, _Opts, object, _Template) ->
     #opcua_object{};
@@ -466,7 +652,7 @@ create_node_class(Space, Opts, variable, Template) ->
     #opcua_variable{
         value = template_get(value, Template, undefined),
         data_type = DataType,
-        value_rank = template_get(value, Template, -1),
+        value_rank = template_get(value_rank, Template, -1),
         array_dimensions = template_get(array_dimensions, Template, [])
     };
 create_node_class(_Space, _Opts, object_type, Template) ->
@@ -496,14 +682,19 @@ create_node_class(_Space, _Opts, reference_type, Template) ->
 create_node_class(_Space, _Opts, NodeClass, _Template) ->
     throw({unsupported_node_class, NodeClass}).
 
-create_reference(_Space, _Opts, RefTypeId, forward,
-                 #opcua_node{node_id = SourceId, browse_name = _SourceName},
+create_reference(Space, Opts, Aliases, RefTypeAlias, Dir, Source, Target)
+  when is_atom(RefTypeAlias) ->
+    % The reference type is an alias
+    #{RefTypeAlias := #{node_id := RefTypeId}} = Aliases,
+    create_reference(Space, Opts, Aliases, RefTypeId, Dir, Source, Target);
+create_reference(_Space, _Opts, _Aliases, RefTypeId, forward,
+                 #opcua_node{node_id = SourceId},
                  #opcua_node_id{} = TargetId) ->
     #opcua_reference{type_id = RefTypeId,
                      source_id = SourceId,
                      target_id = TargetId};
-create_reference(_Space, _Opts, RefTypeId, inverse,
-                 #opcua_node{node_id = TargetId, browse_name = _TargetName},
+create_reference(_Space, _Opts, _Aliases, RefTypeId, inverse,
+                 #opcua_node{node_id = TargetId},
                  #opcua_node_id{} = SourceId) ->
     #opcua_reference{type_id = RefTypeId,
                      source_id = SourceId,

@@ -106,15 +106,15 @@ two_layer_forward_ref_test() ->
             namespace => ?NS,
             browse_name => <<"Foo">>,
             references => [
-                {forward, ?NNID(33), #{
+                {forward, 33, #{
                     namespace => ?NS,
                     browse_name => <<"Bar">>
                 }},
-                {forward, ?NNID(33), #{
+                {forward, 33, #{
                     namespace => ?NS,
                     browse_name => <<"Buz">>,
                     references => [
-                        {forward, ?NNID(33), ?STATIC1}
+                        {forward, 33, ?STATIC1}
                     ]
                 }}
             ]
@@ -142,15 +142,15 @@ two_layer_inverse_ref_test() ->
             namespace => ?NS,
             browse_name => <<"Foo">>,
             references => [
-                {inverse, ?NNID(33), #{
+                {inverse, 33, #{
                     namespace => ?NS,
                     browse_name => <<"Bar">>
                 }},
-                {inverse, ?NNID(33), #{
+                {inverse, 33, #{
                     namespace => ?NS,
                     browse_name => <<"Buz">>,
                     references => [
-                        {inverse, ?NNID(33), ?STATIC1}
+                        {inverse, 33, ?STATIC1}
                     ]
                 }}
             ]
@@ -158,6 +158,75 @@ two_layer_inverse_ref_test() ->
     opcua_space_backend:terminate(Space),
     ok.
 
+aliases_test() ->
+    Space = new_space(),
+    ?assertTemplate(Space,
+       [{?LNNID(1), []},{?LNNID(2), [{?LNNID(1), []},{?STATIC1, []}]}],
+       [#opcua_node{node_id = ?LNNID(1), browse_name = <<"Foo">>},
+        #opcua_node{node_id = ?LNNID(2), browse_name = <<"Bar">>}],
+       [#opcua_reference{type_id = ?NNID(33),
+                         source_id = ?LNNID(2),
+                         target_id = ?STATIC1},
+        #opcua_reference{type_id = ?NNID(33),
+                         source_id = ?LNNID(2),
+                         target_id = ?LNNID(1)}],
+        [#{
+            alias => foo,
+            namespace => ?NS,
+            browse_name => <<"Foo">>
+        },
+        #{
+            namespace => ?NS,
+            browse_name => <<"Bar">>,
+            references => [
+                {forward, 33, foo},
+                 % The anchor to prevent it to be created everyt time:
+                {forward, 33, ?STATIC1}
+            ]
+        }]),
+    opcua_space_backend:terminate(Space),
+    ok.
+
+reference_type_alias_test() ->
+    Space = new_space(),
+    ?assertTemplate(Space,
+       [{?LNNID(1), [{?STATIC2, []}]},
+        {?LNNID(2), [{?LNNID(3), []},{?STATIC1, []}]}],
+       [#opcua_node{node_id = ?LNNID(1), browse_name = <<"MyRefType">>},
+        #opcua_node{node_id = ?LNNID(2), browse_name = <<"Foo">>},
+        #opcua_node{node_id = ?LNNID(3), browse_name = <<"Bar">>}],
+       [#opcua_reference{type_id = ?NNID(42),
+                         source_id = ?STATIC2,
+                         target_id = ?LNNID(1)},
+        #opcua_reference{type_id = ?LNNID(1),
+                         source_id = ?LNNID(2),
+                         target_id = ?STATIC1},
+        #opcua_reference{type_id = ?LNNID(1),
+                         source_id = ?LNNID(2),
+                         target_id = ?LNNID(3)}],
+        [#{
+            alias => my_ref_type,
+            namespace => ?NS,
+            node_class => reference_type,
+            browse_name => <<"MyRefType">>,
+            references => [
+                {inverse, 42, ?STATIC2} % As if it was an has_subtype
+            ]
+        },
+        #{
+            namespace => ?NS,
+            browse_name => <<"Foo">>,
+            references => [
+                {forward, my_ref_type, #{
+                    namespace => ?NS,
+                    browse_name => <<"Bar">>
+                }},
+                % The anchor to prevent it to be created everyt time:
+                {forward, my_ref_type, ?STATIC1}
+            ]
+        }]),
+    opcua_space_backend:terminate(Space),
+    ok.
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

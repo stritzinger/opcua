@@ -161,9 +161,6 @@ next_secure_channel_id(#state{next_secure_channel_id = Id} = State) ->
 
 static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir, subtypes = SubTypes}) ->
     #opcua_node{node_id = NodeId} = Node,
-    ?LOG_DEBUG("Browsing node ~s ~w references ~s~s...",
-               [opcua_node:format(NodeId), Dir, opcua_node:format(BaseId),
-                if SubTypes -> " and subtypes"; true -> "" end]),
     BaseOpts = #{type => BaseId, direction => Dir},
     Opts = case SubTypes of
         true -> BaseOpts#{include_subtypes => true};
@@ -173,8 +170,6 @@ static_perform(Mode, Node, #opcua_browse_command{type = BaseId, direction = Dir,
     ResRefs = post_process_refs(NodeId, Refs),
     #{status => good, references => ResRefs};
 static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} = _Command) ->
-    ?LOG_DEBUG("Reading node ~s attribute ~w...",
-               [opcua_node:format(Node), Attr]),
     %TODO: All this should be moved to opcua_node at some point
     Result = try {opcua_node:attribute_type(Attr, Node),
                   opcua_node:attribute_value(Attr, Node),
@@ -195,8 +190,7 @@ static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} 
             end
     catch
         _:bad_attribute_id_invalid = Reason ->
-            ?LOG_DEBUG("Error while reading node ~s attribute ~w: ~p",
-                       [opcua_node:format(Node), Attr, Reason]),
+            % Quite a common error when using a genering OPCUA browser
             #opcua_data_value{status = Reason};
         _:Reason ->
             Status = case opcua_nodeset:is_status(Reason) of
@@ -210,7 +204,6 @@ static_perform(_Mode, Node, #opcua_read_command{attr = Attr, range = undefined} 
     Result;
 static_perform(_Mode, _Node, _Command) ->
     {error, bad_not_implemented}.
-
 
 
 post_process_refs(NodeId, Refs) ->
