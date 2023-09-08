@@ -10,23 +10,27 @@
 
 -define(NS, 1).
 -define(LNNID(V), ?NNID(?NS, V)).
--define(STATIC1, ?NNID(42)).
--define(STATIC2, ?NNID(66)).
+-define(STATIC_VAR1, ?NNID(42)).
+-define(STATIC_VAR2, ?NNID(66)).
+-define(STATIC_OBJ_TYPE, ?NNID(33)).
 
--define(assertTemplate(SPACE, RESULT, NODES, REFS, TEMPLATE), (fun() ->
+% Asserts the template returns given result, and creates given nodes and refs.
+% In addition, it asserts that the second time it is applied, no new nodes or
+% refs are created, but the result is the same.
+-define(assertTemplate(RESULT, NODES, REFS, TEMPLATE), (fun() ->
     Template = TEMPLATE,
     Checkpoint = save(),
-    Return1 = prepare(SPACE, Template),
+    Return1 = prepare(opcua_server_space, Template),
     ?assertMatch({_, _, _}, Return1),
     {Result1, Nodes1, Refs1} = Return1,
     ?assertMatch({RESULT, NODES, REFS},
                  {Result1, lists:sort(Nodes1), lists:sort(Refs1)}),
     {Result1, _, _} = Return1,
     restore(Checkpoint), % So the generated node ids are the same
-    Result2 = ensure(SPACE, Template),
+    Result2 = ensure(opcua_server_space, Template),
     ?assertMatch(RESULT, Result2),
     ?assertEqual(Result1, Result2),
-    Return3 = prepare(SPACE, Template),
+    Return3 = prepare(opcua_server_space, Template),
     ?assertMatch({RESULT, [], []}, Return3),
     {Result3, _, _} = Return3,
     ?assertEqual(Result1, Result3)
@@ -35,9 +39,34 @@ end)()).
 
 %%% TESTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-explicit_id_test() ->
-    Space = new_space(),
-    ?assertTemplate(Space,
+setup() ->
+    PrivDir = code:priv_dir(opcua),
+    NodeSetDir = filename:join([PrivDir, "nodeset", "data"]),
+    opcua_nodeset:start_link(NodeSetDir),
+    {ok, ServerSpaceProc} = opcua_server_space:start_link(),
+    ServerSpaceProc.
+
+
+teardown(ServerSpaceProc) ->
+    unlink(ServerSpaceProc),
+    ServerSpaceMon = erlang:monitor(process, ServerSpaceProc),
+    erlang:exit(ServerSpaceProc, shutdown),
+    receive {'DOWN', ServerSpaceMon, _, _, _} -> ok end,
+    ok.
+
+all_test_() ->
+    {foreach, fun setup/0, fun teardown/1, [
+        fun test_explicit_id/0,
+        fun test_simple_single_forward_ref/0,
+        fun test_simple_single_inverse_ref/0,
+        fun test_two_layer_forward_ref/0,
+        fun test_two_layer_inverse_ref/0,
+        fun test_aliases/0,
+        fun test_reference_type_alias/0
+     ]}.
+
+test_explicit_id() ->
+    ?assertTemplate(
         [{?LNNID(1000), []}],
         [#opcua_node{node_id = ?LNNID(1000),
                      browse_name = <<"FooBar">>}],
@@ -45,131 +74,122 @@ explicit_id_test() ->
             node_id => ?LNNID(1000),
             browse_name => <<"FooBar">>
         }]),
-    opcua_space_backend:terminate(Space),
     ok.
 
-simple_single_forward_ref_test() ->
-    Space = new_space(),
-    ?assertTemplate(Space,
-        [{?LNNID(1), [{?STATIC1, []}]}],
+test_simple_single_forward_ref() ->
+    ?assertTemplate(
+        [{?LNNID(1), [{?NNID(?TYPE_BASE_OBJECT), []}]}],
         [#opcua_node{node_id = ?LNNID(1),
                      browse_name = <<"FooBar">>}],
-        [#opcua_reference{type_id = ?NNID(33),
+        [#opcua_reference{type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
                           source_id = ?LNNID(1),
-                          target_id = ?STATIC1}],
+                          target_id = ?NNID(?TYPE_BASE_OBJECT)}],
         [#{
             namespace => ?NS,
             browse_name => <<"FooBar">>,
             references => [
-                {forward, ?NNID(33), ?STATIC1}
+                {forward, has_type_definition, base_object_type}
             ]
         }]),
-    opcua_space_backend:terminate(Space),
     ok.
 
-simple_single_inverse_ref_test() ->
-    Space = new_space(),
-    ?assertTemplate(Space,
-        [{?LNNID(1), [{?STATIC1, []}]}],
+test_simple_single_inverse_ref() ->
+    ?assertTemplate(
+        [{?LNNID(1), [{?NNID(?OBJ_OBJECTS_FOLDER), []}]}],
         [#opcua_node{node_id = ?LNNID(1),
                      browse_name = <<"FooBar">>}],
-        [#opcua_reference{type_id = ?NNID(33),
-                          source_id = ?STATIC1,
+        [#opcua_reference{type_id = ?NNID(?REF_HAS_CHILD),
+                          source_id = ?NNID(?OBJ_OBJECTS_FOLDER),
                           target_id = ?LNNID(1)}],
         [#{
             namespace => ?NS,
             browse_name => <<"FooBar">>,
             references => [
-                {inverse, ?NNID(33), ?STATIC1}
+                {inverse, has_child, objects}
             ]
         }]),
-    opcua_space_backend:terminate(Space),
     ok.
 
-two_layer_forward_ref_test() ->
-    Space = new_space(),
-    ?assertTemplate(Space,
-        [{?LNNID(1), [{?LNNID(2), []}, {?LNNID(3), [{?STATIC1, []}]}]}],
+test_two_layer_forward_ref() ->
+    ?assertTemplate(
+        [{?LNNID(1), [{?LNNID(2), []}, {?LNNID(3), [{?NNID(?TYPE_BASE_OBJECT), []}]}]}],
         [#opcua_node{node_id = ?LNNID(1), browse_name = <<"Foo">>},
          #opcua_node{node_id = ?LNNID(2), browse_name = <<"Bar">>},
          #opcua_node{node_id = ?LNNID(3), browse_name = <<"Buz">>}],
-        [#opcua_reference{type_id = ?NNID(33),
+        [#opcua_reference{type_id = ?NNID(?REF_ORGANIZES),
                           source_id = ?LNNID(1),
                           target_id = ?LNNID(2)},
-         #opcua_reference{type_id = ?NNID(33),
+         #opcua_reference{type_id = ?NNID(?REF_ORGANIZES),
                           source_id = ?LNNID(1),
                           target_id = ?LNNID(3)},
-         #opcua_reference{type_id = ?NNID(33),
+         #opcua_reference{type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
                           source_id = ?LNNID(3),
-                          target_id = ?STATIC1}],
+                          target_id = ?NNID(?TYPE_BASE_OBJECT)}],
         [#{
             namespace => ?NS,
             browse_name => <<"Foo">>,
             references => [
-                {forward, 33, #{
+                {forward, organizes, #{
                     namespace => ?NS,
                     browse_name => <<"Bar">>
                 }},
-                {forward, 33, #{
+                {forward, organizes, #{
                     namespace => ?NS,
                     browse_name => <<"Buz">>,
                     references => [
-                        {forward, 33, ?STATIC1}
+                        {forward, has_type_definition, base_object_type}
                     ]
                 }}
             ]
         }]),
-    opcua_space_backend:terminate(Space),
     ok.
 
-two_layer_inverse_ref_test() ->
-    Space = new_space(),
-    ?assertTemplate(Space,
-        [{?LNNID(1), [{?LNNID(2), []}, {?LNNID(3), [{?STATIC1, []}]}]}],
+test_two_layer_inverse_ref() ->
+    ?assertTemplate(
+        [{?LNNID(1), [{?LNNID(2), []}, {?LNNID(3), [{?NNID(?OBJ_OBJECTS_FOLDER), []}]}]}],
         [#opcua_node{node_id = ?LNNID(1), browse_name = <<"Foo">>},
          #opcua_node{node_id = ?LNNID(2), browse_name = <<"Bar">>},
          #opcua_node{node_id = ?LNNID(3), browse_name = <<"Buz">>}],
-        [#opcua_reference{type_id = ?NNID(33),
-                          source_id = ?STATIC1,
+        [#opcua_reference{type_id = ?NNID(?REF_HAS_CHILD),
+                          source_id = ?NNID(?OBJ_OBJECTS_FOLDER),
                           target_id = ?LNNID(3)},
-         #opcua_reference{type_id = ?NNID(33),
+         #opcua_reference{type_id = ?NNID(?REF_ORGANIZES),
                           source_id = ?LNNID(2),
                           target_id = ?LNNID(1)},
-         #opcua_reference{type_id = ?NNID(33),
+         #opcua_reference{type_id = ?NNID(?REF_ORGANIZES),
                           source_id = ?LNNID(3),
                           target_id = ?LNNID(1)}],
         [#{
             namespace => ?NS,
             browse_name => <<"Foo">>,
             references => [
-                {inverse, 33, #{
+                {inverse, organizes, #{
                     namespace => ?NS,
                     browse_name => <<"Bar">>
                 }},
-                {inverse, 33, #{
+                {inverse, organizes, #{
                     namespace => ?NS,
                     browse_name => <<"Buz">>,
                     references => [
-                        {inverse, 33, ?STATIC1}
+                        {inverse, has_child, objects}
                     ]
                 }}
             ]
         }]),
-    opcua_space_backend:terminate(Space),
     ok.
 
-aliases_test() ->
-    Space = new_space(),
-    ?assertTemplate(Space,
-       [{?LNNID(1), []},{?LNNID(2), [{?LNNID(1), []},{?STATIC1, []}]}],
+test_aliases() ->
+    ?assertTemplate(
+       [{?LNNID(1), []},{?LNNID(2), [{?LNNID(1), []},{?NNID(?TYPE_BASE_OBJECT), []}]}],
        [#opcua_node{node_id = ?LNNID(1), browse_name = <<"Foo">>},
         #opcua_node{node_id = ?LNNID(2), browse_name = <<"Bar">>}],
-       [#opcua_reference{type_id = ?NNID(33),
+       [#opcua_reference{type_id = ?NNID(?REF_ORGANIZES),
                          source_id = ?LNNID(2),
-                         target_id = ?STATIC1},
-        #opcua_reference{type_id = ?NNID(33),
+                         target_id = ?LNNID(1)},
+        #opcua_reference{type_id = ?NNID(?REF_HAS_TYPE_DEFINITION),
                          source_id = ?LNNID(2),
-                         target_id = ?LNNID(1)}],
+                         target_id = ?NNID(?TYPE_BASE_OBJECT)}
+        ],
         [#{
             alias => foo,
             namespace => ?NS,
@@ -179,28 +199,26 @@ aliases_test() ->
             namespace => ?NS,
             browse_name => <<"Bar">>,
             references => [
-                {forward, 33, foo},
-                 % The anchor to prevent it to be created everyt time:
-                {forward, 33, ?STATIC1}
+                {forward, organizes, foo},
+                 % The anchor to prevent it to be created every time:
+                {forward, has_type_definition, base_object_type}
             ]
         }]),
-    opcua_space_backend:terminate(Space),
     ok.
 
-reference_type_alias_test() ->
-    Space = new_space(),
-    ?assertTemplate(Space,
-       [{?LNNID(1), [{?STATIC2, []}]},
-        {?LNNID(2), [{?LNNID(3), []},{?STATIC1, []}]}],
+test_reference_type_alias() ->
+    ?assertTemplate(
+       [{?LNNID(1), [{?NNID(?TYPE_REFERENCES), []}]},
+        {?LNNID(2), [{?LNNID(3), []},{?NNID(?OBJ_OBJECTS_FOLDER), []}]}],
        [#opcua_node{node_id = ?LNNID(1), browse_name = <<"MyRefType">>},
         #opcua_node{node_id = ?LNNID(2), browse_name = <<"Foo">>},
         #opcua_node{node_id = ?LNNID(3), browse_name = <<"Bar">>}],
-       [#opcua_reference{type_id = ?NNID(42),
-                         source_id = ?STATIC2,
+       [#opcua_reference{type_id = ?NNID(?REF_HAS_SUBTYPE),
+                         source_id = ?NNID(?TYPE_REFERENCES),
                          target_id = ?LNNID(1)},
         #opcua_reference{type_id = ?LNNID(1),
                          source_id = ?LNNID(2),
-                         target_id = ?STATIC1},
+                         target_id = ?NNID(?OBJ_OBJECTS_FOLDER)},
         #opcua_reference{type_id = ?LNNID(1),
                          source_id = ?LNNID(2),
                          target_id = ?LNNID(3)}],
@@ -210,7 +228,7 @@ reference_type_alias_test() ->
             node_class => reference_type,
             browse_name => <<"MyRefType">>,
             references => [
-                {inverse, 42, ?STATIC2} % As if it was an has_subtype
+                {inverse, has_subtype, references}
             ]
         },
         #{
@@ -222,42 +240,26 @@ reference_type_alias_test() ->
                     browse_name => <<"Bar">>
                 }},
                 % The anchor to prevent it to be created everyt time:
-                {forward, my_ref_type, ?STATIC1}
+                {forward, my_ref_type, objects}
             ]
         }]),
-    opcua_space_backend:terminate(Space),
     ok.
+
 
 %%% INTERNAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-new_space() ->
-    Space = opcua_space_backend:new(),
-    0 = opcua_space:add_namespace(Space, <<"http://foo.com/UA/">>),
-    ?NS = opcua_space:add_namespace(Space, <<"http://bar.com/UA/">>),
-    put({opcua_space_test, next}, 1),
-    % Add some static nodes
-    opcua_space:add_nodes(Space, [
-        #opcua_node{
-            node_id = ?STATIC1,
-            browse_name = <<"Static1">>,
-            node_class = #opcua_variable{}
-        },
-        #opcua_node{
-            node_id = ?STATIC2,
-            browse_name = <<"Static2">>,
-            node_class = #opcua_variable{}
-        }]),
-    Space.
-
 save() ->
-    get({opcua_space_test, next}).
+    get({?MODULE, next}).
 
 restore(Id) ->
-    put({opcua_space_test, next}, Id).
+    put({?MODULE, next}, Id).
 
 next_node_id() ->
-    Id = get({opcua_space_test, next}),
-    put({opcua_space_test, next}, Id + 1),
+    Id = case get({?MODULE, next}) of
+        undefined -> 1;
+        V -> V
+    end,
+    put({?MODULE, next}, Id + 1),
     ?LNNID(Id).
 
 prepare(Space, Template) ->

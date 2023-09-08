@@ -160,6 +160,7 @@ references(OriginNodeSpec, Opts) ->
 
 init(undefined) ->
     ?LOG_DEBUG("OPCUA nodeset process starting empty", []),
+    process_flag(trap_exit, true), % Ensure we cleanup the space
     opcua_space_backend:init(?MODULE),
     {ok, #state{}};
 init(BaseDir) ->
@@ -187,6 +188,7 @@ handle_info(Msg, State) ->
 
 terminate(Reason, _State) ->
     ?LOG_DEBUG("OPCUA nodeset process terminating: ~p", [Reason]),
+    opcua_space_backend:terminate(?MODULE),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->

@@ -107,6 +107,7 @@ is_subtype(SubTypeSpec, SuperTypeSpec) ->
 %%% BEHAVIOUR gen_server CALLBACK FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([]) ->
+    process_flag(trap_exit, true), % Ensure we cleanup the space
     {ok, opcua_space_backend:new(?MODULE, [opcua_nodeset])}.
 
 handle_call({add_namespace, Uri}, _From, Space) ->

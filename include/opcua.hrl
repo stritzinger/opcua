@@ -30,6 +30,7 @@
 -define(REF_HAS_COMPONENT,          47).
 -define(REF_HAS_NOTIFIER,           48).
 
+-define(TYPE_REFERENCES,            31).
 -define(TYPE_BASE_OBJECT,           58).
 -define(TYPE_FOLDER,                61).
 -define(TYPE_PROPERTY,              68).

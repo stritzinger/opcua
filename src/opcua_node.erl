@@ -41,6 +41,7 @@ id(exposes_its_array) -> ?NNID(?OBJ_EXPOSES_ITS_ARRAY);
 id(optional_placeholder) -> ?NNID(?OBJ_OPTIONAL_PLACEHOLDER);
 id(mandatory_placeholder) -> ?NNID(?OBJ_MANDATORY_PLACEHOLDER);
 % Common types
+id(references) -> ?NNID(?TYPE_REFERENCES);
 id(base_object_type) -> ?NNID(?TYPE_BASE_OBJECT);
 id(folder_type) -> ?NNID(?TYPE_FOLDER);
 id(property_type) -> ?NNID(?TYPE_PROPERTY);
@@ -93,6 +94,7 @@ spec(?NNID(?OBJ_EXPOSES_ITS_ARRAY)) -> exposes_its_array;
 spec(?NNID(?OBJ_OPTIONAL_PLACEHOLDER)) -> optional_placeholder;
 spec(?NNID(?OBJ_MANDATORY_PLACEHOLDER)) -> mandatory_placeholder;
 % Common types
+spec(?NNID(?TYPE_REFERENCES)) -> references;
 spec(?NNID(?TYPE_BASE_OBJECT)) -> base_object_type;
 spec(?NNID(?TYPE_FOLDER)) -> folder_type;
 spec(?NNID(?TYPE_PROPERTY)) -> property_type;
