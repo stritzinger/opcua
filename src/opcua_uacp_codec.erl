@@ -1,3 +1,7 @@
+% SPDX-FileCopyrightText: 2019-2026 Peer Stritzinger GmbH <peer@stritzinger.com>
+%
+% SPDX-License-Identifier: Apache-2.0
+
 -module(opcua_uacp_codec).
 
 %TODO: Support non-fatal decoding errors when decoding multiple chunks by

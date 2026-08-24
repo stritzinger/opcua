@@ -1,0 +1,27 @@
+version = 1
+
+[[annotations]]
+path = [
+    "rebar.lock",
+    "doc/diagrams.graffle",
+    "doc/diagrams/*.png",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2019-2026 Peer Stritzinger GmbH <peer@stritzinger.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "doc/OPC-UA-Logo-Color_Large.png"
+precedence = "override"
+SPDX-FileCopyrightText = "OPC Foundation"
+SPDX-License-Identifier = "LicenseRef-OPC-UA-Logo-License-Agreement"
+
+[[annotations]]
+path = [
+    "priv/nodeset/data/*.bterm",
+    "priv/nodeset/reference/Schema/*.csv",
+    "priv/nodeset/reference/Schema/Opc.Ua.NodeSet2.Services.xml",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2005-2021 The OPC Foundation, Inc."
+SPDX-License-Identifier = "MIT"

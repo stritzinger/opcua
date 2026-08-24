@@ -1,4 +1,9 @@
 #!/bin/bash
+
+# SPDX-FileCopyrightText: 2019-2026 Peer Stritzinger GmbH <peer@stritzinger.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+
 DST=priv/certificates/
 CFG=certificates/
 

@@ -1,3 +1,7 @@
+% SPDX-FileCopyrightText: 2019-2026 Peer Stritzinger GmbH <peer@stritzinger.com>
+%
+% SPDX-License-Identifier: Apache-2.0
+
 -module(opcua_codec_xml).
 
 % This module decodes XML from a pre-parsed term composed of tuples like:

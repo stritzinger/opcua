@@ -1,3 +1,7 @@
+% SPDX-FileCopyrightText: 2019-2026 Peer Stritzinger GmbH <peer@stritzinger.com>
+%
+% SPDX-License-Identifier: Apache-2.0
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% @doc Codec Context to be used during encoding and decoding to keep track
 %%% of the position in the decoded/encoded data, and all the options.

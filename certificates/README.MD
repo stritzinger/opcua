@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2019-2026 Peer Stritzinger GmbH <peer@stritzinger.com>
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Generate certificates
 
 For development we are using certs in x509 v3 format as required by OPCUA.

@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# SPDX-FileCopyrightText: 2019-2026 Peer Stritzinger GmbH <peer@stritzinger.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+
 ARGS=( "$@" )
 ROOT=$( cd $(dirname $0); cd ..; pwd )
 

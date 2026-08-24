@@ -1,0 +1,24 @@
+OPC UA Logo License Notice
+
+Copyright OPC Foundation. All rights reserved.
+
+The OPC UA logo is proprietary intellectual property and a registered
+trademark of OPC Foundation. It is not licensed under the Apache License 2.0
+that applies to the surrounding project.
+
+Use of the logo is governed by a separate OPC UA Logo License Agreement with
+OPC Foundation. That agreement grants an authorized licensee a limited,
+non-exclusive, non-transferable, non-sublicensable, personal license to use
+the logo for approved professional purposes. It does not grant a right to
+redistribute the logo. OPC Foundation retains all rights, title, and interest
+in the logo.
+
+Inclusion of this notice does not grant any right to use, copy, modify,
+redistribute, or sublicense the logo. Such rights must be obtained directly
+from OPC Foundation under the applicable agreement and approval process.
+
+Official agreement:
+https://opcfoundation.org/wp-content/uploads/2017/02/OPC-Logo-Member-Product-Application-and-Logo-License-digital.pdf
+
+Official logo archive:
+https://opcfoundation.org/developer-tools/marketing-communication-logos/opc-ua-logos/

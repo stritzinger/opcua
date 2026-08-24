@@ -1,3 +1,7 @@
+% SPDX-FileCopyrightText: 2019-2026 Peer Stritzinger GmbH <peer@stritzinger.com>
+%
+% SPDX-License-Identifier: Apache-2.0
+
 -module(opcua_keychain_default).
 
 -behavior(gen_server).
