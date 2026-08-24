@@ -31,7 +31,7 @@ encode(Spec, Data) ->
     encode(Spec, Data, #{}).
 
 -spec decode(opcua:codec_spec(), binary(), opcua_codec_context:options()) ->
-    {term(), binary()} | {term(), binary(), opcua_codec_conrtext:issues()}.
+    {term(), binary()} | {term(), binary(), opcua_codec_context:issues()}.
 decode(Spec, Data, Opts) ->
     Ctx = opcua_codec_context:new(decoding, Opts),
     try decode_type(Ctx, Spec, iolist_to_binary(Data)) of
@@ -43,7 +43,7 @@ decode(Spec, Data, Opts) ->
     end.
 
 -spec encode(opcua:codec_spec(), term(), opcua_codec_context:options()) ->
-    {iolist(), term()} | {iolist(), term(), opcua_codec_conrtext:issues()}.
+    {iolist(), term()} | {iolist(), term(), opcua_codec_context:issues()}.
 encode(Spec, Data, Opts) ->
     Ctx = opcua_codec_context:new(encoding, Opts),
     try encode_type(Ctx, Spec, Data) of

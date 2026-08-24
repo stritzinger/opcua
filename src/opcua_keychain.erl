@@ -154,7 +154,7 @@ new(Parent, Mod, Args) ->
 % @doc Makes the keychain shareable with other processes.
 % The result must be a read-only keychain that can be passed to onther
 % processes without conflicts.
--spec shareable(state() | opcua:connection()) -> state() | ocpua:connection().
+-spec shareable(state() | opcua:connection()) -> state() | opcua:connection().
 shareable(default) -> default;
 shareable(#uacp_connection{keychain = K} = C) ->
     C#uacp_connection{keychain = shareable(K)};
@@ -568,7 +568,7 @@ add_alias(Ident, Alias) ->
 % @doc Add an alias to an existing identity in given keychain.
 % Could fail if the keystore is read-only after being made shareable.
 -spec add_alias(state() | opcua:connection(), ident(), atom()) ->
-    {ok, state() | ocpua:connection()} | not_found.
+    {ok, state() | opcua:connection()} | not_found.
 add_alias(undefined, _Ident, _Alias) -> not_found;
 add_alias(#uacp_connection{keychain = K} = C, Ident, Alias) ->
     case add_alias(K, Ident, Alias) of
@@ -713,6 +713,12 @@ decode_pem_entries([{'Certificate', CertDer, not_encrypted} | Rest], Opts, State
         Result -> Result
     end;
 decode_pem_entries([{'RSAPrivateKey', KeyDer, not_encrypted} | Rest], Opts, State, Fun, Acc) ->
+    case Fun(priv, State, KeyDer) of
+        {ok, #{id := Id} = Info, State2} ->
+            decode_pem_entries(Rest, Opts, State2, Fun, Acc#{Id => Info});
+        Result -> Result
+    end;
+decode_pem_entries([{'PrivateKeyInfo', KeyDer, not_encrypted} | Rest], Opts, State, Fun, Acc) ->
     case Fun(priv, State, KeyDer) of
         {ok, #{id := Id} = Info, State2} ->
             decode_pem_entries(Rest, Opts, State2, Fun, Acc#{Id => Info});

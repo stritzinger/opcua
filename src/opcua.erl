@@ -56,7 +56,7 @@
 -type endpoint_url() :: #opcua_endpoint_url{}.
 -type node_id_type() :: numeric | string | guid | opaque.
 -type node_id() :: #opcua_node_id{}.
--type node_origin() :: nodeset | local | remote.
+-type node_origin() :: standard | nodeset | local | remote.
 -type expanded_node_id() :: #opcua_expanded_node_id{}.
 -type qualified_name() :: #opcua_qualified_name{}.
 -type localized_text() :: #opcua_localized_text{}.
@@ -80,11 +80,13 @@
                       | variant | data_value.
 -type data_type() :: builtin_type() | node_id().
 -type array_dimensions() :: [] | [non_neg_integer()].
+-type node_object() :: term().
 
 -export_type([
     endpoint_url/0,
     node_id_type/0,
     node_id/0,
+    node_origin/0,
     expanded_node_id/0,
     qualified_name/0,
     localized_text/0,
@@ -102,7 +104,8 @@
     value_rank/0,
     builtin_type/0,
     data_type/0,
-    array_dimensions/0
+    array_dimensions/0,
+    node_object/0
 ]).
 
 
@@ -292,6 +295,7 @@
 
 -export_type([
     message_type/0,
+    message_sender/0,
     chunk_type/0,
     chunk_state/0,
     token_id/0,

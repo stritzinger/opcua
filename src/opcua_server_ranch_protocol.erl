@@ -21,7 +21,7 @@
 %% Behaviour ranch_protocol Callback Functions
 -export([start_listener/0]).
 -export([stop_listener/0]).
--export([start_link/4]).
+-export([start_link/3]).
 
 %% System Callback Functions
 -export([system_continue/3]).
@@ -59,7 +59,7 @@ start_listener() ->
     TOpts = [{port, 4840}],
     ranch:start_listener(?MODULE, ranch_tcp, TOpts, ?MODULE, #{}).
 
-start_link(Ref, _Socket, Transport, Opts) ->
+start_link(Ref, Transport, Opts) ->
     Pid = proc_lib:spawn_link(?MODULE, connection_process,
                               [self(), Ref, Transport, Opts]),
     {ok, Pid}.
@@ -150,7 +150,7 @@ loop(#state{transport = T, socket = S} = State) ->
 loop_consume(State) ->
     #state{parent = P, transport = T, socket = S,
            conn = Conn, proto = Proto} = State,
-    {OK, Closed, Error} = T:messages(),
+    {OK, Closed, Error, Passive} = transport_messages(T),
     Timeout = case opcua_server_uacp:can_produce(Conn, Proto) of
         true -> 0;
         false -> infinity
@@ -171,6 +171,8 @@ loop_consume(State) ->
         {Error, S, Reason} ->
             ?LOG_DEBUG("Socket error: ~p", [Reason]),
             handle_error(State, socket_error, Reason, 'An error has occurred on the socket.');
+        {Passive, S} when Passive =/= undefined ->
+            loop(State);
         {'EXIT', P, Reason} ->
             ?LOG_DEBUG("Parent ~p died: ~p", [P, Reason]),
             handle_error(State, stop, {exit, Reason}, 'Parent process terminated.');
@@ -255,7 +257,7 @@ terminate_linger(State) ->
     end.
 
 terminate_linger_loop(#state{socket = S, transport = T} = State, TRef) ->
-    {OK, Closed, Error} = T:messages(),
+    {OK, Closed, Error, Passive} = transport_messages(T),
     case T:setopts(S, [{active, once}]) of
         {error, _} -> State;
         ok ->
@@ -266,9 +268,17 @@ terminate_linger_loop(#state{socket = S, transport = T} = State, TRef) ->
                 {OK, S, _} ->
                     %TODO: We may want to do something with this data ?
                     terminate_linger_loop(State, TRef);
+                {Passive, S} when Passive =/= undefined ->
+                    terminate_linger_loop(State, TRef);
                 _ ->
                     terminate_linger_loop(State, TRef)
             end
+    end.
+
+transport_messages(Transport) ->
+    case Transport:messages() of
+        {OK, Closed, Error} -> {OK, Closed, Error, undefined};
+        {OK, Closed, Error, Passive} -> {OK, Closed, Error, Passive}
     end.
 
 extract_options(Spec, Opts) -> extract_options(Spec, Opts, []).

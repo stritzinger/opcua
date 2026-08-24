@@ -53,7 +53,7 @@
     requested_session_timeout :: undefined | non_neg_integer(),
     ident :: undefined | binary(),
     local_ids :: undefined | [binary()],
-    conn :: undefined | opcua_protocol:connection(),
+    conn :: undefined | opcua:connection(),
     mon_ref :: undefined | reference()
 }).
 

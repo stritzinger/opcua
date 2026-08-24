@@ -4,6 +4,13 @@
 
 -module(opcua_client).
 
+-dialyzer({nowarn_function, [
+    put/3,
+    del/3,
+    put_refs/3,
+    del_refs/3
+]}).
+
 -behaviour(gen_statem).
 % Inspired by: https://gist.github.com/ferd/c86f6b407cf220812f9d893a659da3b8
 

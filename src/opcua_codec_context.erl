@@ -51,6 +51,7 @@
 -type mode() :: encoding | decoding.
 -type issue() :: {generic_codec_error, Reason :: term(), Stack :: binary()}
                | {schema_not_found, NodeId :: opcua:node_id(), Stack :: binary()}
+               | {descriptor_not_found, NodeId :: opcua:node_id(), Stack :: binary()}
                | {encoding_not_supported, atom(), Stack :: binary()}.
 -type issues() :: [] | [issue()].
 -type ctx() :: #ctx{}.

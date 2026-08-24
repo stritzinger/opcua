@@ -49,7 +49,7 @@
     subject :: public_key:issuer_name(),
     validity :: term(),
     thumbprint :: binary(),
-    capabilities :: [opcua_keychain:capabilities()],
+    capabilities :: [opcua_keychain:capability()],
     cert_der :: binary(),
     cert_rec :: term(),
     key_der :: undefined | binary(),
@@ -164,19 +164,18 @@ add_certificate(#state{table = Table} = State, CertDer, Opts) ->
 add_private(#state{read_only = true}, _KeyDer) -> {error, read_only};
 add_private(#state{table = Table} = State, KeyDer) ->
     %TODO: add support for EC keys
-    try public_key:der_decode('RSAPrivateKey', KeyDer) of
-        KeyRec ->
+    case decode_private_key_der(KeyDer) of
+        {ok, NormalizedKeyDer, KeyRec} ->
             Id = opcua_keychain:private_key_id(KeyRec),
             case ets:lookup(Table, Id) of
                 [] -> {error, entry_not_found};
                 [Entry] ->
-                    Entry2 = Entry#entry{key_der = KeyDer, key_rec = KeyRec},
+                    Entry2 = Entry#entry{key_der = NormalizedKeyDer, key_rec = KeyRec},
                     ets:insert(Table, Entry2),
                     {ok, get_info(Entry2), State}
-            end
-    catch
-        error:{badmatch, _} ->
-            {error, decoding_error}
+            end;
+        {error, _} = Error ->
+            Error
     end.
 
 trust(#state{read_only = true}, _Ident) -> {error, read_only};
@@ -223,6 +222,41 @@ get_info(#entry{id = Id, aliases = Aliases,issuer = Issuer, subject = Subject,
     #{id => Id, aliases => Aliases, issuer => Issuer, subject => Subject,
       validity => Validity, thumbprint => Thumb, capabilities => Caps,
       is_trusted => IsTrusted, has_private => true}.
+
+decode_private_key_der(KeyDer) ->
+    case decode_rsa_private_key(KeyDer) of
+        {ok, KeyRec} ->
+            {ok, KeyDer, KeyRec};
+        {error, decoding_error} ->
+            decode_private_key_info(KeyDer)
+    end.
+
+decode_rsa_private_key(KeyDer) ->
+    try public_key:der_decode('RSAPrivateKey', KeyDer) of
+        #'RSAPrivateKey'{} = KeyRec ->
+            {ok, KeyRec};
+        _Other ->
+            {error, decoding_error}
+    catch
+        _:_ ->
+            {error, decoding_error}
+    end.
+
+decode_private_key_info(KeyDer) ->
+    try public_key:der_decode('PrivateKeyInfo', KeyDer) of
+        #'RSAPrivateKey'{} = KeyRec ->
+            {ok, public_key:der_encode('RSAPrivateKey', KeyRec), KeyRec};
+        #'PrivateKeyInfo'{privateKey = RSADer} when is_binary(RSADer) ->
+            case decode_rsa_private_key(RSADer) of
+                {ok, KeyRec} -> {ok, RSADer, KeyRec};
+                Error -> Error
+            end;
+        _Other ->
+            {error, decoding_error}
+    catch
+        _:_ ->
+            {error, decoding_error}
+    end.
 
 update_lookups(#state{aliases = AliasesTable, subjects = Subjects},
                #entry{id = Id, aliases = Aliases, subject = Subject}) ->

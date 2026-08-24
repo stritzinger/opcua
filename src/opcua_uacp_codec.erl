@@ -198,15 +198,15 @@ decode_object(Space, Data) ->
     end.
 
 -spec encode_sequence_header(opcua_space:state(), SeqNum, ReqId) -> iodata()
-  when SeqNum :: opcua_protocol:sequence_num(),
-       ReqId :: opcua_protocol:request_id().
+  when SeqNum :: opcua:sequence_num(),
+       ReqId :: opcua:request_id().
 encode_sequence_header(Space, SeqNum, ReqId) ->
     {Result, []} = encode(Space, [uint32, uint32], [SeqNum, ReqId]),
     Result.
 
 -spec decode_sequence_header(opcua_space:state(), iodata()) -> {{SeqNum, ReqId}, iodata()}
-  when SeqNum :: opcua_protocol:sequence_num(),
-       ReqId :: opcua_protocol:request_id().
+  when SeqNum :: opcua:sequence_num(),
+       ReqId :: opcua:request_id().
 decode_sequence_header(Space, Data) ->
     {[SeqNum, ReqId], RemData} =
         decode(Space, [uint32, uint32], iolist_to_binary(Data)),
