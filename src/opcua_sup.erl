@@ -30,7 +30,8 @@ init([]) ->
     Childs = [
         worker(opcua_keychain_default, [KeychainOpts]),
         worker(opcua_nodeset, [NodeSetDir]),
-        supervisor(opcua_client_sup, [])
+        supervisor(opcua_client_sup, []),
+        supervisor(opcua_pubsub_sup, [])
     ],
     Childs2 = case application:get_env(start_server) of
         {ok, false} -> Childs;
